@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "proxy", "runtimeExecutable": "node", "runtimeArgs": ["server/server.js"], "port": 5178 }
+  ]
+}

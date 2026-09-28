@@ -1,0 +1,366 @@
+import { h, icon, ago, dur, dateTime, tc, getJson, copy } from './util.js';
+import { state } from './state.js';
+import { MOOD, worstMood, failedRun, hasAd } from './filters.js';
+import { mediaOf, isReady, prioritize, onMedia, videoUrl, spriteUrl, placeSprite } from './media.js';
+
+const ADMIN = 'https://wix-bo.com/wixel-agent/admin/#/sessions/';
+const detailCache = new Map();
+
+export function prefetchDetail(id) {
+  if (!detailCache.has(id)) detailCache.set(id, getJson(`/api/session/${id}`).catch((e) => ({ error: e.message })));
+  return detailCache.get(id);
+}
+
+let panel;
+let current = null; // { run, player }
+
+export function initInspect(el, { close }) {
+  panel = el;
+  panel._close = close;
+  onMedia((ids) => {
+    if (current && ids.includes(current.run.id)) mountPlayer(current.run);
+  });
+}
+
+export function openInspect(run) {
+  if (!run) return;
+  panel.hidden = false;
+  if (current?.run.id === run.id) return;
+  current?.player?.destroy();
+  current = { run, player: null };
+  panel.replaceChildren(header(run, null), h('div', { class: 'insp-body' }, h('div', { class: 'player', id: 'playerMount' }), h('div', { id: 'detailMount' }, h('div', { class: 'loading-line' }, 'Loading run…'))));
+  mountPlayer(run);
+  prioritize(run.id);
+  prefetchDetail(run.id).then((d) => {
+    if (current?.run.id !== run.id) return;
+    current.detail = d;
+    panel.querySelector('.insp-head').replaceWith(header(run, d));
+    panel.querySelector('#detailMount').replaceChildren(...details(run, d));
+    current.player?.setScenes(d.outputs?.scenes || []);
+  });
+}
+
+export function closeInspect() {
+  current?.player?.destroy();
+  current = null;
+  if (panel) {
+    panel.hidden = true;
+    panel.replaceChildren();
+  }
+}
+
+export const inspectedPlayer = () => current?.player || null;
+export const inspectedRun = () => current?.run || null;
+
+// ---------- header ----------
+function header(r, d) {
+  const email = d?.user?.email;
+  const ut = r.userType === 'employee' || d?.user?.isWixEmail ? 'employee' : r.userType;
+  return h('div', { class: 'insp-head' },
+    h('div', { class: 't' },
+      h('h2', { title: r.prompt }, r.adName?.replace(/\s*[-—]\s*Root$/i, '') || r.title || 'Untitled run'),
+      h('div', { class: 'sub' },
+        ut && ut !== 'unknown' ? h('span', { class: `utype ${ut}` }, ut === 'employee' ? 'Employee' : ut === 'wixel-team' ? 'Team' : 'Real') : null,
+        email ? h('span', { title: 'User email' }, email) : null,
+        h('span', { class: 'sep' }, '·'),
+        h('time', { title: new Date(r.createdAt).toLocaleString() }, `${dateTime(r.createdAt)} (${ago(r.createdAt)})`),
+        h('span', { class: 'sep' }, '·'),
+        h('span', { class: 'num' }, dur(r.wallMs)),
+        r.agent ? [h('span', { class: 'sep' }, '·'), h('span', {}, `${r.agent}${r.source ? ` / ${r.source}` : ''}`)] : null,
+      ),
+    ),
+    h('a', { class: 'icon-btn', href: ADMIN + r.id, target: '_blank', rel: 'noopener', title: 'Open in Wixel admin (O)' }, icon('external')),
+    h('button', { class: 'icon-btn', title: 'Close (Esc)', onclick: () => panel._close() }, icon('x')),
+  );
+}
+
+// ---------- player ----------
+function mountPlayer(r) {
+  const mount = panel.querySelector('#playerMount');
+  if (!mount) return;
+  const m = mediaOf(r.id);
+  const live = current.live ?? (!isReady(m) && hasAd(r));
+  current.player?.destroy();
+  current.player = live ? new LivePlayer(mount, r) : isReady(m) ? new ReviewPlayer(mount, r, m) : null;
+  if (!current.player) {
+    const why = !r.generations ? 'This run never reached generation.' : m?.state === 'failed' ? `Couldn't prepare video: ${m.reason}` : m?.state === 'unavailable' ? m.reason : 'Preparing review video…';
+    mount.replaceChildren(h('div', { class: 'stage' }, h('div', { class: 'note' }, why)));
+  }
+  if (current.detail) current.player?.setScenes?.(current.detail.outputs?.scenes || []);
+}
+
+export function toggleLive() {
+  if (!current || !hasAd(current.run)) return;
+  const wasLive = current.player instanceof LivePlayer;
+  current.live = !wasLive;
+  mountPlayer(current.run);
+}
+
+class ReviewPlayer {
+  constructor(mount, run, meta) {
+    this.meta = meta;
+    this.scenes = [];
+    this.v = h('video', { src: videoUrl(run.id), preload: 'auto', playsinline: true });
+    this.v.muted = false;
+    const stage = h('div', { class: 'stage' }, this.v);
+    this.fill = h('div', { class: 'fill' });
+    this.head = h('div', { class: 'head' });
+    this.segs = h('div');
+    this.track = h('div', { class: 'track' }, this.segs, this.fill, this.head);
+    this.prevImg = h('div', { class: 'img', style: { backgroundImage: `url(${spriteUrl(run.id)})` } });
+    this.prevTc = h('div', { class: 'tc' });
+    this.prev = h('div', { class: 'hover-prev' }, this.prevImg, this.prevTc);
+    this.scrub = h('div', { class: 'scrub' }, this.track, this.prev);
+    this.playBtn = h('button', { title: 'Play / pause (Space)', onclick: () => this.toggle() }, icon('play'));
+    this.time = h('span', { class: 'time' }, '0:00:00');
+    this.rateBtn = h('button', { class: 'rate', title: 'Playback speed', onclick: () => this.cycleRate() }, '1×');
+    this.muteBtn = h('button', { title: 'Mute', onclick: () => { this.v.muted = !this.v.muted; this.sync(); } }, icon('volume'));
+    const src = meta.kind === 'render' ? 'Exact render' : meta.kind === 'assembled' ? 'Assembled — no text/captions' : 'Single clip';
+    this.modeBtn = h('button', { class: 'mode', title: 'Switch to the exact live player (E)', onclick: () => toggleLive() }, icon('sparkle', 'sm'), 'Exact');
+    const controls = h('div', { class: 'controls' }, this.playBtn, this.time, h('span', { style: { flex: 1 } }), this.rateBtn, this.muteBtn, hasAd(run) ? this.modeBtn : null,
+      h('button', { title: 'Fullscreen', onclick: () => stage.requestFullscreen?.() }, icon('expand')));
+    const note = h('div', { class: 'src-note' }, h('span', { class: 'dot', style: { background: meta.kind === 'render' ? 'var(--ok)' : meta.kind === 'assembled' ? 'var(--info)' : 'var(--warn)' } }),
+      h('span', {}, `${meta.label} · ${meta.duration.toFixed(1)}s · ${src === 'Exact render' ? 'what the user got' : 'press E for the exact composition'}`));
+    mount.replaceChildren(stage, this.scrub, controls, note);
+
+    this.v.addEventListener('timeupdate', () => this.sync());
+    this.v.addEventListener('play', () => this.sync());
+    this.v.addEventListener('pause', () => this.sync());
+    this.v.addEventListener('seeked', () => {
+      if (this.pendingSeek != null) {
+        const t = this.pendingSeek;
+        this.pendingSeek = null;
+        this.v.currentTime = t;
+      }
+      this.sync();
+    });
+    this.v.addEventListener('click', () => this.toggle());
+    this.raf = requestAnimationFrame(this.loop);
+    this.scrub.addEventListener('pointermove', (e) => this.preview(e));
+    this.scrub.addEventListener('pointerdown', (e) => {
+      this.scrub.setPointerCapture(e.pointerId);
+      this.dragging = true;
+      this.resume = !this.v.paused;
+      this.v.pause();
+      this.seekTo(this.fracAt(e));
+    });
+    this.scrub.addEventListener('pointerup', () => {
+      this.dragging = false;
+      if (this.resume) this.v.play();
+    });
+    this.v.play().catch(() => {});
+  }
+
+  loop = () => {
+    this.drawHead();
+    this.raf = requestAnimationFrame(this.loop);
+  };
+
+  get duration() {
+    return this.v.duration || this.meta.duration || 1;
+  }
+
+  fracAt(e) {
+    const r = this.track.getBoundingClientRect();
+    return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+  }
+
+  seekTo(frac) {
+    const t = frac * this.duration;
+    // Coalesce seeks: at most one in flight, the latest one wins — this is what keeps drag smooth.
+    if (this.v.seeking) this.pendingSeek = t;
+    else this.v.currentTime = t;
+    this.drawHead(frac);
+  }
+
+  preview(e) {
+    const frac = this.fracAt(e);
+    if (this.dragging) this.seekTo(frac);
+    const tr = this.track.getBoundingClientRect();
+    const tile = this.meta.sprite;
+    const w = tile.tileWidth;
+    const hgt = tile.tileHeight;
+    this.prevImg.style.width = `${w}px`;
+    this.prevImg.style.height = `${hgt}px`;
+    placeSprite(this.prevImg, { clientWidth: w, clientHeight: hgt }, this.meta, frac);
+    this.prevImg.style.position = 'relative';
+    this.prevImg.style.left = this.prevImg.style.top = '0';
+    this.prev.style.left = `${10 + frac * tr.width}px`;
+    const t = frac * this.duration;
+    const sc = this.scenes.find((s) => t >= s.startSec && t < s.endSec);
+    this.prevTc.textContent = `${tc(t)}${sc ? ` · ${sc.name?.replace(/^Scene\s*/i, 'S') || ''}` : ''}`;
+  }
+
+  drawHead(frac = this.v.currentTime / this.duration) {
+    const pct = `${Math.min(100, frac * 100)}%`;
+    this.fill.style.width = pct;
+    this.head.style.left = pct;
+  }
+
+  sync() {
+    this.time.textContent = `${tc(this.v.currentTime)} / ${tc(this.duration)}`;
+    this.playBtn.replaceChildren(icon(this.v.paused ? 'play' : 'pause'));
+    this.muteBtn.replaceChildren(icon(this.v.muted ? 'mute' : 'volume'));
+  }
+
+  setScenes(scenes) {
+    this.scenes = scenes || [];
+    const total = this.duration;
+    this.segs.replaceChildren(...this.scenes.map((s, i) => h('div', {
+      class: 'seg-scene',
+      title: s.name,
+      style: { left: `${(s.startSec / total) * 100}%`, width: `${((s.endSec - s.startSec) / total) * 100}%`, background: i % 2 ? 'rgba(255,255,255,.1)' : 'rgba(255,255,255,.05)' },
+    })));
+  }
+
+  toggle() {
+    this.v.paused ? this.v.play() : this.v.pause();
+  }
+
+  step(frames) {
+    this.v.pause();
+    this.v.currentTime = Math.max(0, Math.min(this.duration, this.v.currentTime + frames / 24));
+  }
+
+  seekBy(sec) {
+    this.v.currentTime = Math.max(0, Math.min(this.duration, this.v.currentTime + sec));
+  }
+
+  seekSec(sec) {
+    this.v.currentTime = sec;
+    this.v.play().catch(() => {});
+  }
+
+  cycleRate() {
+    const rates = [1, 1.5, 2, 0.5];
+    const next = rates[(rates.indexOf(this.v.playbackRate) + 1) % rates.length];
+    this.v.playbackRate = next;
+    this.rateBtn.textContent = `${next}×`;
+  }
+
+  destroy() {
+    cancelAnimationFrame(this.raf);
+    this.v.pause();
+    this.v.removeAttribute('src');
+    this.v.load();
+  }
+}
+
+// The product's own Remotion player in an iframe: exact text, captions, music.
+class LivePlayer {
+  constructor(mount, run) {
+    this.frame = h('iframe', { src: '/player/frame.html', allow: 'autoplay; fullscreen' });
+    this.status = h('span', {}, 'Loading the product player…');
+    const back = h('button', { class: 'mode on', title: 'Back to the review copy (E)', onclick: () => toggleLive() }, icon('sparkle', 'sm'), 'Exact');
+    mount.replaceChildren(
+      h('div', { class: 'stage' }, this.frame),
+      h('div', { class: 'controls' }, h('span', { class: 'time' }, 'Live composition'), h('span', { style: { flex: 1 } }), isReady(mediaOf(run.id)) ? back : null),
+      h('div', { class: 'src-note' }, h('span', { class: 'dot', style: { background: 'var(--ok)' } }), this.status),
+    );
+    this.input = getJson(`/api/player-input/${run.id}${run.adAssetId ? `?root=${run.adAssetId}` : ''}`);
+    this.onMsg = async (e) => {
+      if (e.source !== this.frame.contentWindow) return;
+      const t = e.data?.type;
+      if (t === 'wixel-player:ready') {
+        try {
+          const input = await this.input;
+          this.frame.contentWindow.postMessage({ type: 'wixel-player:init', input, options: { controls: true, autoPlay: true, bundleServerBaseUrl: '' } }, '*');
+        } catch (err) {
+          this.status.textContent = `Couldn't build the player input: ${err.message}`;
+        }
+      }
+      if (t === 'wixel-player:mounted') this.status.textContent = 'Exact composition — the product player (text, captions, music). Captions may show even when the export has them off.';
+      if (t === 'wixel-player:error') this.status.textContent = `Player error: ${e.data.error}`;
+    };
+    window.addEventListener('message', this.onMsg);
+  }
+
+  setScenes() {}
+  toggle() {}
+  step() {}
+  seekBy() {}
+  seekSec() {}
+
+  destroy() {
+    window.removeEventListener('message', this.onMsg);
+    try {
+      this.frame.contentWindow?.postMessage({ type: 'wixel-player:dispose' }, '*');
+    } catch {}
+    this.frame.remove();
+  }
+}
+
+// ---------- detail sections ----------
+function section(title, count, ...body) {
+  return h('div', { class: 'section' }, h('h4', {}, title, count != null ? h('span', { class: 'n' }, count) : null), ...body);
+}
+
+function outcome(r, d) {
+  const pills = [];
+  if (r.userDownloads) pills.push(h('span', { class: 'pill info', title: r.downloadedAt ? new Date(r.downloadedAt).toLocaleString() : '' }, icon('download', 'sm'), `Downloaded ${r.userDownloads}× in the editor`));
+  if (r.agentDownloads) pills.push(r.agentDownloadLink
+    ? h('a', { class: 'pill info', href: r.agentDownloadLink, target: '_blank', rel: 'noopener' }, icon('download', 'sm'), 'Downloaded via the agent')
+    : h('span', { class: 'pill info' }, icon('download', 'sm'), 'Asked the agent to download'));
+  if (!r.userDownloads && !r.agentDownloads) pills.push(h('span', { class: 'pill' }, icon('download', 'sm'), 'Not downloaded'));
+  pills.push(r.publishedUrl
+    ? h('a', { class: 'pill ok', href: r.publishedUrl, target: '_blank', rel: 'noopener' }, icon('globe', 'sm'), 'Published')
+    : h('span', { class: 'pill' }, icon('globe', 'sm'), 'Not published'));
+  for (const f of d.feedback || []) pills.push(h('span', { class: `pill ${f.value === 'thumbs_up' ? 'ok' : 'err'}` }, icon(f.value === 'thumbs_up' ? 'up' : 'down', 'sm'), f.value === 'thumbs_up' ? 'Thumbs up' : 'Thumbs down', f.tags?.length ? ` · ${f.tags.join(', ')}` : ''));
+  if (d.outOfFunds?.length) pills.push(h('span', { class: 'pill warn', title: d.outOfFunds.map((o) => o.message).join('\n') }, icon('card', 'sm'), `Out of credits ×${d.outOfFunds.length}`));
+  if (failedRun(r)) pills.push(h('span', { class: 'pill err' }, icon('alert', 'sm'), 'Generated but no finished video'));
+  return section('Outcome', null, h('div', { class: 'pills' }, pills));
+}
+
+function mood(d) {
+  if (!d.sentiments?.length) return null;
+  return section('User mood by turn', d.sentiments.length, h('div', { class: 'mood' }, d.sentiments.map((s, i) => {
+    const m = MOOD[s.label] || MOOD.neutral;
+    return h('div', { class: 'row' }, h('span', { class: `s ${s.label}` }, icon(m.icon)), h('div', {}, h('b', {}, `Turn ${i + 1}: ${m.label}`), s.detail ? h('div', { class: 'd' }, s.detail) : null));
+  })));
+}
+
+function request(d) {
+  const p = h('div', { class: 'prompt' }, d.prompt || '—');
+  const more = h('button', { class: 'linkish', onclick: () => { p.classList.toggle('open'); more.textContent = p.classList.contains('open') ? 'Show less' : 'Show all'; } }, 'Show all');
+  const follow = (d.userMessages || []).slice(1);
+  return section('Request', null, p, (d.prompt || '').length > 400 ? more : null,
+    follow.length ? h('div', { style: { marginTop: '10px' } }, h('h4', {}, 'Follow-ups', h('span', { class: 'n' }, follow.length)),
+      ...follow.map((m) => h('div', { class: 'prompt open', style: { color: 'var(--text-2)', marginBottom: '6px', maxHeight: 'none' } }, `› ${m.text}`))) : null);
+}
+
+function errorsSection(d) {
+  if (!d.errors?.length) return null;
+  const t0 = d.timing?.firstAt || 0;
+  return section('Errors', d.errors.length, h('div', { class: 'errs' }, d.errors.slice(0, 30).map((e) => h('div', { class: 'err-row' },
+    h('div', { class: 'h' }, h('span', {}, [e.source, e.tool, e.method].filter(Boolean).join(' · ')), h('span', { class: 'at mono' }, e.at && t0 ? `+${dur(e.at - t0)}` : '')),
+    h('pre', {}, String(e.message).slice(0, 800))))));
+}
+
+function scenes(d) {
+  const sc = d.outputs?.scenes || [];
+  if (!sc.length) return null;
+  return section('Scenes', sc.length, h('div', { class: 'scenes' }, sc.map((s) => h('div', { class: 'scene', title: s.texts?.join('\n') || s.name, onclick: () => current?.player?.seekSec(s.startSec) },
+    h('div', { class: 'im', style: { backgroundImage: s.thumbnailUrl ? `url(${s.thumbnailUrl})` : 'none' } }),
+    h('div', { class: 'tc' }, `${tc(s.startSec)} · ${((s.endSec - s.startSec)).toFixed(1)}s`),
+    h('div', { class: 'n' }, s.texts?.[0] || s.name)))));
+}
+
+function ids(r, d) {
+  const row = (k, v) => (v ? [h('dt', {}, k), h('dd', {}, h('span', { class: 'mono', style: { cursor: 'copy' }, title: 'Click to copy', onclick: () => copy(v) }, v))] : null);
+  return section('Identifiers', null, h('dl', { class: 'kv' },
+    row('Session', r.id), row('Project', r.projectId || d.projectId), row('Ad asset', r.adAssetId), row('MSID', r.msid || d.msid),
+    row('User', r.userId), row('Account', r.accountId), row('Skill version', (r.codexVersions || []).join(', '))),
+    h('div', { class: 'links', style: { marginTop: '10px' } },
+      h('a', { class: 'btn', href: ADMIN + r.id, target: '_blank', rel: 'noopener' }, icon('external'), 'Wixel admin'),
+      r.publishedUrl ? h('a', { class: 'btn', href: r.publishedUrl, target: '_blank', rel: 'noopener' }, icon('globe'), 'Published page') : null,
+      r.renderUrl ? h('a', { class: 'btn', href: r.renderUrl, target: '_blank', rel: 'noopener', download: '' }, icon('download'), 'Exact render mp4') : null,
+      isReady(mediaOf(r.id)) ? h('a', { class: 'btn', href: videoUrl(r.id), download: `${r.id}.mp4` }, icon('download'), 'Review copy') : null,
+    ));
+}
+
+function details(r, d) {
+  if (d.error) return [h('div', { class: 'loading-line' }, `Couldn't load this run: ${d.error}`)];
+  return [outcome(r, d), mood(d), request(d), errorsSection(d), scenes(d), ids(r, d)].filter(Boolean);
+}
+
+export { worstMood };

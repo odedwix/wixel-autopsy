@@ -1,0 +1,13 @@
+{
+  "name": "skill-run-explorer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "proxy": "node server/server.js",
+    "pull": "node scripts/pull-sample.js",
+    "build:player": "sh scripts/build-player.sh"
+  },
+  "dependencies": {
+    "@temporalio/client": "^1.13.2"
+  }
+}
