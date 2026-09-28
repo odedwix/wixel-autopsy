@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Live player test</title>
+<style>body{margin:0;background:#111;color:#ddd;font:13px system-ui}iframe{width:405px;height:720px;border:0;display:block;margin:12px}#log{padding:0 12px;white-space:pre-wrap}</style></head>
+<body>
+<iframe id="f" src="/player/frame.html" allow="autoplay"></iframe>
+<div id="log"></div>
+<script>
+const run = new URLSearchParams(location.search).get('run');
+const log = (m) => (document.getElementById('log').textContent += m + '\n');
+const input = fetch('/api/player-input/' + run).then((r) => r.json());
+window.addEventListener('message', async (e) => {
+  const t = e.data && e.data.type;
+  if (!t || !t.startsWith('wixel-player:')) return;
+  log(new Date().toISOString().slice(11, 23) + ' ' + t + (e.data.error ? ' ' + e.data.error : ''));
+  if (t === 'wixel-player:ready') {
+    document.getElementById('f').contentWindow.postMessage({ type: 'wixel-player:init', input: await input, options: { controls: true, bundleServerBaseUrl: '' } }, '*');
+  }
+});
+</script></body></html>

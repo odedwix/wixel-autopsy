@@ -1,0 +1,19 @@
+{
+  "name": "wixel-autopsy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "setup": "zsh scripts/setup.sh",
+    "start": "node server/server.js --open",
+    "proxy": "node server/server.js",
+    "pull": "node scripts/pull-sample.js",
+    "build:player": "sh scripts/build-player.sh"
+  },
+  "dependencies": {
+    "@temporalio/client": "^1.13.2"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "description": "Autopsy \u2014 browse and dissect any Wixel agent skill's runs, insights and Genix graph runs"
+}
