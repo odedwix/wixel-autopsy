@@ -1,11 +1,46 @@
 // Facets: OR within a facet, AND across facets. Counts are "what you'd get if you added this
 // option" (every other active facet applied), so they never lie about the result.
 
-export const hasAd = (r) => Boolean(r.adAssetId || r.thumbnail);
+// A run "has output" when it wrote at least one top-level asset (any type the skill makes).
+export const hasAd = (r) => Boolean(r.outputs?.length || r.adAssetId || r.thumbnail);
+export const hasOutput = hasAd;
+// It "tried" when it called something that makes an asset: a media job, an image tool, or a write.
+const MAKERS = new Set(['generate_image', 'edit_image', 'convert_image_format', 'write']);
+export const attempted = (r) => r.generations > 0 || Boolean(r.steps?.some((x) => MAKERS.has(x[0]) && x[3] > 0));
+
+export const TYPE_LABEL = { video: 'Video', image: 'Image', logo: 'Logo', doc: 'Doc', slides: 'Slides', icons: 'Icons', story: 'Story', pdf: 'PDF', form: 'Form', event: 'Event', widget: 'Widget', site: 'Site', asset: 'Asset' };
+export const typeLabel = (t) => TYPE_LABEL[t] || (t ? t[0].toUpperCase() + t.slice(1) : 'Asset');
+
+// What a skill makes, learned from its runs: share of runs producing each output type.
+export function outputProfile(runs) {
+  const counts = new Map();
+  let withOut = 0;
+  for (const r of runs) {
+    const types = new Set((r.outputs || []).map((o) => o.type));
+    if (types.size) withOut++;
+    for (const t of types) counts.set(t, (counts.get(t) || 0) + 1);
+  }
+  return [...counts.entries()].map(([type, n]) => ({ type, runs: n, share: withOut ? n / withOut : 0 })).sort((a, b) => b.runs - a.runs);
+}
+
+// The current skill's profile, shared by the grid, the details panel and insights.
+let currentProfile = [];
+export const setProfile = (p) => (currentProfile = p || []);
+export const getProfile = () => currentProfile;
+
+// The output to show for a run: the skill's main type first, then whatever it wrote last.
+export function primaryOutput(r, profile = currentProfile) {
+  const outs = r.outputs || [];
+  for (const p of profile || []) {
+    const o = outs.find((x) => x.type === p.type);
+    if (o) return o;
+  }
+  return outs[0] || (r.thumbnail ? { id: r.adAssetId, type: r.outputType || 'video', name: r.adName, thumb: r.thumbnail } : null);
+}
 // A step's identity: the RPC method for invoke_rpc, otherwise the tool name.
 export const stepKey = (tool, method) => (tool === 'invoke_rpc' && method ? method : tool);
 export const downloaded = (r) => r.userDownloads > 0 || r.agentDownloads > 0;
-export const failedRun = (r) => r.generations > 0 && !hasAd(r);
+export const failedRun = (r) => attempted(r) && !hasAd(r);
 const GEN_METHOD = /^generate|^holdStill|^transformVideo|LogoShot|^mergeVoice/;
 
 export const MOOD = {
@@ -26,11 +61,12 @@ export const FACETS = [
     key: 'outcome',
     label: 'Result',
     options: [
-      { value: 'video', label: 'Finished video', dot: 'var(--ok)', test: hasAd },
-      { value: 'failed', label: 'Generated, no video', dot: 'var(--err)', test: failedRun },
-      { value: 'none', label: 'Never generated', dot: 'var(--text-3)', test: (r) => !r.generations },
+      { value: 'video', label: 'Produced output', dot: 'var(--ok)', test: hasAd },
+      { value: 'failed', label: 'Tried, no output', dot: 'var(--err)', test: failedRun },
+      { value: 'none', label: 'Never tried', dot: 'var(--text-3)', test: (r) => !hasAd(r) && !attempted(r) },
     ],
   },
+  { key: 'outputType', label: 'Output type', dynamic: (r) => [...new Set((r.outputs || []).map((o) => o.type))], labelOf: (v) => typeLabel(v) },
   {
     key: 'delivery',
     label: 'What the user did',
@@ -79,10 +115,10 @@ export const FACETS = [
   },
   {
     key: 'render',
-    label: 'Video source',
+    label: 'Video render',
     options: [
       { value: 'exact', label: 'Exact render exists', test: (r) => Boolean(r.renderUrl || r.agentDownloadLink) },
-      { value: 'assembled', label: 'Assembled only', test: (r) => hasAd(r) && !r.renderUrl && !r.agentDownloadLink },
+      { value: 'assembled', label: 'Assembled only', test: (r) => Boolean(r.videoAssetId) && !r.renderUrl && !r.agentDownloadLink },
     ],
   },
   { key: 'failedStep', label: 'Failed step', dynamic: (r) => [...new Set((r.steps || []).filter((x) => x[4] > 0).map((x) => stepKey(x[0], x[1])))], limit: 6 },
@@ -96,7 +132,7 @@ export function facetOptions(facet, runs) {
   if (!facet.dynamic) return facet.options;
   const counts = new Map();
   for (const r of runs) for (const v of facet.dynamic(r)) counts.set(v, (counts.get(v) || 0) + 1);
-  return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([value]) => ({ value, label: value, test: (r) => facet.dynamic(r).includes(value) }));
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([value]) => ({ value, label: facet.labelOf ? facet.labelOf(value) : value, test: (r) => facet.dynamic(r).includes(value) }));
 }
 
 // ---- search ----
@@ -159,8 +195,8 @@ export const SORTS = {
 // Headline numbers; each one is also a one-click filter.
 export const STATS = [
   { key: 'all', label: 'Runs', filter: null },
-  { key: 'video', label: 'Finished video', dot: 'var(--ok)', filter: ['outcome', 'video'], test: hasAd },
-  { key: 'failed', label: 'Generated, no video', dot: 'var(--err)', filter: ['outcome', 'failed'], test: failedRun },
+  { key: 'video', label: 'Produced output', dot: 'var(--ok)', filter: ['outcome', 'video'], test: hasAd },
+  { key: 'failed', label: 'Tried, no output', dot: 'var(--err)', filter: ['outcome', 'failed'], test: failedRun },
   { key: 'downloaded', label: 'Downloaded', dot: 'var(--info)', filter: ['delivery', 'downloaded'], test: downloaded },
   { key: 'published', label: 'Published', dot: 'var(--accent)', filter: ['delivery', 'published'], test: (r) => Boolean(r.publishedUrl) },
   { key: 'frustrated', label: 'Frustrated', dot: 'var(--err)', filter: ['mood', 'frustrated'], test: (r) => r.sentiments?.includes('frustrated') },

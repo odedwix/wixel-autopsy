@@ -1,6 +1,6 @@
 import { $, h, icon, ago, fmtInt, getJson, debounce } from './util.js';
 import { state, set, onChange, toggleFilter, clearFilter } from './state.js';
-import { FACETS, STATS, SORTS, applyFilters, facetCounts, facetOptions } from './filters.js';
+import { FACETS, STATS, SORTS, applyFilters, facetCounts, facetOptions, outputProfile, setProfile, typeLabel } from './filters.js';
 import { initGrid, setRuns, relayout, markSelected, scrollToIndex, columns, applySound, stopHover } from './grid.js';
 import { initInspect, openInspect, closeInspect, inspectedPlayer, prefetchDetail, toggleLive, toggleWide, setInspectTabByIndex } from './inspect.js';
 import { computeInsights, renderInsights, headlines } from './insights.js';
@@ -10,6 +10,10 @@ let view = [];
 let loadToken = 0;
 let missing = [];
 let lastSeen = null;
+// Module state lives up here: the boot code below runs before later declarations.
+let loadAbort = null;
+let loadedSessions = 0;
+let refreshQueued = false;
 let insights = null;
 const insightState = { expanded: {}, scrollTo: null };
 const loadEl = h('span', { class: 'load' });
@@ -58,6 +62,10 @@ async function loadSkills() {
 // three at a time, and the grid fills as each one lands. Empty days are never queried.
 async function loadRuns() {
   const token = ++loadToken;
+  // A new selection cancels the previous one's requests; the proxy then drops their queued queries.
+  loadAbort?.abort();
+  loadAbort = new AbortController();
+  const { signal } = loadAbort;
   allRuns = [];
   missing = [];
   lastSeen = null;
@@ -67,18 +75,19 @@ async function loadRuns() {
   // A link/reload with a run open shows it immediately; its detail doesn't depend on the list.
   if (state.open && state.selected) openInspect({ id: state.selected, _stub: true });
   try {
-    const index = await getJson(`/api/runs-index?skill=${encodeURIComponent(state.skill)}&days=${state.days}`);
+    const index = await getJson(`/api/runs-index?skill=${encodeURIComponent(state.skill)}&days=${state.days}`, { signal });
     if (token !== loadToken) return;
     lastSeen = index.lastSeen;
     loading.total = index.dayList.length;
     loading.sessions = index.total;
-    const queue = index.dayList.map((d) => d.day);
+    loadedSessions = index.total;
+    const queue = [...index.dayList];
     const seen = new Set();
     const worker = async () => {
       while (queue.length) {
-        const day = queue.shift();
+        const { day, sessions } = queue.shift();
         try {
-          const runs = await getJson(`/api/runs-day?skill=${encodeURIComponent(state.skill)}&day=${day}`);
+          const runs = await getJson(`/api/runs-day?skill=${encodeURIComponent(state.skill)}&day=${day}&n=${sessions}`, { signal });
           if (token !== loadToken) return;
           for (const r of runs) if (!seen.has(r.id) && seen.add(r.id)) allRuns.push(r);
         } catch (err) {
@@ -106,7 +115,6 @@ async function loadRuns() {
   }
 }
 
-let refreshQueued = false;
 function scheduleRefresh() {
   if (refreshQueued) return;
   refreshQueued = true;
@@ -121,14 +129,17 @@ function skeleton() {
   sizer.replaceChildren();
   sizer.style.height = '0';
   const w = state.size;
-  const [aw, ah] = state.aspect.split(':').map(Number);
+  const [aw, ah] = (state.aspect === 'auto' ? '1:1' : state.aspect).split(':').map(Number);
   const cols = Math.max(1, Math.floor(($('#gridScroll').clientWidth - 28 + 12) / (w + 12)));
   for (let i = 0; i < cols * 2; i++) {
-    sizer.append(h('div', { class: 'skeleton', style: { width: `${w}px`, height: `${(w * ah) / aw + 74}px`, transform: `translate(${(i % cols) * (w + 12)}px, ${Math.floor(i / cols) * ((w * ah) / aw + 86)}px)` } }));
+    sizer.append(h('div', { class: 'skeleton', style: { width: `${w}px`, height: `${(w * ah) / aw + 62}px`, transform: `translate(${(i % cols) * (w + 12)}px, ${Math.floor(i / cols) * ((w * ah) / aw + 74)}px)` } }));
   }
 }
 
 function refreshView() {
+  const profile = outputProfile(allRuns);
+  setProfile(profile);
+  renderProfile(profile);
   view = applyFilters(allRuns, state.filters, state.q).sort(SORTS[state.sort] || SORTS.newest);
   const sizer = $('#gridSizer');
   const keepSkeleton = loading && !allRuns.length;
@@ -144,8 +155,20 @@ function refreshView() {
   renderInsightViews();
   $('#statusLine').dataset.count = view.length;
   const progress = loading ? (loading.total == null ? ' · finding days…' : ` · loading day ${Math.min(loading.done + 1, loading.total)} of ${loading.total} (${fmtInt(loading.sessions)} sessions)…`) : '';
+  const sampled = allRuns.some((r) => r.sampleRate < 1) && loadedSessions ? ` · busy days sampled: showing ${fmtInt(allRuns.length)} of ~${fmtInt(loadedSessions)} sessions (${Math.round((allRuns.length / loadedSessions) * 100)}%)` : '';
   const failed = missing.length ? ` · ⚠ ${missing.length} day(s) failed to load (${missing.map((m) => m.day).join(', ')}) — reload to retry` : '';
-  status(`${fmtInt(view.length)} of ${fmtInt(allRuns.length)} runs · ${state.skill} · last ${state.days}d${progress}${failed}`);
+  status(`${fmtInt(view.length)} of ${fmtInt(allRuns.length)} runs · ${state.skill} · last ${state.days}d${progress}${sampled}${failed}`);
+}
+
+// "Makes: Logo 97% · Image 7%" — the skill's output types, each a one-click filter.
+function renderProfile(profile) {
+  const el = $('#profile');
+  if (!profile.length) return el.replaceChildren();
+  el.replaceChildren(h('span', { class: 'k' }, 'Makes'), ...profile.slice(0, 5).map((p) => {
+    const on = (state.filters.outputType || []).includes(p.type);
+    return h('button', { class: `pf${on ? ' on' : ''}`, title: `${fmtInt(p.runs)} runs produced a ${typeLabel(p.type).toLowerCase()} — click to filter`, onclick: () => toggleFilter('outputType', p.type) },
+      typeLabel(p.type), h('small', {}, `${Math.round(p.share * 100)}%`));
+  }));
 }
 
 // Why the grid is empty, and the one click that fixes it.
@@ -153,6 +176,10 @@ function emptyState() {
   if (allRuns.length) {
     return h('div', { class: 'empty-state' }, h('h2', {}, 'No runs match these filters'), h('p', {}, `${fmtInt(allRuns.length)} runs are hidden by the filters or search.`),
       h('button', { class: 'btn', onclick: () => { set({ q: '' }); clearFilter(); } }, 'Clear filters'));
+  }
+  if (missing.length) {
+    return h('div', { class: 'empty-state' }, h('h2', {}, `Couldn’t load ${missing.length} day(s)`), h('p', {}, missing[0].error?.slice(0, 200) || ''),
+      h('button', { class: 'btn', onclick: loadRuns }, 'Retry'));
   }
   const at = lastSeen?.at;
   const ageDays = at ? (Date.now() - at) / 86400000 : null;
@@ -383,7 +410,7 @@ document.addEventListener('keydown', (e) => {
     v: () => set({ tab: 'videos' }),
     i: () => set({ tab: 'insights' }),
     s: () => set({ sound: !state.sound }),
-    a: () => set({ aspect: { '9:16': '1:1', '1:1': '16:9', '16:9': '9:16' }[state.aspect] }),
+    a: () => set({ aspect: { auto: '9:16', '9:16': '1:1', '1:1': '16:9', '16:9': 'auto' }[state.aspect] || 'auto' }),
     '+': () => set({ size: Math.min(360, state.size + 20) }),
     '=': () => set({ size: Math.min(360, state.size + 20) }),
     '-': () => set({ size: Math.max(120, state.size - 20) }),

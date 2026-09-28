@@ -56,8 +56,8 @@ export function tc(sec, fps = 24) {
 
 export const fmtInt = (n) => (n ?? 0).toLocaleString();
 
-export async function getJson(url) {
-  const res = await fetch(url);
+export async function getJson(url, { signal } = {}) {
+  const res = await fetch(url, { signal });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || `${res.status} ${url}`);
   return body;

@@ -23,8 +23,27 @@ function prune(lane) {
   while (lane.calls.length && lane.calls[0] < cutoff) lane.calls.shift();
 }
 
-async function acquire(lane) {
-  if (lane.active >= lane.concurrency) await new Promise((r) => lane.queue.push(r));
+const abortError = () => Object.assign(new Error('request cancelled'), { name: 'AbortError' });
+
+// Waiting callers can be cancelled (the browser moved on); a call already running is left to
+// finish — its result still fills the cache, and aborting it wouldn't stop the upstream work.
+async function acquire(lane, signal) {
+  if (signal?.aborted) throw abortError();
+  if (lane.active >= lane.concurrency) {
+    await new Promise((resolve, reject) => {
+      const entry = () => {
+        signal?.removeEventListener('abort', onAbort);
+        resolve();
+      };
+      const onAbort = () => {
+        const i = lane.queue.indexOf(entry);
+        if (i >= 0) lane.queue.splice(i, 1);
+        reject(abortError());
+      };
+      signal?.addEventListener('abort', onAbort, { once: true });
+      lane.queue.push(entry);
+    });
+  }
   lane.active++;
   const wait = lane.last + lane.minIntervalMs - Date.now();
   lane.last = Math.max(Date.now(), lane.last + lane.minIntervalMs);
@@ -36,9 +55,9 @@ function release(lane) {
   lane.queue.shift()?.();
 }
 
-export async function limited(name, fn) {
+export async function limited(name, fn, { signal } = {}) {
   const lane = lanes[name];
-  await acquire(lane);
+  await acquire(lane, signal);
   lane.calls.push(Date.now());
   lane.total++;
   prune(lane);

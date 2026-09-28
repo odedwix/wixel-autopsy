@@ -42,7 +42,8 @@ export async function cached(ns, key, maxAgeMs, produce, { staleWhileRevalidate 
       return stale;
     }
   }
-  if (inflight.has(id)) return inflight.get(id);
+  // Joining another caller's work: if that caller was cancelled, redo it for this one.
+  if (inflight.has(id)) return inflight.get(id).catch((err) => (err?.name === 'AbortError' ? cached(ns, key, maxAgeMs, produce, { staleWhileRevalidate }) : Promise.reject(err)));
   return refresh(ns, key, id, produce);
 }
 

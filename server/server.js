@@ -12,9 +12,11 @@ import { createReadStream } from 'node:fs';
 import { playerInput, bundleList, playerScript } from './player.js';
 import { loadReport } from './limits.js';
 import { takeOver, claim } from './singleton.js';
+import { requestContext } from './context.js';
 import { spawn } from 'node:child_process';
 
 const WEB = path.join(config.root, 'web');
+const QUIET = /^\/api\/(load|media-batch|media-queue|health)$/;
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json' };
 
 function send(req, res, status, body, type = 'application/json; charset=utf-8') {
@@ -46,7 +48,7 @@ const routes = [
   [/^\/api\/runs-day$/, async (_m, q) => {
     const day = required(q, 'day');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw Object.assign(new Error('day must be YYYY-MM-DD'), { status: 400 });
-    return runsForDay({ skill: required(q, 'skill'), day });
+    return runsForDay({ skill: required(q, 'skill'), day, sessions: Number(q.get('n') || 0) });
   }],
   [/^\/api\/session\/([\w-]{36})$/, async ([, id], q) => {
     const bundle = await getSessionBundle(id, { fresh: q.get('fresh') === '1' });
@@ -113,14 +115,24 @@ const server = http.createServer(async (req, res) => {
   for (const [re, handler] of routes) {
     const m = url.pathname.match(re);
     if (!m) continue;
+    // The browser dropping the request (skill switched, tab closed) cancels its queued work.
+    const ac = new AbortController();
+    res.on('close', () => !res.writableEnded && ac.abort());
     try {
-      send(req, res, 200, await handler(m, url.searchParams, url));
+      const body = await requestContext.run({ signal: ac.signal }, () => handler(m, url.searchParams, url));
+      if (!ac.signal.aborted) send(req, res, 200, body);
     } catch (err) {
+      if (err?.name === 'AbortError' || ac.signal.aborted) {
+        if (!QUIET.test(url.pathname)) console.log(`${req.method} ${url.pathname}${url.search} cancelled after ${Date.now() - t0}ms`);
+        return;
+      }
       const msg = String(err?.message || err).replace(/eyJ[\w.-]{20,}/g, '<redacted>');
       console.error(`${url.pathname} failed: ${msg}`);
       send(req, res, err.status || 502, { error: msg });
     }
-    console.log(`${req.method} ${url.pathname}${url.search} ${Date.now() - t0}ms`);
+    // Polling endpoints are only logged when slow; everything else always.
+    const ms = Date.now() - t0;
+    if (!QUIET.test(url.pathname) || ms > 1000) console.log(`${req.method} ${url.pathname}${url.search} ${ms}ms`);
     return;
   }
   serveStatic(req, res, url.pathname);

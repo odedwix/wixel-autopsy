@@ -6,6 +6,16 @@ Status: **phase 3**. The grid, insights, the per-run deep dive and the drawn Gen
 
 Open http://localhost:5178 after `npm run proxy`. Run `npm run build:player` once for the exact live player.
 
+## Any skill, any output
+
+Not every skill makes video. A run's **outputs** are the top-level assets its session wrote, taken from the `TURN_UPDATED_ASSETS` session events (asset id, type, name, snapshot) and joined to `v1_asset_crud` for thumbnails and publishes and to `users_193` for downloads.
+- **Output profile:** each skill gets one, learned from its runs and shown in the tab row, e.g. "Makes: Logo 97% · Image 11% · Video 3%". Each type is a filter.
+- **Cards** show the skill's main output type with a type badge and an "N outputs" count. Hovering plays video outputs; for other types it flips through the run's outputs. The card shape is **Auto** by default: logos and images 1:1, slides 16:9, docs 3:4, video 9:16.
+- **The details panel** shows non-video outputs as a gallery: the selected output, a strip of all outputs, and pages for docs and slides.
+- **Result filter:** Produced output / Tried, no output / Never tried. "Tried" means a media job, an image tool or an asset write.
+- **Busy skills are sampled.** Above about 400 sessions a day, a deterministic sample is taken: sessions whose id starts with certain hex characters. The status bar shows the share. Heavy days are also split into hour windows when a query times out.
+- **Stale work is cancelled.** Switching skill or window drops the old selection's queued Trino queries.
+
 ## UI
 
 - **Grid** (virtualized):
@@ -63,6 +73,8 @@ npm start            # (re)starts the app and opens http://localhost:5178
 npm run proxy        # same, without opening the browser
 npm run pull         # warm the cache with a 50-run sample and print a coverage report
 ```
+
+**Desktop launcher:** `./scripts/make-launcher.sh` builds **Skill Runs.app** on the Desktop. Double-clicking it runs `scripts/launch.sh`, which restarts the app in the background (logging to `.cache/app.log`) and opens it.
 
 Starting the app always replaces a copy that's already running: the previous process, found through `.cache/proxy.pid` or as this server listening on the port, is stopped first. Nothing else is ever killed. If a different program holds the port, it exits with a message instead. Ctrl-C stops it.
 

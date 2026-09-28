@@ -24,11 +24,26 @@ ORDER BY 2 DESC`;
 // grid needs to draw a card and filter on, without touching the per-session admin API.
 // Queried one day at a time: the endpoint stops at 30s, and past days can be cached forever.
 // Entries are read up to 2 days past the skill load, which covers every realistic session.
-// Bump when runsDayQuery's output changes, so cached days are re-queried.
-export const RUNS_QUERY_VERSION = 4;
+// A day can be queried in hour windows ([from, to), 0–24) when a whole day is too heavy for the
+// endpoint's 30s limit; sessions belong to the window their first skill load falls in.
+// High-volume skills are sampled per day: keep sessions whose id starts with one of `sample`'s
+// hex characters. Deterministic (the same sessions every time, so it caches) and cheap.
+function sampleClause(sample) {
+  if (!sample) return '';
+  if (!/^[0-9a-f]{1,15}$/.test(sample)) throw new Error(`bad sample ${sample}`);
+  return `\n     AND substr(session_id, 1, 1) IN (${[...sample].map((c) => `'${c}'`).join(',')})`;
+}
 
-export function runsDayQuery({ skill, day }) {
+function checkHours([a, b]) {
+  if (!(Number.isInteger(a) && Number.isInteger(b) && a >= 0 && b <= 24 && a < b)) throw new Error(`bad hours ${a}-${b}`);
+}
+
+// Bump when runsDayQuery's output changes, so cached days are re-queried.
+export const RUNS_QUERY_VERSION = 5;
+
+export function runsDayQuery({ skill, day, hours = [0, 24], sample = null }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error(`bad day ${day}`);
+  checkHours(hours);
   return `
 WITH picked AS (
   SELECT session_id AS sid, min(created_date) AS skill_at
@@ -36,9 +51,10 @@ WITH picked AS (
   WHERE entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'skill'
     AND element_at(tool_call.arguments, 'name') = ${lit(skill)}
     AND created_date >= TIMESTAMP '${day} 00:00:00' - INTERVAL '1' DAY
-    AND created_date < TIMESTAMP '${day} 00:00:00' + INTERVAL '1' DAY
+    AND created_date < TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[1]}' HOUR
   GROUP BY 1
-  HAVING min(created_date) >= TIMESTAMP '${day} 00:00:00'
+  HAVING min(created_date) >= TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[0]}' HOUR
+     AND min(created_date) < TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[1]}' HOUR${sampleClause(sample)}
 ),
 e AS (
   SELECT x.*, picked.skill_at AS picked_at, element_at(x.tool_result.result, 'output') AS out
@@ -80,8 +96,7 @@ agg AS (
   FROM e
   GROUP BY session_id
 )
-SELECT * FROM agg
-ORDER BY first_ts DESC`;
+SELECT * FROM agg ORDER BY session_id`;
 }
 
 // Session and account attributes for a page of runs. Kept out of runsQuery because the
@@ -105,10 +120,12 @@ SELECT 'account', a.account_id, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 FROM a LEFT JOIN t ON t.account_id = a.account_id`;
 }
 
-// User-facing session events for the same day's sessions (thumbs, out of credits, stream errors).
+// User-facing session events for the same day's sessions (thumbs, out of credits, stream errors)
+// and the assets each run wrote.
 // Separate from runsDayQuery so each stays well under the endpoint's 30s limit.
-export function eventsDayQuery({ skill, day }) {
+export function eventsDayQuery({ skill, day, hours = [0, 24], sample = null }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error(`bad day ${day}`);
+  checkHours(hours);
   return `
 WITH picked AS (
   SELECT session_id AS sid
@@ -116,9 +133,10 @@ WITH picked AS (
   WHERE entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'skill'
     AND element_at(tool_call.arguments, 'name') = ${lit(skill)}
     AND created_date >= TIMESTAMP '${day} 00:00:00' - INTERVAL '1' DAY
-    AND created_date < TIMESTAMP '${day} 00:00:00' + INTERVAL '1' DAY
+    AND created_date < TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[1]}' HOUR
   GROUP BY 1
-  HAVING min(created_date) >= TIMESTAMP '${day} 00:00:00'
+  HAVING min(created_date) >= TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[0]}' HOUR
+     AND min(created_date) < TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[1]}' HOUR${sampleClause(sample)}
 )
 SELECT
   x.session_id,
@@ -126,12 +144,15 @@ SELECT
   count(DISTINCT x.id) FILTER (WHERE x.event_type = 'USER_FEEDBACK' AND element_at(x.payload, 'feedback') = 'thumbs_down') AS thumbs_down,
   array_agg(DISTINCT element_at(x.payload, 'tags')) FILTER (WHERE x.event_type = 'USER_FEEDBACK' AND element_at(x.payload, 'tags') IS NOT NULL) AS feedback_tags,
   count(DISTINCT x.id) FILTER (WHERE x.event_type = 'OUT_OF_FUNDS') AS out_of_funds,
-  count(DISTINCT x.id) FILTER (WHERE x.event_type = 'MODEL_STREAM_ERROR') AS stream_errors
+  count(DISTINCT x.id) FILTER (WHERE x.event_type = 'MODEL_STREAM_ERROR') AS stream_errors,
+  -- The assets each turn wrote (id, name, assetType, intent, snapshotUrl): the run's outputs, exactly.
+  array_agg(element_at(x.payload, 'assets')) FILTER (WHERE x.event_type = 'TURN_UPDATED_ASSETS') AS asset_events
 FROM domain_events.www_wixel_agent.v1_session_event_crud x JOIN picked ON picked.sid = x.session_id
 WHERE x.created_date >= TIMESTAMP '${day} 00:00:00' - INTERVAL '1' DAY
   AND x.created_date < TIMESTAMP '${day} 00:00:00' + INTERVAL '3' DAY
-  AND x.event_type IN ('USER_FEEDBACK', 'OUT_OF_FUNDS', 'MODEL_STREAM_ERROR')
-GROUP BY 1`;
+  AND x.event_type IN ('USER_FEEDBACK', 'OUT_OF_FUNDS', 'MODEL_STREAM_ERROR', 'TURN_UPDATED_ASSETS')
+GROUP BY 1
+ORDER BY 1`;
 }
 
 // Which UTC days in the window have sessions that first loaded `skill`, and when it last ran.
@@ -167,8 +188,9 @@ WHERE entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'skill'
 // time, plus request → first generation → last good generation → turn completions, and the
 // first turn's classified intent. Computed in Trino so insights never fetch sessions one by one.
 export const STEPS_QUERY_VERSION = 1;
-export function stepsDayQuery({ skill, day }) {
+export function stepsDayQuery({ skill, day, hours = [0, 24], sample = null }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error(`bad day ${day}`);
+  checkHours(hours);
   const failed = `(tool_result.status LIKE '%ERROR%' OR element_at(tool_result.result, 'output') LIKE 'Exception%' OR element_at(tool_result.result, 'output') LIKE '%error_json:%')`;
   return `
 WITH picked AS (
@@ -177,9 +199,10 @@ WITH picked AS (
   WHERE entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'skill'
     AND element_at(tool_call.arguments, 'name') = ${lit(skill)}
     AND created_date >= TIMESTAMP '${day} 00:00:00' - INTERVAL '1' DAY
-    AND created_date < TIMESTAMP '${day} 00:00:00' + INTERVAL '1' DAY
+    AND created_date < TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[1]}' HOUR
   GROUP BY 1
-  HAVING min(created_date) >= TIMESTAMP '${day} 00:00:00'
+  HAVING min(created_date) >= TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[0]}' HOUR
+     AND min(created_date) < TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[1]}' HOUR${sampleClause(sample)}
 ),
 e AS (
   SELECT x.* FROM ${ENTRIES} x JOIN picked ON picked.sid = x.session_id
@@ -223,5 +246,6 @@ LEFT JOIN (
     CAST(CAST(coalesce(round(ms), 0) AS bigint) AS varchar), CAST(CAST(coalesce(round(max_ms), 0) AS bigint) AS varchar),
     coalesce(replace(err, chr(31), ' '), ''))) AS steps
   FROM st GROUP BY 1
-) s ON s.session_id = t.session_id`;
+) s ON s.session_id = t.session_id
+ORDER BY t.session_id`;
 }

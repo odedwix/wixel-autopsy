@@ -1,13 +1,13 @@
 import { h, icon, ago, dur } from './util.js';
 import { state } from './state.js';
-import { hasAd, failedRun, worstMood, MOOD } from './filters.js';
+import { hasAd, failedRun, attempted, worstMood, MOOD, primaryOutput, typeLabel, getProfile } from './filters.js';
 import { mediaOf, isReady, want, onMedia, prioritize, videoUrl, spriteUrl, placeSprite } from './media.js';
 
 // Virtualized card grid. Only rows in (or near) the viewport exist in the DOM; cards are keyed by
 // run id and reused across scrolls. One shared <video> does hover playback.
 
 const GAP = 12;
-const META_H = 74;
+const META_H = 62;
 const OVERSCAN_ROWS = 2;
 
 let scroller;
@@ -36,8 +36,17 @@ export function initGrid(el, sizerEl, { open, select }) {
   });
 }
 
+let lastShape = null;
 export function setRuns(list) {
   runs = list;
+  const shape = effectiveAspect();
+  if (shape !== lastShape) {
+    lastShape = shape;
+    for (const [id, c] of cards) {
+      c.remove();
+      cards.delete(id);
+    }
+  }
   for (const [id, c] of cards) {
     c.remove();
     cards.delete(id);
@@ -55,8 +64,15 @@ export function relayout() {
   render();
 }
 
+// "auto" picks the card shape from what the skill makes, so logos aren't letterboxed into
+// vertical video cards (and more of them fit on screen).
+const AUTO_SHAPE = { video: '9:16', story: '9:16', logo: '1:1', image: '1:1', icons: '1:1', slides: '16:9', doc: '3:4', pdf: '3:4' };
+export function effectiveAspect() {
+  if (state.aspect !== 'auto') return state.aspect;
+  return AUTO_SHAPE[getProfile()[0]?.type] || '1:1';
+}
 function aspect() {
-  const [w, h] = state.aspect.split(':').map(Number);
+  const [w, h] = effectiveAspect().split(':').map(Number);
   return h / w;
 }
 
@@ -72,6 +88,7 @@ function measure() {
 }
 
 export const columns = () => layout.cols;
+export { isVideoRun };
 
 function render() {
   if (!scroller) return;
@@ -112,7 +129,13 @@ function render() {
   want(ids);
 }
 
-const wantsMedia = (r) => r && (hasAd(r) || r.generations > 0);
+// Review media (hover video, sprite) only exists for video outputs.
+const primary = (r) => primaryOutput(r);
+const isVideoRun = (r) => {
+  const p = primary(r);
+  return p ? p.type === 'video' : r.generations > 0 && !r.outputs?.length;
+};
+const wantsMedia = (r) => r && (hasAd(r) || r.generations > 0) && isVideoRun(r);
 
 export function markSelected() {
   for (const [id, c] of cards) c.classList.toggle('sel', id === state.selected);
@@ -127,7 +150,7 @@ export function scrollToIndex(i) {
 
 // ---------- card ----------
 function title(r) {
-  return r.adName?.replace(/\s*[-—]\s*Root$/i, '') || r.title || r.prompt?.slice(0, 80) || 'Untitled run';
+  return primary(r)?.name?.replace(/\s*[-—]\s*Root$/i, '') || r.title || r.prompt?.slice(0, 80) || 'Untitled run';
 }
 
 function userType(r) {
@@ -185,15 +208,17 @@ function buildCard(r) {
 
 function fillThumb(c, r) {
   const thumb = c._thumb;
-  const m = mediaOf(r.id);
+  const p = primary(r);
+  const video = isVideoRun(r);
+  const m = video ? mediaOf(r.id) : null;
   const keepVideo = hover.card === c ? hover.video : null;
   thumb.replaceChildren();
-  const poster = isReady(m) ? `/media/${r.id}/poster.jpg` : r.thumbnail;
+  const poster = isReady(m) ? `/media/${r.id}/poster.jpg` : p?.thumb || r.thumbnail;
   if (poster) thumb.append(h('img', { class: 'poster', src: poster, loading: 'lazy', decoding: 'async', alt: '' }));
   else if (failedRun(r)) {
-    thumb.append(h('div', { class: 'empty err' }, icon('alert'), h('b', {}, 'Generated, no video'), r.firstError ? h('div', { class: 'msg' }, r.firstError) : null));
-  } else if (!r.generations) {
-    thumb.append(h('div', { class: 'empty' }, icon('sparkle'), 'Never reached generation'));
+    thumb.append(h('div', { class: 'empty err' }, icon('alert'), h('b', {}, 'Tried, no output'), r.firstError ? h('div', { class: 'msg' }, r.firstError) : null));
+  } else if (!attempted(r)) {
+    thumb.append(h('div', { class: 'empty' }, icon('sparkle'), 'Never tried to make anything'));
   }
   if (isReady(m)) {
     const sp = h('div', { class: 'sprite', style: { backgroundImage: `url(${spriteUrl(r.id)})` } });
@@ -201,16 +226,19 @@ function fillThumb(c, r) {
     c._sprite = sp;
   } else c._sprite = null;
   thumb.append(h('div', { class: 'progress' }));
-  // Source badge: exact render vs assembled vs clip; plus duration when known.
-  if (m?.state === 'ready') {
+  if (video && m?.state === 'ready') {
     const cls = m.kind === 'render' ? 'exact' : m.kind;
     const label = m.kind === 'render' ? 'Exact' : m.kind === 'assembled' ? 'Assembled' : 'Clip';
     thumb.append(h('span', { class: `badge tl ${cls}`, title: m.label }, label));
     thumb.append(h('span', { class: 'badge tr' }, `${Math.round(m.duration)}s`));
-  } else if (m && !['failed', 'unavailable'].includes(m.state) && wantsMedia(r)) {
+  } else if (video && m && !['failed', 'unavailable'].includes(m.state) && wantsMedia(r)) {
     thumb.append(h('span', { class: 'badge tl pending', title: 'Preparing review video' }, m.state === 'processing' ? 'Preparing' : 'Queued'));
+  } else if (p && p.type !== 'video') {
+    thumb.append(h('span', { class: 'badge tl type' }, typeLabel(p.type)));
   }
-  if (failedRun(r) && poster) thumb.append(h('span', { class: 'badge br fail' }, 'No final video'));
+  const n = r.outputs?.length || 0;
+  if (n > 1) thumb.append(h('span', { class: 'badge br', title: r.outputs.map((o) => `${typeLabel(o.type)} · ${o.name || ''}`).join('\n') }, `${n} outputs`));
+  if (failedRun(r) && poster) thumb.append(h('span', { class: 'badge br fail' }, 'No output'));
   if (keepVideo) thumb.append(keepVideo);
 }
 
@@ -248,6 +276,7 @@ function startHover(c, e) {
   hover.card = c;
   hover.lastX = e.clientX;
   const r = c._run;
+  if (!isVideoRun(r)) return cycleOutputs(c, r);
   const m = mediaOf(r.id);
   if (!isReady(m)) {
     prioritize(r.id);
@@ -275,6 +304,7 @@ function play() {
 
 function moveHover(c, e) {
   if (hover.card !== c) return startHover(c, e);
+  if (!isVideoRun(c._run)) return;
   const m = mediaOf(c._run.id);
   if (!isReady(m) || hover.lastX == null) return;
   if (Math.abs(e.clientX - hover.lastX) < 3) return;
@@ -299,7 +329,28 @@ function moveHover(c, e) {
   hover.restTimer = setTimeout(() => play(), 380);
 }
 
+// Non-video runs: hovering flips through everything the run made (logos, images, pages…).
+function cycleOutputs(c, r) {
+  const thumbs = (r.outputs || []).map((o) => o.thumb).filter(Boolean);
+  if (thumbs.length < 2) return;
+  const img = c._thumb.querySelector('img.poster');
+  if (!img) return;
+  hover.origSrc = img.src;
+  let i = 0;
+  const bar = c._thumb.querySelector('.progress');
+  c._thumb.classList.add('scrub');
+  hover.cycle = setInterval(() => {
+    i = (i + 1) % thumbs.length;
+    img.src = thumbs[i];
+    if (bar) bar.style.width = `${((i + 1) / thumbs.length) * 100}%`;
+  }, 650);
+  hover.cycleImg = img;
+}
+
 export function stopHover() {
+  clearInterval(hover.cycle);
+  if (hover.cycleImg && hover.origSrc) hover.cycleImg.src = hover.origSrc;
+  hover.cycle = hover.cycleImg = hover.origSrc = null;
   clearTimeout(hover.restTimer);
   if (hover.video) {
     hover.video.pause();

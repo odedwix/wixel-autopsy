@@ -1,6 +1,7 @@
 import { config } from './config.js';
 import { cached } from './cache.js';
 import { limited } from './limits.js';
+import { currentSignal } from './context.js';
 
 // Wixel Agent admin API. Reachable from the Wix network without a cookie.
 
@@ -25,10 +26,10 @@ async function getJson(url, { timeoutMs = 60000, retries = 2, body } = {}) {
 
 // Runs Trino SQL through the admin analytics endpoint. It caps each call at 500 rows and
 // 30s of Trino time, so page with offset until a short page comes back.
-export async function sql(query, { maxRows = 5000 } = {}) {
+export async function sql(query, { maxRows = 5000, signal = currentSignal() } = {}) {
   const rows = [];
   for (let offset = 0; offset < maxRows; offset += 500) {
-    const res = await limited('trino', () => getJson(`${config.adminBase}/analytics/session-entries`, { timeoutMs: 90000, body: { mode: 'sql', sql: query, limit: 500, offset } }));
+    const res = await limited('trino', () => getJson(`${config.adminBase}/analytics/session-entries`, { timeoutMs: 90000, body: { mode: 'sql', sql: query, limit: 500, offset } }), { signal });
     if (res.error) throw new Error(`SQL: ${res.error}`);
     rows.push(...res.rows);
     if (res.rows.length < 500) break;

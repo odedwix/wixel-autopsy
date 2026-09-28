@@ -1,5 +1,5 @@
 import { h, icon, dur, fmtInt, ago } from './util.js';
-import { hasAd, failedRun, downloaded, worstMood, MOOD, stepKey } from './filters.js';
+import { hasAd, failedRun, attempted, downloaded, worstMood, MOOD, stepKey, getProfile, typeLabel } from './filters.js';
 
 // Insights over the runs in view (skill + window + filters + search). Everything is computed in
 // the browser from data the list already carries — no extra load on any upstream system.
@@ -63,11 +63,14 @@ const STOP = new Set(('video videos ad ads promo promotional promotion commercia
   + 'criar crear crea cria criação creación promocional promocionais promotionnelle promotionnel promozionale promosyon tanıtım videosu videos videó '
   + 'erstellen erstelle werbe für und mit para con per pour avec sur del los las les des une ein eine der die das el la le di da do dos das em um uma een voor '
   + 'plan format scenes scene maker style new-video שיווקי סרטון תדמית choose créer creer sito sitesi site-web edit project generator '
-  + 'fewest longest budgets budget owns ref2vid test demo sample draft version copy untitled').split(' '));
+  + 'fewest longest budgets budget owns ref2vid test demo sample draft version copy untitled '
+  + 'https http www com net org io wix wixel html image images agent provider provider\'s filter session reword refused once stop one not which what when where who how why '
+  + 'all any are but can could did does done each few had has have her him his its just may more most much must now only other our out over own same she should some such than then there these they those too very was were will would you').split(' '));
 function subjects(runs) {
   const counts = new Map();
   for (const r of runs) {
-    const words = new Set(String(r.title || '').toLowerCase().split(/[^\p{L}\p{N}']+/u).filter((w) => w.length > 2 && !STOP.has(w)));
+    const words = new Set(String(r.title || '').toLowerCase().split(/[^\p{L}\p{N}']+/u)
+      .filter((w) => w.length > 2 && !STOP.has(w) && !/\d/.test(w) && !/^[0-9a-f]{6,}$/.test(w)));
     for (const w of words) counts.set(w, (counts.get(w) || 0) + 1);
   }
   // A subject has to come from at least 3 runs; digits-only and single-script noise are dropped.
@@ -88,7 +91,8 @@ function normPrompt(p) {
 // ---------- compute ----------
 export function computeInsights(runs) {
   const withSteps = runs.filter((r) => r.steps);
-  const reached = runs.filter((r) => r.generations > 0);
+  // "Tried" = called something that makes an asset (media job, image tool, write) — works for any skill.
+  const reached = runs.filter(attempted);
   const finished = runs.filter(hasAd);
   const finishedOfReached = reached.filter(hasAd);
   const failed = runs.filter(failedRun);
@@ -207,6 +211,7 @@ export function computeInsights(runs) {
     versions: [...versions.values()].sort((a, b) => b.runs.length - a.runs.length),
     cost, costPerFinished: finished.length ? cost / finished.length : null,
     employees: runs.filter((r) => r.userType === 'employee' || r.userType === 'wixel-team').length,
+    profile: getProfile(),
   };
 }
 
@@ -221,7 +226,7 @@ export function headlines(ins, go) {
   if (ins.intents[0]) out.push(h('button', { class: 'headline', onclick: () => go('asks') }, icon('user'), 'Top ask', h('b', {}, ins.intents[0][0]), pc(share(ins.intents[0][1], ins.n))));
   const fr = ins.moodCounts.frustrated;
   if (fr) out.push(h('button', { class: 'headline', onclick: () => go('mood') }, icon('frustrated'), h('b', {}, pc(share(fr, ins.n))), 'frustrated'));
-  if (ins.finished.length) out.push(h('button', { class: 'headline', onclick: () => go('funnel') }, icon('download'), h('b', {}, pc(share(ins.dl.length + ins.pub.filter((r) => !downloaded(r)).length, ins.finished.length))), 'of finished videos were used'));
+  if (ins.finished.length) out.push(h('button', { class: 'headline', onclick: () => go('funnel') }, icon('download'), h('b', {}, pc(share(ins.dl.length + ins.pub.filter((r) => !downloaded(r)).length, ins.finished.length))), 'of runs with output were used'));
   return out;
 }
 
@@ -244,7 +249,7 @@ function tooltip(el, text) {
 }
 
 function card(id, title, desc, ...body) {
-  return h('section', { class: `ins-card${id === 'overview' || id === 'tools' ? ' wide' : ''}`, id: `ins-${id}` }, h('h3', {}, title), desc ? h('p', { class: 'desc' }, desc) : null, ...body);
+  return h('section', { class: 'ins-card', id: `ins-${id}` }, h('h3', {}, title), desc ? h('p', { class: 'desc' }, desc) : null, ...body.filter(Boolean));
 }
 
 function tile(v, k, x) {
@@ -296,22 +301,23 @@ export function renderInsights(root, ins, act) {
 
   // Overview tiles
   const overview = card('overview', 'Overview', `${fmtInt(ins.n)} runs in view — every number follows the skill, window, filters and search.${partial}`,
-    h('div', { class: 'tiles' },
-      tile(pc(share(ins.finishedOfReached.length, ins.reached.length)), 'Finished-video rate', `${fmtInt(ins.finishedOfReached.length)} of ${fmtInt(ins.reached.length)} that generated`),
-      tile(p50(ins.toFinal), 'Request → final video', `median · p90 ${p90(ins.toFinal)}`),
-      tile(p50(ins.toFirst), 'Request → first clip', `median · p90 ${p90(ins.toFirst)}`),
+    h('div', { class: 'tiles' }, ...[
+      tile(pc(share(ins.finishedOfReached.length, ins.reached.length)), 'Output rate', `${fmtInt(ins.finishedOfReached.length)} of ${fmtInt(ins.reached.length)} that tried`),
+      tile(p50(ins.toFinal), 'Request → final output', `median · p90 ${p90(ins.toFinal)}`),
+      tile(p50(ins.toFirst), 'Request → first generation', `median · p90 ${p90(ins.toFirst)}`),
       tile(ins.genCalls ? dur(ins.genMs / ins.genCalls) : '–', 'Avg generation call', `${fmtInt(ins.genCalls)} calls`),
-      tile(pc(share(ins.dl.length, ins.finished.length)), 'Downloaded', `${fmtInt(ins.dl.length)} of ${fmtInt(ins.finished.length)} finished`),
-      tile(pc(share(ins.pub.length, ins.finished.length)), 'Published', `${fmtInt(ins.pub.length)} of ${fmtInt(ins.finished.length)} finished`),
+      tile(pc(share(ins.dl.length, ins.finished.length)), 'Downloaded', `${fmtInt(ins.dl.length)} of ${fmtInt(ins.finished.length)} with output`),
+      tile(pc(share(ins.pub.length, ins.finished.length)), 'Published', `${fmtInt(ins.pub.length)} of ${fmtInt(ins.finished.length)} with output`),
       tile(pc(share(ins.moodCounts.frustrated, ins.n)), 'Had a frustrated turn', `${fmtInt(ins.moodCounts.frustrated)} runs`),
-      tile(money(ins.costPerFinished), 'Cost per finished video', `${money(ins.cost)} total`),
-    ));
+      tile(money(ins.costPerFinished), 'Cost per run with output', `${money(ins.cost)} total`),
+      ins.profile.length ? tile(typeLabel(ins.profile[0].type), 'Main output', ins.profile.slice(0, 3).map((p) => `${typeLabel(p.type)} ${pc(p.share)}`).join(' · ')) : null,
+    ].filter(Boolean)));
 
   // Funnel (ordinal blue ramp)
   const steps = [
     ['Loaded the skill', ins.n, null],
-    ['Reached generation', ins.reached.length, ['outcome', 'video']],
-    ['Finished video', ins.finishedOfReached.length, ['outcome', 'video']],
+    ['Tried to make something', ins.reached.length, null],
+    ['Produced output', ins.finishedOfReached.length, ['outcome', 'video']],
     ['Downloaded', ins.dl.length, ['delivery', 'downloaded']],
     ['Published', ins.pub.length, ['delivery', 'published']],
   ];
@@ -327,8 +333,8 @@ export function renderInsights(root, ins, act) {
     barList(cats, { fmt: dur, tipText: (r) => `${r.label}: median ${dur(r.value)} per run (in ${fmtInt(r.n)} runs)` }),
     h('div', { class: 'tiles', style: { marginTop: '12px' } },
       tile(p50(ins.firstTurn), 'First turn', `median · p90 ${p90(ins.firstTurn)}`),
-      tile(p50(ins.toFirst), 'Until first clip', `median · p90 ${p90(ins.toFirst)}`),
-      tile(p50(ins.toFinal), 'Until final video', `median · p90 ${p90(ins.toFinal)}`)));
+      tile(p50(ins.toFirst), 'Until first generation', `median · p90 ${p90(ins.toFirst)}`),
+      tile(p50(ins.toFinal), 'Until final output', `median · p90 ${p90(ins.toFinal)}`)));
 
   // Tools table (wide)
   const tools = card('tools', 'Tools & methods', 'Every tool call in these runs. Sort by any column; click a row to see the runs where it failed.', ...toolsTable(ins, act));
@@ -359,7 +365,7 @@ export function renderInsights(root, ins, act) {
 
   // Repeated requests
   const rep = card('repeats', 'Most repeated requests', 'Identical prompts. Many users = a template or API caller; one user = retrying.',
-    ins.repeated.length ? h('div', {}, ins.repeated.slice(0, 7).map((g) => tooltip(h('div', { class: 'rep', onclick: () => act.search(normPrompt(g.prompt).split(' ').slice(0, 6).join(' ')) },
+    ins.repeated.length ? h('div', {}, ins.repeated.slice(0, 6).map((g) => tooltip(h('div', { class: 'rep', onclick: () => act.search(normPrompt(g.prompt).split(' ').slice(0, 6).join(' ')) },
       h('span', { class: 't' }, g.prompt.replace(/<HIDDEN>[\s\S]*/i, '').trim() || g.prompt),
       h('span', { class: 'n' }, `${g.runs.length}× · ${g.users.size} user${g.users.size > 1 ? 's' : ''}`)),
     `${g.runs.length} runs, ${g.users.size} distinct users\n${g.runs.filter(hasAd).length} finished · ${g.runs.filter(failedRun).length} failed\nlast ${ago(Math.max(...g.runs.map((r) => r.createdAt)))} · click to search`))) : h('p', { class: 'desc' }, 'No repeated prompts.'));
@@ -377,7 +383,7 @@ export function renderInsights(root, ins, act) {
       h('span', { class: 'pill err' }, icon('down', 'sm'), `${fmtInt(ins.thumbsDown)} thumbs down`),
       ...ins.tags.slice(0, 6).map(([t, n]) => h('span', { class: 'pill' }, `${t} ×${n}`)),
       ins.outOfFunds ? h('span', { class: 'pill warn' }, icon('card', 'sm'), `${fmtInt(ins.outOfFunds)} runs out of credits`) : null),
-    ins.quotes.length ? h('div', { class: 'quotes' }, ins.quotes.slice(0, 6).map((r) => h('div', { class: 'quote', onclick: () => act.open(r.id) }, `“${r.sentimentDetail}”`,
+    ins.quotes.length ? h('div', { class: 'quotes' }, ins.quotes.slice(0, 4).map((r) => h('div', { class: 'quote', onclick: () => act.open(r.id) }, `“${r.sentimentDetail}”`,
       h('small', {}, `${r.title || 'Untitled'} · ${ago(r.createdAt)} · ${r.sentiments.includes('frustrated') ? 'frustrated' : 'confused'}`)))) : null);
 
   // Daily trend: stacked columns (status colors carry state, legend + tooltip carry labels)
@@ -387,17 +393,17 @@ export function renderInsights(root, ins, act) {
       h('span', { style: { height: `${(d.finished / maxDay) * 100}%`, background: 'var(--viz-good)' } }),
       h('span', { style: { height: `${(d.failed / maxDay) * 100}%`, background: 'var(--viz-crit)' } }),
       h('span', { style: { height: `${(d.none / maxDay) * 100}%`, background: 'var(--viz-none)' } })),
-    `${d.day}\n${fmtInt(d.finished + d.failed + d.none)} runs\n${fmtInt(d.finished)} finished · ${fmtInt(d.failed)} generated, no video · ${fmtInt(d.none)} never generated`))),
+    `${d.day}\n${fmtInt(d.finished + d.failed + d.none)} runs\n${fmtInt(d.finished)} with output · ${fmtInt(d.failed)} tried, no output · ${fmtInt(d.none)} never tried`))),
     h('div', { class: 'col-axis' }, ins.days.map((d, i) => h('span', {}, i === 0 || i === ins.days.length - 1 || ins.days.length < 10 ? d.day.slice(5) : ''))),
-    h('div', { class: 'legend', style: { marginTop: '8px' } }, h('span', {}, h('i', { style: { background: 'var(--viz-good)' } }), 'Finished video'), h('span', {}, h('i', { style: { background: 'var(--viz-crit)' } }), 'Generated, no video'), h('span', {}, h('i', { style: { background: 'var(--viz-none)' } }), 'Never generated')));
+    h('div', { class: 'legend', style: { marginTop: '8px' } }, h('span', {}, h('i', { style: { background: 'var(--viz-good)' } }), 'Produced output'), h('span', {}, h('i', { style: { background: 'var(--viz-crit)' } }), 'Tried, no output'), h('span', {}, h('i', { style: { background: 'var(--viz-none)' } }), 'Never tried')));
 
   // Skill versions
   const vers = card('versions', 'Skill versions', 'Outcomes by the skill (codex) version each run used — did a change help?',
     ins.versions.length ? h('table', { class: 'ins' },
-      h('thead', {}, h('tr', {}, h('th', {}, 'Version'), h('th', {}, 'Runs'), h('th', {}, 'Finished'), h('th', {}, 'Frustrated'), h('th', {}, 'Median to final'))),
+      h('thead', {}, h('tr', {}, h('th', {}, 'Version'), h('th', {}, 'Runs'), h('th', {}, 'Output rate'), h('th', {}, 'Frustrated'), h('th', {}, 'Median to final'))),
       h('tbody', {}, ins.versions.slice(0, 6).map((v) => {
-        const gen = v.runs.filter((r) => r.generations > 0);
-        const fin = v.runs.filter(hasAd);
+        const gen = v.runs.filter(attempted);
+        const fin = gen.filter(hasAd);
         const tf = fin.filter((r) => r.requestAt && r.finalAt).map((r) => r.finalAt - r.requestAt);
         return h('tr', { onclick: () => act.search(v.v) },
           h('td', { title: v.v, class: 'mono' }, `${v.v.slice(0, 8)} · ${new Date(v.first).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`),
@@ -405,7 +411,9 @@ export function renderInsights(root, ins, act) {
           h('td', {}, pc(share(v.runs.filter((r) => r.sentiments?.includes('frustrated')).length, v.runs.length))), h('td', {}, dur(pct(tf, 50))));
       }))) : h('p', { class: 'desc' }, 'No version data.'));
 
-  root.replaceChildren(h('p', { class: 'ins-note' }, `Insights for ${act.label()}. Click anything to filter the videos.`),
-    h('div', { class: 'ins-grid' }, overview, tools, funnel, timing, modelsCard, errors, asks, rep, mood, trend, vers));
+  // Wide cards across the top, then the rest packed into masonry columns (no height gaps).
+  root.replaceChildren(h('p', { class: 'ins-note' }, `Insights for ${act.label()}. Click anything to filter the runs.`),
+    h('div', { class: 'ins-wide' }, overview, tools),
+    h('div', { class: 'ins-masonry' }, funnel, mood, errors, timing, modelsCard, asks, rep, trend, vers));
   if (act.scrollTo) root.querySelector(`#ins-${act.scrollTo}`)?.scrollIntoView({ block: 'start' });
 }

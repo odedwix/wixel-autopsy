@@ -284,6 +284,18 @@ export function normalizeSession(bundle) {
         scenes: scenes.map(sceneRecord).sort((a, b) => a.order - b.order),
       }
     : null;
+  // ---- every top-level asset with its pages/parts (for non-video skills: docs, slides, logos…) ----
+  const assetTree = list.filter((a) => !a.parentId).map((a) => ({
+    id: a.id,
+    type: String(a.type || '').toLowerCase(),
+    name: a.name,
+    thumbnailUrl: a.thumbnailUrl || null,
+    updated: ms(a.updatedDate),
+    children: list.filter((c) => c.parentId === a.id)
+      .sort((x, y) => (x.layout?.order?.indexInParent ?? 0) - (y.layout?.order?.indexInParent ?? 0))
+      .map((c) => ({ id: c.id, name: c.name, type: String(c.type || '').toLowerCase(), thumbnailUrl: c.thumbnailUrl || null })),
+  }));
+
   // ---- lineage: which steps made each scene's clip ----
   // A step's inputs are the media URLs in its args; its outputs the media it produced. Walking
   // producer → inputs → their producers gives the chain (image → edit → video → voice merge).
@@ -386,6 +398,7 @@ export function normalizeSession(bundle) {
     brief,
     scraped,
     brand,
+    assetTree,
     turns: turnList,
     steps,
     modelCalls,

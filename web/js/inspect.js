@@ -2,7 +2,8 @@ import { h, icon, ago, dur, dateTime, tc, getJson, copy } from './util.js';
 import { state, set } from './state.js';
 import { renderTimeline } from './timeline.js';
 import { renderScenes, renderBrand, renderAssets, renderRaw } from './deep.js';
-import { MOOD, worstMood, failedRun, hasAd } from './filters.js';
+import { MOOD, worstMood, failedRun, hasAd, primaryOutput, typeLabel } from './filters.js';
+import { isVideoRun } from './grid.js';
 import { mediaOf, isReady, prioritize, onMedia, videoUrl, spriteUrl, placeSprite } from './media.js';
 
 const ADMIN = 'https://wix-bo.com/wixel-agent/admin/#/sessions/';
@@ -48,6 +49,7 @@ export function openInspect(run) {
     panel.querySelector('.insp-head').replaceWith(header(run, d));
     renderTab();
     current.player?.setScenes(d.outputs?.scenes || []);
+    current.player?.setDetail?.(d);
   });
 }
 
@@ -131,9 +133,14 @@ function header(r, d) {
 function mountPlayer(r) {
   const mount = panel.querySelector('#playerMount');
   if (!mount) return;
+  current.player?.destroy();
+  // Skills that make images, logos, docs, slides… get a gallery instead of a video player.
+  if (!r._stub && !isVideoRun(r) && (r.outputs?.length || r.thumbnail)) {
+    current.player = new OutputViewer(mount, r, current.detail);
+    return;
+  }
   const m = mediaOf(r.id);
   const live = current.live ?? (!isReady(m) && hasAd(r));
-  current.player?.destroy();
   current.player = live ? new LivePlayer(mount, r) : isReady(m) ? new ReviewPlayer(mount, r, m) : null;
   if (!current.player) {
     const why = !r.generations ? 'This run never reached generation.' : m?.state === 'failed' ? `Couldn't prepare video: ${m.reason}` : m?.state === 'unavailable' ? m.reason : 'Preparing review video…';
@@ -299,6 +306,62 @@ class ReviewPlayer {
   }
 }
 
+// Non-video outputs: a large view of the selected output, a strip of everything the run made,
+// and the selected output's pages/parts (docs, slides) from the project's asset tree.
+class OutputViewer {
+  constructor(mount, run, detail) {
+    this.run = run;
+    this.mount = mount;
+    this.detail = detail || null;
+    this.outputs = (run.outputs || []).length ? run.outputs : [{ id: run.adAssetId, type: run.outputType, name: run.adName, thumb: run.thumbnail }];
+    const p = primaryOutput(run);
+    this.index = Math.max(0, this.outputs.findIndex((o) => o.id === p?.id));
+    this.page = -1;
+    this.render();
+  }
+
+  setDetail(d) {
+    this.detail = d;
+    this.render();
+  }
+
+  pages() {
+    const o = this.outputs[this.index];
+    return (this.detail?.assetTree || []).find((a) => a.id === o?.id)?.children?.filter((c) => c.thumbnailUrl) || [];
+  }
+
+  render() {
+    const o = this.outputs[this.index] || {};
+    const pages = this.pages();
+    const src = this.page >= 0 && pages[this.page] ? pages[this.page].thumbnailUrl : o.thumb;
+    const stage = h('div', { class: 'stage ov-stage' }, src ? h('img', { class: 'ov-main', src, alt: o.name || '' }) : h('div', { class: 'note' }, 'No preview for this output'));
+    const strip = this.outputs.length > 1 ? h('div', { class: 'ov-strip' }, this.outputs.map((x, i) => h('button', { class: `ov-thumb${i === this.index ? ' on' : ''}`, title: `${typeLabel(x.type)} · ${x.name || ''}`, onclick: () => { this.index = i; this.page = -1; this.render(); } },
+      x.thumb ? h('img', { src: x.thumb, loading: 'lazy', alt: '' }) : h('span', {}, typeLabel(x.type))))) : null;
+    const pageStrip = pages.length ? h('div', { class: 'ov-strip pages' }, h('span', { class: 'ov-k' }, `${pages.length} pages`), pages.map((pg, i) => h('button', { class: `ov-thumb${i === this.page ? ' on' : ''}`, title: pg.name || `Page ${i + 1}`, onclick: () => { this.page = this.page === i ? -1 : i; this.render(); } }, h('img', { src: pg.thumbnailUrl, loading: 'lazy', alt: '' })))) : null;
+    const info = h('div', { class: 'src-note' }, h('span', { class: 'dot', style: { background: 'var(--ok)' } }),
+      h('span', {}, `${typeLabel(o.type)} · ${o.name || 'Untitled'}${this.outputs.length > 1 ? ` · ${this.index + 1} of ${this.outputs.length} outputs` : ''}`),
+      h('span', { style: { flex: 1 } }),
+      o.publishedUrl ? h('a', { href: o.publishedUrl, target: '_blank', rel: 'noopener' }, 'Published ↗') : null,
+      o.downloadUrl ? h('a', { href: o.downloadUrl, target: '_blank', rel: 'noopener' }, `Downloaded file ↗`) : null,
+      src ? h('a', { href: src, target: '_blank', rel: 'noopener' }, 'Open image ↗') : null);
+    this.mount.replaceChildren(stage, strip, pageStrip, info);
+  }
+
+  // Player interface: arrows step through outputs.
+  seekBy(d) {
+    this.index = (this.index + (d > 0 ? 1 : -1) + this.outputs.length) % this.outputs.length;
+    this.page = -1;
+    this.render();
+  }
+  step(d) {
+    this.seekBy(d);
+  }
+  toggle() {}
+  seekSec() {}
+  setScenes() {}
+  destroy() {}
+}
+
 // The product's own Remotion player in an iframe: exact text, captions, music.
 class LivePlayer {
   constructor(mount, run) {
@@ -310,7 +373,8 @@ class LivePlayer {
       h('div', { class: 'controls' }, h('span', { class: 'time' }, 'Live composition'), h('span', { style: { flex: 1 } }), isReady(mediaOf(run.id)) ? back : null),
       h('div', { class: 'src-note' }, h('span', { class: 'dot', style: { background: 'var(--ok)' } }), this.status),
     );
-    this.input = getJson(`/api/player-input/${run.id}${run.adAssetId ? `?root=${run.adAssetId}` : ''}`);
+    const root = run.videoAssetId || (run.outputType === 'video' ? run.adAssetId : null);
+    this.input = getJson(`/api/player-input/${run.id}${root ? `?root=${root}` : ''}`);
     this.onMsg = async (e) => {
       if (e.source !== this.frame.contentWindow) return;
       const t = e.data?.type;

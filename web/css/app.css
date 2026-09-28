@@ -695,3 +695,68 @@ table.ins tr.fail-row td { color: var(--err); }
 .gv-fail pre { margin: 2px 0 0; }
 .dz-step.graphable { cursor: pointer; }
 .dz-step.graphable:hover { border-color: var(--accent); }
+.ov-stage { background: var(--media-bg); }
+.ov-main { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+.ov-strip { display: flex; gap: 6px; padding: 6px 10px; overflow-x: auto; background: #0b0c0e; align-items: center; }
+.ov-strip.pages { border-top: 1px solid #1b1e22; }
+.ov-k { font-size: 11px; color: #a7adb5; margin-right: 4px; white-space: nowrap; }
+.ov-thumb { flex: none; width: 54px; height: 54px; padding: 0; border: 1px solid #343941; border-radius: 5px; background: #111; cursor: pointer; overflow: hidden; color: #a7adb5; font-size: 10px; }
+.ov-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.ov-thumb.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.badge.type { background: rgba(10, 11, 13, 0.72); }
+
+/* ---------- density pass: less chrome, more content per screen ---------- */
+.topbar { height: 46px; }
+.tabs { padding: 6px 14px 0; gap: 2px; }
+.tabs button { height: 26px; padding: 0 10px; }
+.profile { margin-left: auto; display: flex; align-items: center; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.profile .k { font-size: 11px; color: var(--text-3); margin-right: 2px; }
+.profile .pf { height: 22px; padding: 0 8px; border-radius: 11px; border: 1px solid var(--border); background: var(--surface); color: var(--text-2); font-size: 11.5px; cursor: pointer; display: inline-flex; gap: 5px; align-items: center; white-space: nowrap; }
+.profile .pf small { color: var(--text-3); font-variant-numeric: tabular-nums; }
+.profile .pf.on { border-color: var(--accent); color: var(--text); background: var(--accent-soft); }
+.summary { padding: 6px 14px 0; gap: 5px; }
+.stat { min-width: 84px; padding: 4px 9px 5px; flex-direction: row; align-items: baseline; gap: 6px; }
+.stat .v { font-size: 14px; }
+.stat .pct { font-size: 10.5px; margin-left: 2px; }
+.stat .k { font-size: 11px; }
+.subbar { flex: none; display: flex; gap: 10px; align-items: center; padding: 6px 14px 0; min-height: 30px; }
+.subbar .chips { padding: 0; flex: none; flex-wrap: nowrap; min-height: 0; }
+.subbar .headlines { padding: 0; flex: 1; min-width: 0; justify-content: flex-end; }
+.headline { height: 24px; font-size: 11.5px; }
+.chip { height: 22px; font-size: 11.5px; }
+.grid-scroll { padding: 8px 14px 40px; }
+.meta { padding: 5px 8px 6px; gap: 2px; }
+.title { font-size: 12.5px; }
+.sub { font-size: 11px; }
+.signals { height: 15px; }
+.facet { padding: 4px 12px 6px; }
+.facet h3 { margin: 3px 0 3px; }
+.opt { height: 23px; }
+.filters { width: 220px; padding-top: 4px; }
+.status-line { height: 24px; }
+.player .stage { height: min(44vh, 480px); }
+.inspect.wide .player .stage { height: min(42vh, 480px); }
+.section { padding: 10px 12px; }
+.insp-head { padding: 9px 12px 8px; }
+
+/* insights: wide row + masonry columns, compact cards */
+.insights { padding: 8px 14px 40px; }
+.ins-note { margin: 0 0 8px; }
+.ins-wide { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; margin-bottom: 10px; }
+@media (min-width: 1500px) { .ins-wide { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); align-items: start; } }
+.ins-masonry { column-width: 380px; column-gap: 10px; }
+.ins-masonry .ins-card { break-inside: avoid; margin-bottom: 10px; display: block; width: 100%; }
+.ins-card { padding: 10px 12px 12px; }
+.ins-card h3 { font-size: 12.5px; }
+.ins-card .desc { margin: 0 0 8px; font-size: 11px; }
+.tiles { grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 6px; }
+.tile { padding: 7px 9px; }
+.tile .v { font-size: 17px; }
+.tile .k { font-size: 11px; }
+.bar-row { min-height: 21px; grid-template-columns: minmax(0, 1fr) 120px 56px; }
+table.ins td { padding: 3px 6px; }
+.quote { padding: 5px 9px; font-size: 12px; }
+.rep { padding: 5px 0; font-size: 12px; }
+/* right-align headlines without clipping the first one when the row overflows */
+.subbar .headlines { justify-content: normal; }
+.subbar .headlines > :first-child { margin-left: auto; }

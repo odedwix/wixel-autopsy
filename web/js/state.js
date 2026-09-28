@@ -9,7 +9,7 @@ const defaults = {
   q: '',
   sort: 'newest',
   filters: { outcome: ['video'] },
-  aspect: '9:16',
+  aspect: 'auto',
   size: 200,
   sound: true,
   theme: 'dark',
@@ -39,6 +39,8 @@ function fromStorage() {
 }
 
 export const state = { ...defaults, ...fromStorage(), ...fromHash() };
+// One-time: card shape now defaults to "auto" (from the skill's outputs); older saved states had 9:16.
+if (!state.shapeAuto) Object.assign(state, { aspect: 'auto', shapeAuto: true });
 
 const listeners = new Set();
 export const onChange = (fn) => listeners.add(fn);
@@ -52,8 +54,8 @@ export function set(patch, { silent = false } = {}) {
 }
 
 function save() {
-  const { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab, inspectTab, inspectWide } = state;
-  const persisted = { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab, inspectTab, inspectWide };
+  const { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab, inspectTab, inspectWide, shapeAuto } = state;
+  const persisted = { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab, inspectTab, inspectWide, shapeAuto };
   try {
     localStorage.setItem(KEY, JSON.stringify(persisted));
   } catch {}
