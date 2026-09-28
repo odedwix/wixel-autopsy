@@ -7,23 +7,8 @@ TMP="$(mktemp -d)"
 
 osacompile -o "$APP" -e "do shell script \"/bin/zsh -lc '$ROOT/scripts/launch.sh'\""
 
-# Icon: dark rounded tile, film frame + play mark in the app's accent colour.
-/usr/bin/env python3 - "$TMP/icon.png" <<'PY'
-import sys
-from PIL import Image, ImageDraw
-S = 1024
-img = Image.new('RGBA', (S, S), (0, 0, 0, 0))
-d = ImageDraw.Draw(img)
-d.rounded_rectangle([64, 64, S - 64, S - 64], radius=200, fill=(21, 23, 26, 255))
-d.rounded_rectangle([64, 64, S - 64, S - 64], radius=200, outline=(52, 57, 65, 255), width=6)
-acc = (139, 123, 255, 255)
-d.rounded_rectangle([232, 272, 792, 752], radius=48, outline=acc, width=36)
-for x in (300, 724):
-    for y in (330, 440, 550, 660):
-        d.rounded_rectangle([x - 22, y - 20, x + 22, y + 20], radius=8, fill=acc)
-d.polygon([(452, 402), (452, 622), (632, 512)], fill=(233, 235, 238, 255))
-img.save(sys.argv[1])
-PY
+# Icon: see scripts/make-icon.py (violet tile, 2x2 run cards: video, image, doc, insights).
+/usr/bin/env python3 "$ROOT/scripts/make-icon.py" "$TMP/icon.png"
 
 ICONSET="$TMP/icon.iconset"
 mkdir -p "$ICONSET"

@@ -17,7 +17,7 @@ import { spawn } from 'node:child_process';
 
 const WEB = path.join(config.root, 'web');
 const QUIET = /^\/api\/(load|media-batch|media-queue|health)$/;
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png' };
 
 function send(req, res, status, body, type = 'application/json; charset=utf-8') {
   const buf = Buffer.isBuffer(body) ? body : Buffer.from(typeof body === 'string' ? body : JSON.stringify(body));
