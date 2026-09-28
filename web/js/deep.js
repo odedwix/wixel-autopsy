@@ -2,6 +2,7 @@ import { h, icon, dur, tc, copy } from './util.js';
 import { CAT_COLOR } from './insights.js';
 import { mediaKind } from './timeline.js';
 import { openGraphView } from './graph.js';
+import { caps, HINT } from './caps.js';
 
 // Deep-dive views for one run: how each scene was made, the brand the site had vs what the ad
 // used, every asset in the run, and the raw record.
@@ -83,7 +84,7 @@ let stepsIndex = null;
 let sceneTitle = '';
 function stepCard(s) {
   const out = (s.mediaOut || []).find((m) => !/captions\.json/.test(m.url));
-  const graphable = s.workflowId || (s.status === 'failed' && s.jobId);
+  const graphable = (s.workflowId || (s.status === 'failed' && s.jobId)) && caps.temporalKey;
   return h('div', { class: `dz-step${s.status === 'failed' ? ' failed' : ''}${graphable ? ' graphable' : ''}`, title: graphable ? 'Click to open the Genix graph run' : '', onclick: graphable ? () => openGraphView({ title: sceneTitle, step: s }) : null },
     out ? thumb(out.url, out.kind, 'dz-media', out.kind === 'video' ? posterFor(s, stepsIndex) : undefined) : h('div', { class: 'dz-media empty' }, icon('sparkle')),
     h('div', { class: 'dz-step-body' },

@@ -56,7 +56,7 @@ export function shareRun(anchor, run, detail) {
     item('external', 'Copy Wixel admin link', 'Anyone with back-office access', () => copyText(ADMIN + run.id, 'Admin link')),
     out ? item('film', `Copy ${out.label.toLowerCase()} link`, 'Public — opens anywhere', () => copyText(out.url, `${out.label} link`)) : null,
     item('copy', 'Copy summary', 'Text for Slack / notes', () => copyText(runSummary(run, detail), 'Summary')),
-    item('external', 'Email…', 'Opens your mail app with the summary and links', () => mailto({ subject: `[Skill Runs] ${state.skill}: ${title}`, body: runSummary(run, detail) })),
+    item('external', 'Email…', 'Opens your mail app with the summary and links', () => mailto({ subject: `[Skill Runs] ${state.skill}: ${title} · ${new Date(run.createdAt || Date.now()).toISOString().slice(0, 10)}`, body: runSummary(run, detail) })),
   ), { align: 'right', width: 330 });
 }
 
@@ -98,17 +98,24 @@ export function shareInsights(anchor, ins, label) {
     h('div', { class: 'sh-h' }, 'Share these insights'),
     item('copy', 'Copy app link', 'Opens these insights with the same filters (local app)', () => copyText(appLink({ tab: 'insights', filters: state.filters, q: state.q }), 'App link')),
     item('copy', 'Copy summary', 'Key numbers, failing tools, errors, asks — text', () => copyText(insightsSummary(ins, label), 'Summary')),
-    item('external', 'Email…', 'Opens your mail app with the summary', () => mailto({ subject: `[Skill Runs] Insights: ${label}`, body: insightsSummary(ins, label) })),
+    item('external', 'Email…', 'Opens your mail app with the summary', () => mailto({ subject: `[Skill Runs] ${state.skill} insights · ${label.split(' · ')[1] || ''} · ${new Date().toISOString().slice(0, 10)}`, body: insightsSummary(ins, label) })),
     item('download', 'Export PDF…', 'Print dialog → “Save as PDF”; links stay clickable', () => exportPdf(label)),
   ), { align: 'right', width: 330 });
 }
 
-// PDF = the insights page printed: a print stylesheet hides the chrome and adds a header.
+// PDF = the insights page printed: a print stylesheet hides the chrome and adds a header. The
+// browser names the file after the page title, so the title carries skill, window and date.
 function exportPdf(label) {
+  const stamp = new Date().toISOString().slice(0, 10);
+  const win = label.split(' · ')[1] || '';
+  const name = `${state.skill.replace(/[\/:*?"<>|]+/g, '-')} insights · ${win} · ${stamp}`;
   document.getElementById('insights')?.setAttribute('data-print-title', `Skill insights — ${label} · ${new Date().toLocaleString()}`);
+  const prevTitle = document.title;
+  document.title = name;
   document.body.classList.add('printing-insights');
   const done = () => {
     document.body.classList.remove('printing-insights');
+    document.title = prevTitle;
     window.removeEventListener('afterprint', done);
   };
   window.addEventListener('afterprint', done);

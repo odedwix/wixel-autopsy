@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "setup": "zsh scripts/setup.sh",
     "start": "node server/server.js --open",
     "proxy": "node server/server.js",
     "pull": "node scripts/pull-sample.js",
@@ -10,5 +11,8 @@
   },
   "dependencies": {
     "@temporalio/client": "^1.13.2"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

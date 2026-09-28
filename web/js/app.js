@@ -7,6 +7,7 @@ import { computeInsights, renderInsights, headlines } from './insights.js';
 import { setSkills, renderSkillButton, openSkillPicker, rememberSkill } from './skillpicker.js';
 import { toast } from './ui.js';
 import { shareInsights } from './share.js';
+import { capsReady } from './caps.js';
 
 let allRuns = [];
 let view = [];
@@ -364,7 +365,8 @@ async function pollLoad() {
     };
     loadEl.replaceChildren(h('span', { title: 'Requests to production-side systems in the last 5 minutes' }, 'Upstream, 5 min:'),
       lane('trino', 'Trino'), lane('admin', 'Admin API'), lane('temporal', 'Temporal'),
-      h('span', { title: 'Review videos being prepared locally (ffmpeg; reads the CDN only)' }, h('b', {}, 'Media'), ` ${l.media.active + l.media.pending}`));
+      h('span', { title: 'Review videos being prepared locally (ffmpeg; reads the CDN only)' }, h('b', {}, 'Media'), ` ${l.media.active + l.media.pending}`),
+      l.cache ? h('span', { title: `Local cache in .cache — capped at ${(l.cache.cap / 1024 ** 3).toFixed(1)} GB (CACHE_MAX_GB); least-recently-used entries are evicted` }, h('b', {}, 'Cache'), ` ${(l.cache.bytes / 1024 ** 3).toFixed(1)}/${(l.cache.cap / 1024 ** 3).toFixed(0)} GB`) : null);
   } catch {}
   setTimeout(pollLoad, 5000);
 }

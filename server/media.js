@@ -133,7 +133,10 @@ async function stills(dir) {
   return { duration: info.duration, width: info.width, height: info.height, sprite: { cols, rows, count: SPRITE_FRAMES, tileWidth: tw, tileHeight: th } };
 }
 
+let hasFfmpeg;
 async function build(run) {
+  hasFfmpeg ??= await new Promise((resolve) => spawn('ffmpeg', ['-version']).on('error', () => resolve(false)).on('close', (c) => resolve(c === 0)));
+  if (!hasFfmpeg) return { state: 'unavailable', reason: 'ffmpeg isn’t installed — run: brew install ffmpeg (then restart the app)' };
   const dir = dirFor(run.id);
   await fs.mkdir(dir, { recursive: true });
   const t0 = Date.now();
@@ -154,7 +157,11 @@ let active = 0;
 
 async function readMeta(id) {
   try {
-    return JSON.parse(await fs.readFile(path.join(dirFor(id), 'meta.json'), 'utf8'));
+    const f = path.join(dirFor(id), 'meta.json');
+    const meta = JSON.parse(await fs.readFile(f, 'utf8'));
+    // Mark the run's media as recently used for the cache size cap.
+    fs.utimes(f, new Date(), new Date()).catch(() => {});
+    return meta;
   } catch {
     return null;
   }

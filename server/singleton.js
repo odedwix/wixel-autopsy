@@ -6,7 +6,8 @@ import { config } from './config.js';
 // One app at a time: starting it stops the previous copy first. Only our own processes are ever
 // killed — the one recorded in the pid file, or a listener on our port whose command is this server.
 
-const PID_FILE = path.join(config.cacheDir, 'proxy.pid');
+// One pid file per port, so a second copy on another port never stops this one.
+const PID_FILE = path.join(config.cacheDir, `proxy-${config.port}.pid`);
 const SELF = 'server/server.js';
 
 const alive = (pid) => {

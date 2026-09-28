@@ -6,6 +6,41 @@ Status: **phase 3**. The grid, insights, the per-run deep dive and the drawn Gen
 
 Open http://localhost:5178 after `npm run proxy`. Run `npm run build:player` once for the exact live player.
 
+## Install (new machine)
+
+```bash
+git clone https://github.com/odedwix/skill-run-explorer.git   # private — ask Oded for access
+cd skill-run-explorer
+npm run setup        # checks everything, installs, creates .env, builds the Desktop launcher
+npm start            # (re)starts the app and opens http://localhost:5178
+```
+
+### What you need
+
+| | Needed for | How |
+|---|---|---|
+| **Wix network** (office or VPN) | everything: the npm registry, the Wixel admin API, and Trino through it | no cookie or personal token needed from inside the network |
+| **Node 20+** | the app | `brew install node@22` |
+| ffmpeg *(optional)* | review videos and hover scrubbing | `brew install ffmpeg` |
+| Temporal API key *(optional)* | "Open graph run" (Genix graph runs) | `TEMPORAL_API_KEY=` in `.env`. It's a **production secret**: get your own from the Wixel/Genix team, and never commit or share it |
+| wixel-video-client checkout *(optional)* | the exact live product player (**E**) | clone `wix-private/wixel-video-client` to `~/dev/` (or set `WIXEL_VIDEO_CLIENT`), then `npm run build:player` |
+| Python Pillow *(optional, macOS)* | the Desktop launcher icon | `pip3 install pillow` |
+
+The run list, details, timeline, scenes, brand, assets and insights work with just the Wix network and Node. Missing optional pieces switch off with a hint in the UI.
+
+Settings live in `.env` (gitignored; template in `.env.example`): `PORT`, `CACHE_MAX_GB`, `TEMPORAL_API_KEY` / `TEMPORAL_KEY_FILE`, `WIXEL_VIDEO_CLIENT`.
+
+**Data handling:** the app shows what the Wixel admin page shows, including end users' emails and prompts. It's for Wix staff only. The proxy listens on 127.0.0.1 only, and data is cached in `.cache/`, capped by `CACHE_MAX_GB` (default 3 GB, least-recently-used entries evicted first). Shared links and summaries never include end-user emails.
+
+## Run
+
+```bash
+npm install          # uses Wix's npm registry (.npmrc); the public one is blocked on the Wix network
+npm start            # (re)starts the app and opens http://localhost:5178
+npm run proxy        # same, without opening the browser
+npm run pull         # warm the cache with a 50-run sample and print a coverage report
+```
+
 ## Any skill, any output
 
 Not every skill makes video. A run's **outputs** are the top-level assets its session wrote, taken from the `TURN_UPDATED_ASSETS` session events (asset id, type, name, snapshot) and joined to `v1_asset_crud` for thumbnails and publishes and to `users_193` for downloads.
@@ -72,21 +107,6 @@ Every upstream call goes through `server/limits.js`: a concurrency cap and minim
 | Wixel admin API | production BO service reading the agent's session store | 3 concurrent, ≥150 ms apart | opening a run, hovering a card for 600 ms, assembling an ad without a render. Cached forever once the session has been idle 30 minutes |
 | Temporal Cloud prod namespace | shares request limits with production workers | 2 concurrent, ≥250 ms apart | only when you open a graph run or a nodes table. Each trace is about 3–5 calls, cached forever once finished |
 | Wix CDN (wixmp) | media delivery | ffmpeg, 2 builds at a time | downloading clips and renders for review copies |
-
-## Run
-
-```bash
-npm install          # uses Wix's npm registry (.npmrc); the public one is blocked on the Wix network
-npm start            # (re)starts the app and opens http://localhost:5178
-npm run proxy        # same, without opening the browser
-npm run pull         # warm the cache with a 50-run sample and print a coverage report
-```
-
-**Desktop launcher:** `./scripts/make-launcher.sh` builds **Skill Runs.app** on the Desktop. Double-clicking it runs `scripts/launch.sh`, which restarts the app in the background (logging to `.cache/app.log`) and opens it.
-
-Starting the app always replaces a copy that's already running: the previous process, found through `.cache/proxy.pid` or as this server listening on the port, is stopped first. Nothing else is ever killed. If a different program holds the port, it exits with a message instead. Ctrl-C stops it.
-
-You need to be on the Wix network. The admin API needs no cookie from there. The Temporal key is read from `wixel-video-server/packages/ai-video-genix-grapher/.env` (`TEMPORAL_KEY`), or from `TEMPORAL_API_KEY` / `TEMPORAL_KEY_FILE`. It is never copied into this repo, and the proxy listens only on 127.0.0.1.
 
 ## API
 

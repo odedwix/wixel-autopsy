@@ -13,7 +13,9 @@ import { playerInput, bundleList, playerScript } from './player.js';
 import { loadReport } from './limits.js';
 import { takeOver, claim } from './singleton.js';
 import { requestContext } from './context.js';
-import { spawn } from 'node:child_process';
+import { startSweeping, cacheReport } from './cache-gc.js';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 
 const WEB = path.join(config.root, 'web');
 const QUIET = /^\/api\/(load|media-batch|media-queue|health)$/;
@@ -29,6 +31,16 @@ function send(req, res, status, body, type = 'application/json; charset=utf-8') 
   res.writeHead(status, headers).end(buf);
 }
 
+let caps;
+function capabilities() {
+  caps ??= {
+    temporalKey: Boolean(config.temporal.apiKey),
+    ffmpeg: spawnSync('ffmpeg', ['-version']).status === 0 && spawnSync('ffprobe', ['-version']).status === 0,
+    player: existsSync(path.join(config.cacheDir, 'vendor', 'iframe-bootstrap.js')),
+  };
+  return caps;
+}
+
 function required(q, key) {
   const v = q.get(key);
   if (!v) throw Object.assign(new Error(`${key} is required`), { status: 400 });
@@ -36,7 +48,8 @@ function required(q, key) {
 }
 
 const routes = [
-  [/^\/api\/health$/, async () => ({ ok: true, temporalKey: Boolean(config.temporal.apiKey), adminUi: config.adminUi, temporalUi: config.temporal.uiBase })],
+  // What this install can do; the UI switches optional features off (with a hint) when missing.
+  [/^\/api\/health$/, async () => ({ ok: true, ...capabilities(), adminUi: config.adminUi, temporalUi: config.temporal.uiBase, cache: cacheReport() })],
   [/^\/api\/skills$/, async (_m, q) => listSkills({ days: Number(q.get('days') || 30) })],
   [/^\/api\/runs$/, async (_m, q) => {
     const skill = q.get('skill');
@@ -68,7 +81,7 @@ const routes = [
     return out;
   }],
   [/^\/api\/media-queue$/, async () => queueDepth()],
-  [/^\/api\/load$/, async () => ({ ...loadReport(), media: queueDepth() })],
+  [/^\/api\/load$/, async () => ({ ...loadReport(), media: queueDepth(), cache: cacheReport() })],
   // Failed generations: tool result has only a jobId; `at` is the tool call's start (ms).
   [/^\/api\/trace-job\/([\w-]{36})$/, async ([, jobId], q) => getJobTrace(jobId, Number(q.get('at')))],
 ];
@@ -148,6 +161,7 @@ try {
 }
 server.listen(config.port, '127.0.0.1', () => {
   claim();
+  startSweeping();
   const url = `http://localhost:${config.port}`;
   console.log(`skill-run-explorer on ${url} (pid ${process.pid})`);
   if (process.argv.includes('--open')) spawn('open', [url], { stdio: 'ignore', detached: true }).unref();

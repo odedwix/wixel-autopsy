@@ -3,6 +3,8 @@ import { state, set } from './state.js';
 import { renderTimeline } from './timeline.js';
 import { renderScenes, renderBrand, renderAssets, renderRaw } from './deep.js';
 import { shareRun } from './share.js';
+import { caps, HINT } from './caps.js';
+import { toast } from './ui.js';
 import { MOOD, worstMood, failedRun, hasAd, primaryOutput, typeLabel } from './filters.js';
 import { isVideoRun } from './grid.js';
 import { mediaOf, isReady, prioritize, onMedia, videoUrl, spriteUrl, placeSprite } from './media.js';
@@ -142,7 +144,7 @@ function mountPlayer(r) {
     return;
   }
   const m = mediaOf(r.id);
-  const live = current.live ?? (!isReady(m) && hasAd(r));
+  const live = current.live ?? (!isReady(m) && hasAd(r) && caps.player);
   current.player = live ? new LivePlayer(mount, r) : isReady(m) ? new ReviewPlayer(mount, r, m) : null;
   if (!current.player) {
     const why = !r.generations ? 'This run never reached generation.' : m?.state === 'failed' ? `Couldn't prepare video: ${m.reason}` : m?.state === 'unavailable' ? m.reason : 'Preparing review video…';
@@ -153,6 +155,10 @@ function mountPlayer(r) {
 
 export function toggleLive() {
   if (!current || !hasAd(current.run)) return;
+  if (!caps.player && !(current.player instanceof LivePlayer)) {
+    toast(HINT.player, { ms: 6000 });
+    return;
+  }
   const wasLive = current.player instanceof LivePlayer;
   current.live = !wasLive;
   mountPlayer(current.run);

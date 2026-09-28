@@ -1,12 +1,25 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import os from 'node:os';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const HOME = os.homedir();
 
-// The Temporal key is never copied into this repo: read it from the env, or from the
-// grapher's .env (the same source the prod-runs skill uses).
-const GRAPHER_ENV = '/Users/odedgr/dev/wixel-video-server/packages/ai-video-genix-grapher/.env';
+// Per-person settings live in .env at the repo root (gitignored; see .env.example). Real
+// environment variables win over it.
+(function loadDotEnv() {
+  try {
+    for (const line of fs.readFileSync(path.join(ROOT, '.env'), 'utf8').split('\n')) {
+      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
+      if (m && !(m[1] in process.env)) process.env[m[1]] = m[2].replace(/^(['"])(.*)\1$/, '$2');
+    }
+  } catch {}
+})();
+
+// The Temporal key is never committed: TEMPORAL_API_KEY (env or .env), else a file holding
+// TEMPORAL_KEY=… (TEMPORAL_KEY_FILE, default: a wixel-video-server checkout's grapher .env).
+const GRAPHER_ENV = path.join(HOME, 'dev/wixel-video-server/packages/ai-video-genix-grapher/.env');
 
 function readTemporalKey() {
   if (process.env.TEMPORAL_API_KEY) return process.env.TEMPORAL_API_KEY;

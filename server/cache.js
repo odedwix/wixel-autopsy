@@ -9,13 +9,27 @@ function fileFor(ns, key) {
   return path.join(config.cacheDir, ns, `${key.replace(/[^a-zA-Z0-9._-]/g, '_')}.json`);
 }
 
+// A hit bumps the file's mtime so the size-cap sweep (cache-gc.js) treats it as recently used.
+// Freshness uses savedAt inside the file, not mtime, so this doesn't extend any TTL.
+const touched = new Map();
+function touch(f) {
+  const now = Date.now();
+  if (now - (touched.get(f) || 0) < 60000) return;
+  touched.set(f, now);
+  fs.utimes(f, new Date(), new Date()).catch(() => {});
+}
+
 // An entry saved with ttlMs=null is immutable and always served. Otherwise it's served
 // while younger than both its own ttl and the caller's maxAgeMs.
 export async function readCache(ns, key, maxAgeMs) {
   try {
-    const raw = JSON.parse(await fs.readFile(fileFor(ns, key), 'utf8'));
+    const f = fileFor(ns, key);
+    const raw = JSON.parse(await fs.readFile(f, 'utf8'));
     const age = Date.now() - raw.savedAt;
-    if (raw.ttlMs === null || (age < raw.ttlMs && age < maxAgeMs)) return raw.value;
+    if (raw.ttlMs === null || (age < raw.ttlMs && age < maxAgeMs)) {
+      touch(f);
+      return raw.value;
+    }
   } catch {}
   return undefined;
 }
