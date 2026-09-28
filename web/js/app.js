@@ -2,7 +2,7 @@ import { $, h, icon, ago, fmtInt, getJson, debounce } from './util.js';
 import { state, set, onChange, toggleFilter, clearFilter } from './state.js';
 import { FACETS, STATS, SORTS, applyFilters, facetCounts, facetOptions } from './filters.js';
 import { initGrid, setRuns, relayout, markSelected, scrollToIndex, columns, applySound, stopHover } from './grid.js';
-import { initInspect, openInspect, closeInspect, inspectedPlayer, prefetchDetail, toggleLive } from './inspect.js';
+import { initInspect, openInspect, closeInspect, inspectedPlayer, prefetchDetail, toggleLive, toggleWide, setInspectTabByIndex } from './inspect.js';
 import { computeInsights, renderInsights, headlines } from './insights.js';
 
 let allRuns = [];
@@ -64,6 +64,8 @@ async function loadRuns() {
   loading = { done: 0, total: null };
   skeleton();
   status(`Finding which days ${state.skill} ran in the last ${state.days}d…`);
+  // A link/reload with a run open shows it immediately; its detail doesn't depend on the list.
+  if (state.open && state.selected) openInspect({ id: state.selected, _stub: true });
   try {
     const index = await getJson(`/api/runs-index?skill=${encodeURIComponent(state.skill)}&days=${state.days}`);
     if (token !== loadToken) return;
@@ -396,6 +398,8 @@ document.addEventListener('keydown', (e) => {
     ',': () => p?.step(-1),
     '.': () => p?.step(1),
     e: () => toggleLive(),
+    w: () => state.open && toggleWide(),
+    ...Object.fromEntries([1, 2, 3, 4, 5, 6].map((n) => [String(n), () => state.open && setInspectTabByIndex(n - 1)])),
     o: () => state.selected && window.open(`https://wix-bo.com/wixel-agent/admin/#/sessions/${state.selected}`, '_blank', 'noopener'),
     d: () => state.selected && downloadSelected(),
   }[k];

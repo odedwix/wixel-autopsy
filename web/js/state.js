@@ -17,6 +17,8 @@ const defaults = {
   selected: null,
   open: false,
   tab: 'videos',
+  inspectTab: 'overview',
+  inspectWide: false,
 };
 
 function fromHash() {
@@ -50,13 +52,13 @@ export function set(patch, { silent = false } = {}) {
 }
 
 function save() {
-  const { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab } = state;
-  const persisted = { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab };
+  const { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab, inspectTab, inspectWide } = state;
+  const persisted = { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab, inspectTab, inspectWide };
   try {
     localStorage.setItem(KEY, JSON.stringify(persisted));
   } catch {}
   // Only what defines the view goes into the link; layout preferences stay per-user.
-  const link = { skill, days, q, sort, filters, selected, open, tab };
+  const link = { skill, days, q, sort, filters, selected, open, tab, inspectTab };
   history.replaceState(null, '', `#v=${encodeURIComponent(JSON.stringify(link))}`);
 }
 

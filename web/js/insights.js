@@ -7,8 +7,9 @@ import { hasAd, failedRun, downloaded, worstMood, MOOD, stepKey } from './filter
 // ---------- categories (mirrors server/normalize.js) ----------
 const METHOD_CATEGORY = [
   [/^generateVideo|^holdStillAsVideo|^transformVideo|^generateAvatarTake|LogoShot|^StartAnimation|^EndAnimation|^GenerateSlideAnimation/, 'video'],
-  [/Speech|Voice|^TranscribeVoiceover/, 'tts'],
+  // audio before tts: mergeVoiceIntoVideo is a mix step, not speech generation
   [/^generateMusic|^trimAudioClip|^mergeVoiceIntoVideo/, 'audio'],
+  [/Speech|Voice|^TranscribeVoiceover/, 'tts'],
   [/Image|Cover|^upscale|^enhance|^generateHDR|^removeImageBackground|^smartBreakdown|^composeImage|^extractFirstFrame|Icon|Logo/, 'image'],
   [/Brand|^GetSiteBrand/, 'brand'],
   [/^DescribeVideoUrls|^probeMediaDuration|^getSubjectBounds/, 'analysis'],
@@ -27,8 +28,8 @@ const isModelStep = (tool, method) => tool === 'generate_image' || tool === 'edi
   || (tool === 'invoke_rpc' && /^generate|^holdStill|LogoShot|^transformVideo|Speech|^CloneVoice|^upscale|^enhance|Animation$/.test(method || '') && !/^generateContentByProject/.test(method || ''));
 // Category marks carry identity in a table next to a text label, so they take the palette's
 // categorical order (never status colors).
-const CAT_COLOR = { video: '#3987e5', image: '#d95926', tts: '#199e70', audio: '#c98500', scrape: '#d55181', analysis: '#9085e9', brand: '#008300', export: '#e66767', lookup: '#6d747d', rpc: '#6d747d', agent: '#6d747d' };
-const CAT_LABEL = { video: 'Video', image: 'Image', tts: 'Voice / TTS', audio: 'Audio', scrape: 'Website scrape', analysis: 'Analysis', brand: 'Brand', export: 'Export', lookup: 'Lookups', rpc: 'Other RPC', agent: 'Agent tools' };
+export const CAT_COLOR = { video: '#3987e5', image: '#d95926', tts: '#199e70', audio: '#c98500', scrape: '#d55181', analysis: '#9085e9', brand: '#008300', export: '#e66767', lookup: '#6d747d', rpc: '#6d747d', agent: '#6d747d' };
+export const CAT_LABEL = { video: 'Video', image: 'Image', tts: 'Voice / TTS', audio: 'Audio', scrape: 'Website scrape', analysis: 'Analysis', brand: 'Brand', export: 'Export', lookup: 'Lookups', rpc: 'Other RPC', agent: 'Agent tools' };
 
 
 // ---------- stats helpers ----------

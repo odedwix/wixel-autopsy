@@ -2,7 +2,7 @@
 
 A fast browser for every run of a Wixel agent skill (starting with `wixel-ads`). It shows each run's videos, request, scraped brand, steps and timing, errors, and the Genix graph runs behind each generation.
 
-Status: **phase 1**. The grid, filters, hover-play and inspect panel are done. The per-step waterfall and Genix graph view (phases 2–3) are next.
+Status: **phase 2**. The grid, insights and the per-run deep dive are done. The drawn Genix graph view (phase 3) is next.
 
 Open http://localhost:5178 after `npm run proxy`. Run `npm run build:player` once for the exact live player.
 
@@ -18,7 +18,17 @@ Open http://localhost:5178 after `npm run proxy`. Run `npm run build:player` onc
 - **Inspect** (click or Enter):
   - Review player with a custom scrub bar: scene segments, sprite preview, `,`/`.` frame steps, speed.
   - **E** switches to the exact live composition: the product's own Remotion player, vendored from `wixel-video-client` by `npm run build:player`.
-  - Sections: Outcome, User mood by turn, Request plus follow-ups, Errors, Scenes (click to seek), Identifiers.
+  - Tabs (keys **1–6**; **W** widens the panel):
+    - **Overview:** outcome, mood by turn, request plus follow-ups, errors, scenes, identifiers.
+    - **Timeline:** a waterfall of every step, with agent thinking time on its own row and user-message markers.
+      - Idle gaps between turns are compressed, and agent plumbing (read / write / list) can be hidden.
+      - Hovering a bar shows a tooltip; clicking a row shows the prompt, input and output media, arguments, output and error.
+      - **Trace the Genix graph run** reads Temporal (only when you click) and lists each node's status, queue time, run time, cost and root cause.
+    - **Scenes:** each shot next to the chain that made it, in a Picture lane (image → edit → video → voice merge) and a Voice & sound lane (TTS script → trim), with every step's prompt, model and time.
+      - The chain is traced through media ids shared between one step's output and the next step's input.
+    - **Brand:** the scraped site (logo, colours, fonts, screenshot) next to what the ad's text actually used, with ✓ on matches and a verdict such as "2 of 4 site colours… 0 of 5 fonts".
+    - **Assets:** every piece of media in the run, grouped as uploads / website / generated images / clips / voice & music.
+    - **Raw:** the normalized record per key, plus a link to the raw admin bundle.
 - **Insights** (tab, or **I**): computed in the browser from the runs in view, so they follow the skill, window, filters and search, and cost nothing upstream. Per-session step stats come from one extra Trino query per day (`stepsDayQuery`), cached like the day rows.
   - Overview: finished-video rate, request → final / first clip (median, p90), average generation call, download and publish rates, frustration, cost per finished video.
   - Tools & methods, sortable: calls, failures, fail rate, average and slowest time, runs hit. Clicking a row filters to the runs where that step failed.

@@ -1,5 +1,7 @@
 import { h, icon, ago, dur, dateTime, tc, getJson, copy } from './util.js';
-import { state } from './state.js';
+import { state, set } from './state.js';
+import { renderTimeline } from './timeline.js';
+import { renderScenes, renderBrand, renderAssets, renderRaw } from './deep.js';
 import { MOOD, worstMood, failedRun, hasAd } from './filters.js';
 import { mediaOf, isReady, prioritize, onMedia, videoUrl, spriteUrl, placeSprite } from './media.js';
 
@@ -25,19 +27,69 @@ export function initInspect(el, { close }) {
 export function openInspect(run) {
   if (!run) return;
   panel.hidden = false;
-  if (current?.run.id === run.id) return;
+  if (current?.run.id === run.id) {
+    // Opened early from a link with only an id; now the list row (signals, render links) is here.
+    if (current.run._stub && !run._stub) {
+      current.run = run;
+      panel.querySelector('.insp-head')?.replaceWith(header(run, current.detail || null));
+      mountPlayer(run);
+    }
+    return;
+  }
   current?.player?.destroy();
   current = { run, player: null };
-  panel.replaceChildren(header(run, null), h('div', { class: 'insp-body' }, h('div', { class: 'player', id: 'playerMount' }), h('div', { id: 'detailMount' }, h('div', { class: 'loading-line' }, 'Loading run…'))));
+  panel.classList.toggle('wide', Boolean(state.inspectWide));
+  panel.replaceChildren(header(run, null), h('div', { class: 'insp-body' }, h('div', { class: 'player', id: 'playerMount' }), tabBar(), h('div', { id: 'detailMount' }, h('div', { class: 'loading-line' }, 'Loading run…'))));
   mountPlayer(run);
   prioritize(run.id);
   prefetchDetail(run.id).then((d) => {
     if (current?.run.id !== run.id) return;
     current.detail = d;
     panel.querySelector('.insp-head').replaceWith(header(run, d));
-    panel.querySelector('#detailMount').replaceChildren(...details(run, d));
+    renderTab();
     current.player?.setScenes(d.outputs?.scenes || []);
   });
+}
+
+// ---------- tabs ----------
+const TABS = [['overview', 'Overview', '1'], ['timeline', 'Timeline', '2'], ['scenes', 'Scenes', '3'], ['brand', 'Brand', '4'], ['assets', 'Assets', '5'], ['raw', 'Raw', '6']];
+
+function tabBar() {
+  return h('div', { class: 'insp-tabs', role: 'tablist' }, TABS.map(([k, label, key]) =>
+    h('button', { role: 'tab', 'aria-selected': String((state.inspectTab || 'overview') === k), title: `${label} (${key})`, onclick: () => setInspectTab(k) }, label)));
+}
+
+export function setInspectTab(k) {
+  set({ inspectTab: k }, { silent: true });
+  const bar = panel.querySelector('.insp-tabs');
+  if (bar) bar.replaceWith(tabBar());
+  renderTab();
+}
+
+export function setInspectTabByIndex(i) {
+  if (current && TABS[i]) setInspectTab(TABS[i][0]);
+}
+
+export function toggleWide() {
+  set({ inspectWide: !state.inspectWide }, { silent: true });
+  panel.classList.toggle('wide', Boolean(state.inspectWide));
+}
+
+function renderTab() {
+  const mount = panel.querySelector('#detailMount');
+  const d = current?.detail;
+  if (!mount || !d) return;
+  if (d.error) return mount.replaceChildren(...details(current.run, d));
+  const tab = state.inspectTab || 'overview';
+  const box = h('div', { class: 'section dz' });
+  const seek = (sec) => current?.player?.seekSec(sec);
+  if (tab === 'overview') return mount.replaceChildren(...details(current.run, d));
+  mount.replaceChildren(box);
+  if (tab === 'timeline') renderTimeline(box, d);
+  if (tab === 'scenes') renderScenes(box, d, { seek });
+  if (tab === 'brand') renderBrand(box, d);
+  if (tab === 'assets') renderAssets(box, d);
+  if (tab === 'raw') renderRaw(box, d);
 }
 
 export function closeInspect() {
@@ -69,6 +121,7 @@ function header(r, d) {
         r.agent ? [h('span', { class: 'sep' }, '·'), h('span', {}, `${r.agent}${r.source ? ` / ${r.source}` : ''}`)] : null,
       ),
     ),
+    h('button', { class: 'icon-btn', title: 'Wide panel (W)', onclick: () => toggleWide() }, icon('expand')),
     h('a', { class: 'icon-btn', href: ADMIN + r.id, target: '_blank', rel: 'noopener', title: 'Open in Wixel admin (O)' }, icon('external')),
     h('button', { class: 'icon-btn', title: 'Close (Esc)', onclick: () => panel._close() }, icon('x')),
   );
