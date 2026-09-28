@@ -20,12 +20,24 @@ const defaults = {
   tab: 'videos',
   inspectTab: 'overview',
   inspectWide: false,
+  // 'skill': one skill's runs; 'user': every session one user ran, any skill.
+  mode: 'skill',
+  user: null, // { id, email }
+  recentUsers: [],
+  // Per skill: which helpers count with it (a list), 'all' for whole sessions; absent = computed.
+  families: {},
+  // Run view: also show turns that belong to other skills.
+  showOther: false,
 };
 
+// Links carry a user as its id only (no email in URLs) and a skill's helper choice as `fam`.
 function fromHash() {
   if (!location.hash.startsWith('#v=')) return null;
   try {
-    return JSON.parse(decodeURIComponent(location.hash.slice(3)));
+    const { uid, fam, ...v } = JSON.parse(decodeURIComponent(location.hash.slice(3)));
+    if (v.mode === 'user' && uid) v.user = { id: uid, email: fromStorage()?.user?.id === uid ? fromStorage().user.email : null };
+    if (fam !== undefined && v.skill) v.families = { ...(fromStorage()?.families || {}), [v.skill]: fam };
+    return v;
   } catch {
     return null;
   }
@@ -55,13 +67,13 @@ export function set(patch, { silent = false } = {}) {
 }
 
 function save() {
-  const { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab, inspectTab, inspectWide, shapeAuto, recentSkills } = state;
-  const persisted = { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab, inspectTab, inspectWide, shapeAuto, recentSkills };
+  const { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab, inspectTab, inspectWide, shapeAuto, recentSkills, mode, user, recentUsers, families, showOther } = state;
+  const persisted = { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab, inspectTab, inspectWide, shapeAuto, recentSkills, mode, user, recentUsers, families, showOther };
   try {
     localStorage.setItem(KEY, JSON.stringify(persisted));
   } catch {}
   // Only what defines the view goes into the link; layout preferences stay per-user.
-  const link = { skill, days, q, sort, filters, selected, open, tab, inspectTab };
+  const link = { skill, days, q, sort, filters, selected, open, tab, inspectTab, ...(mode === 'user' && user ? { mode, uid: user.id } : {}), ...(families?.[skill] !== undefined ? { fam: families[skill] } : {}) };
   history.replaceState(null, '', `#v=${encodeURIComponent(JSON.stringify(link))}`);
 }
 
@@ -84,4 +96,10 @@ export function clearFilter(key) {
   const filters = { ...state.filters };
   if (key) delete filters[key];
   set({ filters: key ? filters : {} });
+}
+
+// The `fam` query value for the current skill: 'default' (computed), 'all', or a comma list.
+export function famParam(skill = state.skill) {
+  const f = state.families?.[skill];
+  return f === undefined ? 'default' : f === 'all' ? 'all' : f.join(',');
 }

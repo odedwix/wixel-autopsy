@@ -10,6 +10,8 @@ import { stepKey } from './filters.js';
 
 const GAP = 12;
 const META_H = 62;
+const SKILLS_H = 15; // user mode: the skills line under the title
+const metaH = () => META_H + (state.mode === 'user' ? SKILLS_H : 0);
 const OVERSCAN_ROWS = 2;
 
 let scroller;
@@ -85,7 +87,7 @@ function measure() {
   const cols = Math.max(1, Math.floor((width + GAP) / (target + GAP)));
   const cardW = (width - GAP * (cols - 1)) / cols;
   const thumbH = Math.round(cardW * aspect());
-  layout = { cols, cardW, thumbH, rowH: thumbH + META_H + GAP, width };
+  layout = { cols, cardW, thumbH, rowH: thumbH + metaH() + GAP, width };
   sizer.style.height = `${Math.ceil(runs.length / cols) * layout.rowH}px`;
 }
 
@@ -197,6 +199,21 @@ function errorList(r) {
   ];
 }
 
+// User mode: the skills this session used (a line under the title).
+function skillLine(r) {
+  const list = r.allSkills || r.skills || [];
+  if (state.mode !== 'user' || !list.length) return null;
+  return h('div', { class: 'skills-line', title: `Skills used: ${list.join(', ')}` },
+    list.slice(0, 2).join(' · '), list.length > 2 ? h('span', { class: 'more' }, ` +${list.length - 2}`) : null);
+}
+
+// Skill mode: other skills also worked in this session; their turns aren't counted here.
+function otherSkillsChip(r) {
+  const list = r.otherSkills || [];
+  if (state.mode === 'user' || !list.length) return null;
+  return h('span', { class: 'sig other-sk', title: `Also in this session, not counted for ${state.skill}: ${list.join(', ')}${r.allTurns > r.turns ? `\n${r.turns} of ${r.allTurns} turns counted` : ''}` }, `+${list.length} skill${list.length > 1 ? 's' : ''}`);
+}
+
 function buildCard(r) {
   const thumb = h('div', { class: 'thumb', style: { height: `${layout.thumbH}px` } });
   const c = h('div', { class: `card${failedRun(r) ? ' failed' : ''}`, 'data-id': r.id },
@@ -207,10 +224,11 @@ function buildCard(r) {
         userType(r),
         h('time', { title: new Date(r.createdAt).toLocaleString() }, ago(r.createdAt)),
         h('span', { class: 'sep' }, '·'),
-        h('span', { class: 'num', title: 'Session wall time' }, dur(r.wallMs)),
+        h('span', { class: 'num', title: state.mode === 'user' ? 'Session wall time' : `Wall time of the turns counted for ${state.skill}` }, dur(r.wallMs)),
         r.generations ? [h('span', { class: 'sep' }, '·'), h('span', { class: 'num', title: 'Generation calls' }, `${r.generations} gen`)] : null,
       ),
-      h('div', { class: 'signals' }, signals(r)),
+      skillLine(r),
+      h('div', { class: 'signals' }, signals(r), otherSkillsChip(r)),
     ),
   );
   c._run = r;

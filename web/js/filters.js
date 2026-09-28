@@ -67,6 +67,8 @@ export const FACETS = [
     ],
   },
   { key: 'outputType', label: 'Output type', dynamic: (r) => [...new Set((r.outputs || []).map((o) => o.type))], labelOf: (v) => typeLabel(v) },
+  // Every skill the session loaded (in skill mode: which skills people combine with this one).
+  { key: 'skillsUsed', label: 'Skills in the session', dynamic: (r) => r.allSkills || r.skills || [], limit: 6 },
   {
     key: 'delivery',
     label: 'What the user did',

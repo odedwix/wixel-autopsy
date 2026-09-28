@@ -5,7 +5,7 @@ import { currentSignal } from './context.js';
 
 // Wixel Agent admin API. Reachable from the Wix network without a cookie.
 
-async function getJson(url, { timeoutMs = 60000, retries = 2, body } = {}) {
+export async function getJson(url, { timeoutMs = 60000, retries = 2, body } = {}) {
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {

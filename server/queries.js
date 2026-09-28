@@ -38,61 +38,141 @@ function checkHours([a, b]) {
   if (!(Number.isInteger(a) && Number.isInteger(b) && a >= 0 && b <= 24 && a < b)) throw new Error(`bad hours ${a}-${b}`);
 }
 
-// Bump when runsDayQuery's output changes, so cached days are re-queried.
-export const RUNS_QUERY_VERSION = 5;
+// ---- scope: which sessions, and which of their turns, a day query counts ----
+// A scope is either a skill ({ skill, family }) or a list of sessions ({ ids }, user mode).
+//
+// Skill scope, turn by turn: a turn that loads the skill claims the session; the turns after it
+// stay with the skill until one loads a skill outside its family (the helpers it loads alongside
+// it, e.g. wixel-ads → site-content, video-creation), which hands the session over to that other
+// work. Turns before the first claim never count. `family: null` counts whole sessions.
+const skillNames = (xs) => [...new Set(xs.filter((x) => /^[\w.:-]{1,80}$/.test(x)))];
 
-export function runsDayQuery({ skill, day, hours = [0, 24], sample = null }) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error(`bad day ${day}`);
-  checkHours(hours);
-  return `
-WITH picked AS (
+function checkScope(sc) {
+  if (sc.ids) {
+    if (!sc.ids.length || sc.ids.some((id) => !/^[\w-]{36}$/.test(id))) throw new Error('bad session ids');
+  } else if (!sc.skill) throw new Error('scope needs a skill or session ids');
+}
+const turnScoped = (sc) => Boolean(sc.skill && !sc.ids && Array.isArray(sc.family));
+
+function pickedCte(sc, day, hours) {
+  if (sc.ids) return `picked AS (SELECT sid, CAST(NULL AS timestamp(3)) AS skill_at FROM UNNEST(ARRAY[${sc.ids.map(lit).join(',')}]) AS t(sid))`;
+  return `picked AS (
   SELECT session_id AS sid, min(created_date) AS skill_at
   FROM ${ENTRIES}
   WHERE entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'skill'
-    AND element_at(tool_call.arguments, 'name') = ${lit(skill)}
+    AND element_at(tool_call.arguments, 'name') = ${lit(sc.skill)}
     AND created_date >= TIMESTAMP '${day} 00:00:00' - INTERVAL '1' DAY
     AND created_date < TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[1]}' HOUR
   GROUP BY 1
   HAVING min(created_date) >= TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[0]}' HOUR
-     AND min(created_date) < TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[1]}' HOUR${sampleClause(sample)}
-),
-e AS (
-  SELECT x.*, picked.skill_at AS picked_at, element_at(x.tool_result.result, 'output') AS out
+     AND min(created_date) < TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[1]}' HOUR${sampleClause(sc.sample)}
+)`;
+}
+
+const windowOf = (col, day) => `${col} >= TIMESTAMP '${day} 00:00:00' - INTERVAL '1' DAY
+    AND ${col} < TIMESTAMP '${day} 00:00:00' + INTERVAL '3' DAY`;
+
+// Per turn: does it load the skill (claims) or a skill outside the family (other)? Read from the
+// turn boundaries and skill loads only, so it stays cheap next to the main scan.
+function ownCtes(sc, day) {
+  if (!turnScoped(sc)) return '';
+  const keep = skillNames([sc.skill, ...sc.family]).map(lit).join(', ');
+  const load = `x.entry_type = 'TOOL_CALL' AND x.tool_call.tool_name = 'skill'`;
+  return `,
+tl AS (
+  SELECT x.session_id, x.turn_id, min(x.sequence) AS seq,
+    coalesce(bool_or(${load} AND element_at(x.tool_call.arguments, 'name') = ${lit(sc.skill)}), false) AS claims,
+    coalesce(bool_or(${load} AND element_at(x.tool_call.arguments, 'name') NOT IN (${keep})), false) AS other
   FROM ${ENTRIES} x JOIN picked ON picked.sid = x.session_id
-  WHERE x.created_date >= TIMESTAMP '${day} 00:00:00' - INTERVAL '1' DAY
-    AND x.created_date < TIMESTAMP '${day} 00:00:00' + INTERVAL '3' DAY
+  WHERE ${windowOf('x.created_date', day)}
+    AND (x.entry_type = 'TURN_BOUNDARY' OR (${load}))
+  GROUP BY 1, 2
 ),
+own AS (
+  SELECT session_id, turn_id FROM (
+    SELECT session_id, turn_id,
+      max(CASE WHEN claims THEN seq END) OVER (PARTITION BY session_id ORDER BY seq ROWS UNBOUNDED PRECEDING) AS lc,
+      max(CASE WHEN other AND NOT claims THEN seq END) OVER (PARTITION BY session_id ORDER BY seq ROWS UNBOUNDED PRECEDING) AS lo
+    FROM tl
+  ) m
+  WHERE lc IS NOT NULL AND (lo IS NULL OR lc > lo)
+)`;
+}
+// The same rule over rows already scanned (no second pass over the table, which Trino would do
+// for a second CTE reference): per turn, its first sequence and whether it claims or hands over,
+// then a running max over turns gives the last claim / last handover before each row.
+function ownedRows(sc) {
+  if (!turnScoped(sc)) return `e AS (SELECT e0.*, true AS owned FROM e0),`;
+  const keep = skillNames([sc.skill, ...sc.family]).map(lit).join(', ');
+  return `t AS (
+  SELECT e0.*,
+    min(sequence) OVER (PARTITION BY session_id, turn_id) AS tseq,
+    coalesce(bool_or(loads = ${lit(sc.skill)}) OVER (PARTITION BY session_id, turn_id), false) AS tclaims,
+    coalesce(bool_or(loads NOT IN (${keep})) OVER (PARTITION BY session_id, turn_id), false) AS tother
+  FROM e0
+),
+m AS (
+  SELECT t.*,
+    max(CASE WHEN tclaims THEN tseq END) OVER (PARTITION BY session_id ORDER BY tseq) AS lc,
+    max(CASE WHEN tother AND NOT tclaims THEN tseq END) OVER (PARTITION BY session_id ORDER BY tseq) AS lo
+  FROM t
+),
+e AS (SELECT m.*, (lc IS NOT NULL AND (lo IS NULL OR lc > lo)) AS owned FROM m),`;
+}
+const ownJoin = (sc) => (turnScoped(sc) ? '\n  JOIN own ON own.session_id = x.session_id AND own.turn_id = x.turn_id' : '');
+
+// Bump when runsDayQuery's output changes, so cached days are re-queried.
+export const RUNS_QUERY_VERSION = 10;
+
+export function runsDayQuery({ scope, day, hours = [0, 24] }) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error(`bad day ${day}`);
+  checkHours(hours);
+  checkScope(scope);
+  return `
+WITH ${pickedCte(scope, day, hours)},
+e0 AS (
+  SELECT x.*, picked.skill_at AS picked_at, element_at(x.tool_result.result, 'output') AS out,
+    CASE WHEN x.entry_type = 'TOOL_CALL' AND x.tool_call.tool_name = 'skill' THEN element_at(x.tool_call.arguments, 'name') END AS loads
+  FROM ${ENTRIES} x JOIN picked ON picked.sid = x.session_id
+  WHERE ${windowOf('x.created_date', day)}
+),
+${ownedRows(scope)}
 agg AS (
   SELECT
     session_id,
-    min(created_date) AS first_ts,
-    max(created_date) AS last_ts,
-    arbitrary(user_id) AS user_id,
-    arbitrary(_msid) AS msid,
-    arbitrary(coalesce(_logged_account_id, _target_account_id)) AS account_id,
-    min_by(user_message.text, sequence) FILTER (WHERE entry_type = 'USER_MESSAGE') AS prompt,
-    arbitrary(picked_at) AS skill_at,
-    count(DISTINCT id) FILTER (WHERE entry_type = 'USER_MESSAGE') AS user_messages,
-    count(DISTINCT id) FILTER (WHERE entry_type = 'TOOL_CALL') AS tool_calls,
-    count(DISTINCT id) FILTER (WHERE entry_type = 'TOOL_RESULT' AND element_at(tool_result.result, 'jobId') IS NOT NULL) AS generations,
-    count(DISTINCT id) FILTER (WHERE entry_type = 'TOOL_RESULT' AND (
+    min(created_date) FILTER (WHERE owned) AS first_ts,
+    max(created_date) FILTER (WHERE owned) AS last_ts,
+    arbitrary(user_id) FILTER (WHERE owned) AS user_id,
+    arbitrary(_msid) FILTER (WHERE owned) AS msid,
+    arbitrary(coalesce(_logged_account_id, _target_account_id)) FILTER (WHERE owned) AS account_id,
+    min_by(user_message.text, sequence) FILTER (WHERE owned AND entry_type = 'USER_MESSAGE') AS prompt,
+    arbitrary(picked_at) FILTER (WHERE owned) AS skill_at,
+    count(DISTINCT id) FILTER (WHERE owned AND entry_type = 'USER_MESSAGE') AS user_messages,
+    count(DISTINCT id) FILTER (WHERE owned AND entry_type = 'TOOL_CALL') AS tool_calls,
+    count(DISTINCT id) FILTER (WHERE owned AND entry_type = 'TOOL_RESULT' AND element_at(tool_result.result, 'jobId') IS NOT NULL) AS generations,
+    count(DISTINCT id) FILTER (WHERE owned AND entry_type = 'TOOL_RESULT' AND (
       tool_result.status LIKE '%ERROR%' OR out LIKE 'Exception%' OR out LIKE '%error_json:%')) AS errors,
-    min_by(substr(coalesce(tool_result.error_message, out), 1, 300), sequence) FILTER (WHERE entry_type = 'TOOL_RESULT' AND (
+    min_by(substr(coalesce(tool_result.error_message, out), 1, 300), sequence) FILTER (WHERE owned AND entry_type = 'TOOL_RESULT' AND (
       tool_result.status LIKE '%ERROR%' OR out LIKE 'Exception%' OR out LIKE '%error_json:%')) AS first_error,
-    count(DISTINCT id) FILTER (WHERE entry_type = 'TURN_BOUNDARY' AND turn_boundary.kind LIKE '%FAILED%') AS failed_turns,
-    count(DISTINCT id) FILTER (WHERE entry_type = 'TURN_BOUNDARY' AND turn_boundary.kind LIKE '%STARTED%') AS turns,
-    max(turn_boundary.duration_ms) AS longest_turn_ms,
-    array_agg(DISTINCT element_at(tool_call.arguments, 'method')) FILTER (WHERE entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'invoke_rpc') AS methods,
-    array_agg(DISTINCT element_at(metadata, 'codexVersionId')) FILTER (WHERE entry_type = 'TURN_BOUNDARY' AND element_at(metadata, 'codexVersionId') IS NOT NULL) AS codex_versions,
-    array_agg(DISTINCT element_at(tool_call.arguments, 'name')) FILTER (WHERE entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'skill') AS skills,
-    min_by(regexp_extract(out, 'https://[^"\\\\ ]+?\\.mp4'), sequence) FILTER (WHERE entry_type = 'TOOL_RESULT' AND element_at(tool_result.result, 'jobId') IS NOT NULL AND out LIKE '%.mp4%') AS first_clip,
-    max_by(regexp_extract(out, 'https://[^"\\\\ ]+?\\.mp4'), sequence) FILTER (WHERE entry_type = 'TOOL_RESULT' AND element_at(tool_result.result, 'jobId') IS NOT NULL AND out LIKE '%.mp4%') AS last_clip,
-    array_agg(DISTINCT element_at(system_event.payload, 'sentimentLabel')) FILTER (WHERE entry_type = 'SYSTEM_EVENT' AND system_event.event_name = 'turn_analysis' AND element_at(system_event.payload, 'sentimentLabel') IS NOT NULL) AS sentiments,
-    max_by(element_at(system_event.payload, 'sentimentLabel'), sequence) FILTER (WHERE entry_type = 'SYSTEM_EVENT' AND system_event.event_name = 'turn_analysis') AS last_sentiment,
-    max_by(element_at(system_event.payload, 'sentimentDetail'), sequence) FILTER (WHERE entry_type = 'SYSTEM_EVENT' AND system_event.event_name = 'turn_analysis' AND element_at(system_event.payload, 'sentimentLabel') IN ('frustrated', 'confused')) AS sentiment_detail,
-    count(DISTINCT id) FILTER (WHERE entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'download') AS agent_downloads,
-    max_by(regexp_extract(out, 'https://links\\.wixel\\.com/link/[A-Za-z0-9_-]+'), sequence) FILTER (WHERE entry_type = 'TOOL_RESULT' AND tool_result.tool_name = 'download') AS agent_download_link,
-    min_by(regexp_extract(out, 'https://static\\.wixstatic\\.com/media/[^"\\\\ ]+?\\.(?:png|jpg|jpeg|webp)'), sequence) FILTER (WHERE entry_type = 'TOOL_RESULT' AND tool_result.tool_name IN ('generate_image', 'edit_image')) AS first_image
+    count(DISTINCT id) FILTER (WHERE owned AND entry_type = 'TURN_BOUNDARY' AND turn_boundary.kind LIKE '%FAILED%') AS failed_turns,
+    count(DISTINCT id) FILTER (WHERE owned AND entry_type = 'TURN_BOUNDARY' AND turn_boundary.kind LIKE '%STARTED%') AS turns,
+    max(turn_boundary.duration_ms) FILTER (WHERE owned) AS longest_turn_ms,
+    array_agg(DISTINCT element_at(tool_call.arguments, 'method')) FILTER (WHERE owned AND entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'invoke_rpc') AS methods,
+    array_agg(DISTINCT element_at(metadata, 'codexVersionId')) FILTER (WHERE owned AND entry_type = 'TURN_BOUNDARY' AND element_at(metadata, 'codexVersionId') IS NOT NULL) AS codex_versions,
+    array_agg(DISTINCT element_at(tool_call.arguments, 'name')) FILTER (WHERE owned AND entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'skill') AS skills,
+    min_by(regexp_extract(out, 'https://[^"\\\\ ]+?\\.mp4'), sequence) FILTER (WHERE owned AND entry_type = 'TOOL_RESULT' AND element_at(tool_result.result, 'jobId') IS NOT NULL AND out LIKE '%.mp4%') AS first_clip,
+    max_by(regexp_extract(out, 'https://[^"\\\\ ]+?\\.mp4'), sequence) FILTER (WHERE owned AND entry_type = 'TOOL_RESULT' AND element_at(tool_result.result, 'jobId') IS NOT NULL AND out LIKE '%.mp4%') AS last_clip,
+    array_agg(DISTINCT element_at(system_event.payload, 'sentimentLabel')) FILTER (WHERE owned AND entry_type = 'SYSTEM_EVENT' AND system_event.event_name = 'turn_analysis' AND element_at(system_event.payload, 'sentimentLabel') IS NOT NULL) AS sentiments,
+    max_by(element_at(system_event.payload, 'sentimentLabel'), sequence) FILTER (WHERE owned AND entry_type = 'SYSTEM_EVENT' AND system_event.event_name = 'turn_analysis') AS last_sentiment,
+    max_by(element_at(system_event.payload, 'sentimentDetail'), sequence) FILTER (WHERE owned AND entry_type = 'SYSTEM_EVENT' AND system_event.event_name = 'turn_analysis' AND element_at(system_event.payload, 'sentimentLabel') IN ('frustrated', 'confused')) AS sentiment_detail,
+    count(DISTINCT id) FILTER (WHERE owned AND entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'download') AS agent_downloads,
+    max_by(regexp_extract(out, 'https://links\\.wixel\\.com/link/[A-Za-z0-9_-]+'), sequence) FILTER (WHERE owned AND entry_type = 'TOOL_RESULT' AND tool_result.tool_name = 'download') AS agent_download_link,
+    min_by(regexp_extract(out, 'https://static\\.wixstatic\\.com/media/[^"\\\\ ]+?\\.(?:png|jpg|jpeg|webp)'), sequence) FILTER (WHERE owned AND entry_type = 'TOOL_RESULT' AND tool_result.tool_name IN ('generate_image', 'edit_image')) AS first_image,
+    -- The whole session, for saying what the counted turns left out.
+    array_agg(DISTINCT loads) FILTER (WHERE loads IS NOT NULL) AS all_skills,
+    count(DISTINCT turn_id) FILTER (WHERE entry_type = 'TURN_BOUNDARY') AS all_turns,
+    max(created_date) AS whole_last_ts,
+    array_agg(DISTINCT turn_id) FILTER (WHERE owned) AS owned_turns
   FROM e
   GROUP BY session_id
 )
@@ -123,33 +203,26 @@ FROM a LEFT JOIN t ON t.account_id = a.account_id`;
 // User-facing session events for the same day's sessions (thumbs, out of credits, stream errors)
 // and the assets each run wrote.
 // Separate from runsDayQuery so each stays well under the endpoint's 30s limit.
-export function eventsDayQuery({ skill, day, hours = [0, 24], sample = null }) {
+export function eventsDayQuery({ scope, day, hours = [0, 24] }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error(`bad day ${day}`);
   checkHours(hours);
+  checkScope(scope);
+  // Each event keeps its turn (id␟turn[␟value]); runs.js drops the turns the scope doesn't count,
+  // using the runs query's owned_turns. Keeps this query to one pass over the events table.
+  const t = `coalesce(x.turn_id, '')`;
   return `
-WITH picked AS (
-  SELECT session_id AS sid
-  FROM ${ENTRIES}
-  WHERE entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'skill'
-    AND element_at(tool_call.arguments, 'name') = ${lit(skill)}
-    AND created_date >= TIMESTAMP '${day} 00:00:00' - INTERVAL '1' DAY
-    AND created_date < TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[1]}' HOUR
-  GROUP BY 1
-  HAVING min(created_date) >= TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[0]}' HOUR
-     AND min(created_date) < TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[1]}' HOUR${sampleClause(sample)}
-)
+WITH ${pickedCte(scope, day, hours)}
 SELECT
   x.session_id,
-  count(DISTINCT x.id) FILTER (WHERE x.event_type = 'USER_FEEDBACK' AND element_at(x.payload, 'feedback') = 'thumbs_up') AS thumbs_up,
-  count(DISTINCT x.id) FILTER (WHERE x.event_type = 'USER_FEEDBACK' AND element_at(x.payload, 'feedback') = 'thumbs_down') AS thumbs_down,
-  array_agg(DISTINCT element_at(x.payload, 'tags')) FILTER (WHERE x.event_type = 'USER_FEEDBACK' AND element_at(x.payload, 'tags') IS NOT NULL) AS feedback_tags,
-  count(DISTINCT x.id) FILTER (WHERE x.event_type = 'OUT_OF_FUNDS') AS out_of_funds,
-  count(DISTINCT x.id) FILTER (WHERE x.event_type = 'MODEL_STREAM_ERROR') AS stream_errors,
+  array_agg(DISTINCT concat(x.id, chr(31), ${t})) FILTER (WHERE x.event_type = 'USER_FEEDBACK' AND element_at(x.payload, 'feedback') = 'thumbs_up') AS thumbs_up_t,
+  array_agg(DISTINCT concat(x.id, chr(31), ${t})) FILTER (WHERE x.event_type = 'USER_FEEDBACK' AND element_at(x.payload, 'feedback') = 'thumbs_down') AS thumbs_down_t,
+  array_agg(DISTINCT concat(x.id, chr(31), ${t}, chr(31), element_at(x.payload, 'tags'))) FILTER (WHERE x.event_type = 'USER_FEEDBACK' AND element_at(x.payload, 'tags') IS NOT NULL) AS feedback_tags_t,
+  array_agg(DISTINCT concat(x.id, chr(31), ${t})) FILTER (WHERE x.event_type = 'OUT_OF_FUNDS') AS out_of_funds_t,
+  array_agg(DISTINCT concat(x.id, chr(31), ${t})) FILTER (WHERE x.event_type = 'MODEL_STREAM_ERROR') AS stream_errors_t,
   -- The assets each turn wrote (id, name, assetType, intent, snapshotUrl): the run's outputs, exactly.
-  array_agg(element_at(x.payload, 'assets')) FILTER (WHERE x.event_type = 'TURN_UPDATED_ASSETS') AS asset_events
+  array_agg(concat(x.id, chr(31), ${t}, chr(31), element_at(x.payload, 'assets'))) FILTER (WHERE x.event_type = 'TURN_UPDATED_ASSETS') AS asset_events_t
 FROM domain_events.www_wixel_agent.v1_session_event_crud x JOIN picked ON picked.sid = x.session_id
-WHERE x.created_date >= TIMESTAMP '${day} 00:00:00' - INTERVAL '1' DAY
-  AND x.created_date < TIMESTAMP '${day} 00:00:00' + INTERVAL '3' DAY
+WHERE ${windowOf('x.created_date', day)}
   AND x.event_type IN ('USER_FEEDBACK', 'OUT_OF_FUNDS', 'MODEL_STREAM_ERROR', 'TURN_UPDATED_ASSETS')
 GROUP BY 1
 ORDER BY 1`;
@@ -187,27 +260,17 @@ WHERE entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'skill'
 // Per-session step stats and timing for insights: per (tool, method, model) calls / failures /
 // time, plus request → first generation → last good generation → turn completions, and the
 // first turn's classified intent. Computed in Trino so insights never fetch sessions one by one.
-export const STEPS_QUERY_VERSION = 1;
-export function stepsDayQuery({ skill, day, hours = [0, 24], sample = null }) {
+export const STEPS_QUERY_VERSION = 2;
+export function stepsDayQuery({ scope, day, hours = [0, 24] }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error(`bad day ${day}`);
   checkHours(hours);
+  checkScope(scope);
   const failed = `(tool_result.status LIKE '%ERROR%' OR element_at(tool_result.result, 'output') LIKE 'Exception%' OR element_at(tool_result.result, 'output') LIKE '%error_json:%')`;
   return `
-WITH picked AS (
-  SELECT session_id AS sid
-  FROM ${ENTRIES}
-  WHERE entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'skill'
-    AND element_at(tool_call.arguments, 'name') = ${lit(skill)}
-    AND created_date >= TIMESTAMP '${day} 00:00:00' - INTERVAL '1' DAY
-    AND created_date < TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[1]}' HOUR
-  GROUP BY 1
-  HAVING min(created_date) >= TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[0]}' HOUR
-     AND min(created_date) < TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[1]}' HOUR${sampleClause(sample)}
-),
+WITH ${pickedCte(scope, day, hours)}${ownCtes(scope, day)},
 e AS (
-  SELECT x.* FROM ${ENTRIES} x JOIN picked ON picked.sid = x.session_id
-  WHERE x.created_date >= TIMESTAMP '${day} 00:00:00' - INTERVAL '1' DAY
-    AND x.created_date < TIMESTAMP '${day} 00:00:00' + INTERVAL '3' DAY
+  SELECT x.* FROM ${ENTRIES} x JOIN picked ON picked.sid = x.session_id${ownJoin(scope)}
+  WHERE ${windowOf('x.created_date', day)}
 ),
 calls AS (
   SELECT session_id, tool_call.tool_call_id AS cid, element_at(tool_call.arguments, 'method') AS method,
@@ -248,4 +311,24 @@ LEFT JOIN (
   FROM st GROUP BY 1
 ) s ON s.session_id = t.session_id
 ORDER BY t.session_id`;
+}
+
+// How often each pair of skills is loaded in the same turn (last 3 days, all sessions), for
+// working out a skill's family: the helpers it loads alongside it. Skill loads only, so cheap.
+export function skillPairsQuery() {
+  return `
+WITH t AS (
+  SELECT session_id, turn_id, array_agg(DISTINCT element_at(tool_call.arguments, 'name')) AS sk
+  FROM ${ENTRIES}
+  WHERE entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'skill'
+    AND created_date >= current_timestamp - INTERVAL '3' DAY
+  GROUP BY 1, 2
+),
+n AS (SELECT a, count(*) AS turns FROM t CROSS JOIN UNNEST(sk) AS x(a) GROUP BY 1)
+SELECT x.a, y.b, count(*) AS together, max(n.turns) AS a_turns
+FROM t CROSS JOIN UNNEST(sk) AS x(a) CROSS JOIN UNNEST(sk) AS y(b) JOIN n ON n.a = x.a
+WHERE x.a <> y.b
+GROUP BY 1, 2
+HAVING count(*) * 100 >= max(n.turns) * 2
+ORDER BY 1, 3 DESC`;
 }
