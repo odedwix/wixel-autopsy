@@ -216,7 +216,15 @@ class ReviewPlayer {
       this.dragging = false;
       if (this.resume) this.v.play();
     });
-    this.v.play().catch(() => {});
+    // Autoplay with sound can be refused (no click on the page yet): play muted and offer Unmute
+    // rather than leaving a silent or paused player.
+    this.v.play().catch(() => {
+      this.v.muted = true;
+      this.v.play().catch(() => {});
+      this.sync();
+      const btn = h('button', { class: 'unmute', onclick: (e) => { e.stopPropagation(); this.v.muted = false; this.v.play().catch(() => {}); btn.remove(); this.sync(); } }, icon('volume'), 'Unmute');
+      stage.append(btn);
+    });
   }
 
   loop = () => {
@@ -269,6 +277,7 @@ class ReviewPlayer {
     this.time.textContent = `${tc(this.v.currentTime)} / ${tc(this.duration)}`;
     this.playBtn.replaceChildren(icon(this.v.paused ? 'play' : 'pause'));
     this.muteBtn.replaceChildren(icon(this.v.muted ? 'mute' : 'volume'));
+    if (!this.v.muted) this.v.parentElement?.querySelector('.unmute')?.remove();
   }
 
   setScenes(scenes) {

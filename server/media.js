@@ -14,6 +14,8 @@ const MEDIA = path.join(config.cacheDir, 'media');
 const SPRITE_FRAMES = 60;
 const SHORT_SIDE = 540;
 const CONCURRENCY = 2;
+// Recorded in each build's meta (v2 = root voiceover/music tracks mixed in), so stale copies can be found.
+const ASSEMBLY_VERSION = 2;
 
 const dirFor = (id) => path.join(MEDIA, id);
 const exists = (f) => fs.access(f).then(() => true, () => false);
@@ -56,7 +58,7 @@ async function pickSource(run) {
   }
   const rec = normalizeSession(await getSessionBundle(run.id));
   const scenes = (rec.outputs?.scenes || []).filter((s) => s.clipUrl);
-  if (scenes.length) return { kind: 'assembled', label: 'Assembled from scenes (no text overlays)', scenes, music: rec.outputs.music, fps: 24 };
+  if (scenes.length) return { kind: 'assembled', label: 'Assembled from scenes (no text overlays)', scenes, music: rec.outputs.music, rootAudio: rec.outputs.rootAudio || [], fps: 24 };
   // Nothing composed: fall back to the last generated clip so failed/partial runs still show something.
   const clip = rec.clips.at(-1);
   if (clip) return { kind: 'clip', label: `Last generated clip (${clip.method})`, url: clip.url };
@@ -102,14 +104,32 @@ async function assemble(src, out) {
   const n = src.scenes.length;
   parts.push(`${src.scenes.map((_, i) => `[v${i}][a${i}]`).join('')}concat=n=${n}:v=1:a=1[v][clips]`);
   let aout = '[clips]';
-  const m = src.music;
+  // Root audio tracks (voiceover / music components). When a music component exists, the legacy
+  // background_music setting describes the same track — use one, not both.
+  const tracks = (src.rootAudio || []).filter((t) => t.volume > 0);
+  const hasMusicTrack = tracks.some((t) => t.kind === 'music');
+  let next = n;
+  const mixIns = [];
+  for (const t of tracks) {
+    args.push('-i', t.url);
+    const d = Math.round(t.shiftSec * 1000);
+    parts.push(`[${next}:a]atrim=start=${t.trimStartSec},asetpts=PTS-STARTPTS,volume=${t.volume},adelay=${d}:all=1,aresample=48000,aformat=channel_layouts=stereo,apad=whole_dur=${total},atrim=duration=${total}[t${next}]`);
+    mixIns.push(`[t${next}]`);
+    next++;
+  }
+  if (mixIns.length) {
+    parts.push(`[clips]${mixIns.join('')}amix=inputs=${mixIns.length + 1}:duration=first:normalize=0[withroot]`);
+    aout = '[withroot]';
+  }
+  const m = hasMusicTrack ? null : src.music;
   if (m?.url && m.enabled !== false) {
     args.push('-i', m.url);
+    const mi = next;
     const shift = Number(m.shift || 0);
     const musicLen = Math.min(total - shift, Number(m.duration || total) - Number(m.trim_start || 0) - Number(m.trim_end || 0));
     const fadeOut = Number(m.fadeOutSec ?? 2);
-    parts.push(`[${n}:a]atrim=start=${Number(m.trim_start || 0)}:duration=${musicLen},asetpts=PTS-STARTPTS,afade=t=in:d=${Number(m.fadeInSec ?? 0.15)},afade=t=out:st=${Math.max(0, musicLen - fadeOut)}:d=${fadeOut},volume=${Number(m.volume ?? 0.3)},adelay=${Math.round(shift * 1000)}:all=1,aresample=48000,aformat=channel_layouts=stereo,apad=whole_dur=${total}[music]`);
-    parts.push(`[clips][music]amix=inputs=2:duration=first:normalize=0[mix]`);
+    parts.push(`[${mi}:a]atrim=start=${Number(m.trim_start || 0)}:duration=${musicLen},asetpts=PTS-STARTPTS,afade=t=in:d=${Number(m.fadeInSec ?? 0.15)},afade=t=out:st=${Math.max(0, musicLen - fadeOut)}:d=${fadeOut},volume=${Number(m.volume ?? 0.3)},adelay=${Math.round(shift * 1000)}:all=1,aresample=48000,aformat=channel_layouts=stereo,apad=whole_dur=${total}[music]`);
+    parts.push(`${aout}[music]amix=inputs=2:duration=first:normalize=0[mix]`);
     aout = '[mix]';
   }
   args.push('-filter_complex', parts.join(';'), '-map', '[v]', '-map', aout, ...videoArgs, ...audioArgs, '-movflags', '+faststart', out);
@@ -147,7 +167,7 @@ async function build(run) {
   else await transcode(src.url, tmp);
   await fs.rename(tmp, path.join(dir, 'review.mp4'));
   const meta = await stills(dir);
-  return { state: 'ready', kind: src.kind, label: src.label, sourceUrl: src.url || null, builtMs: Date.now() - t0, ...meta };
+  return { state: 'ready', kind: src.kind, label: src.label, sourceUrl: src.url || null, builtMs: Date.now() - t0, v: ASSEMBLY_VERSION, ...meta };
 }
 
 // ---- queue ----
