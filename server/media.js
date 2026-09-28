@@ -228,4 +228,18 @@ export function mediaFile(id, name) {
   return path.join(dirFor(id), name);
 }
 
+// What a download should hand over: the original full-quality render when the run has one
+// (the review copy is a 540p transcode of it), otherwise our review copy.
+const RENDER_HOSTS = /(^|\.)(wixmp\.com|wixstatic\.com|wixel\.com|wix\.com)$/i;
+export async function downloadSource(id) {
+  const meta = await readMeta(id);
+  if (!meta || meta.state !== 'ready') return null;
+  if (meta.kind === 'render' && meta.sourceUrl) {
+    try {
+      if (RENDER_HOSTS.test(new URL(meta.sourceUrl).hostname)) return { kind: 'render', url: meta.sourceUrl };
+    } catch {}
+  }
+  return { kind: meta.kind, file: mediaFile(id, 'review.mp4') };
+}
+
 export const queueDepth = () => ({ active, pending: pending.length });

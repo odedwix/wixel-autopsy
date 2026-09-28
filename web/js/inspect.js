@@ -7,7 +7,7 @@ import { caps, HINT } from './caps.js';
 import { toast } from './ui.js';
 import { MOOD, worstMood, failedRun, hasAd, primaryOutput, typeLabel } from './filters.js';
 import { isVideoRun } from './grid.js';
-import { mediaOf, isReady, prioritize, onMedia, videoUrl, spriteUrl, placeSprite } from './media.js';
+import { mediaOf, isReady, prioritize, onMedia, videoUrl, spriteUrl, placeSprite, downloadRun } from './media.js';
 
 const ADMIN = 'https://wix-bo.com/wixel-agent/admin/#/sessions/';
 const detailCache = new Map();
@@ -126,6 +126,7 @@ function header(r, d) {
         r.agent ? [h('span', { class: 'sep' }, '·'), h('span', {}, `${r.agent}${r.source ? ` / ${r.source}` : ''}`)] : null,
       ),
     ),
+    isVideoRun(r) ? h('button', { class: 'btn share-btn', title: 'Download the video (D) — the exact render when there is one', onclick: () => downloadRun(current?.run || r, state.skill) || toast('The video is still being prepared — try again in a moment') }, icon('download'), 'Download') : null,
     h('button', { class: 'btn share-btn', title: 'Share this run', onclick: (e) => shareRun(e.currentTarget, current?.run || r, current?.detail || d) }, icon('external'), 'Share'),
     h('button', { class: 'icon-btn', title: 'Wide panel (W)', onclick: () => toggleWide() }, icon('expand')),
     h('a', { class: 'icon-btn', href: ADMIN + r.id, target: '_blank', rel: 'noopener', title: 'Open in Wixel admin (O)' }, icon('external')),
@@ -185,7 +186,8 @@ class ReviewPlayer {
     this.muteBtn = h('button', { title: 'Mute', onclick: () => { this.v.muted = !this.v.muted; this.sync(); } }, icon('volume'));
     const src = meta.kind === 'render' ? 'Exact render' : meta.kind === 'assembled' ? 'Assembled — no text/captions' : 'Single clip';
     this.modeBtn = h('button', { class: 'mode', title: 'Switch to the exact live player (E)', onclick: () => toggleLive() }, icon('sparkle', 'sm'), 'Exact');
-    const controls = h('div', { class: 'controls' }, this.playBtn, this.time, h('span', { style: { flex: 1 } }), this.rateBtn, this.muteBtn, hasAd(run) ? this.modeBtn : null,
+    const controls = h('div', { class: 'controls' }, this.playBtn, this.time, h('span', { style: { flex: 1 } }), this.rateBtn, this.muteBtn,
+      h('button', { title: `Download ${meta.kind === 'render' ? 'the exact render' : 'this video'} (D)`, onclick: () => downloadRun(run, state.skill) }, icon('download')), hasAd(run) ? this.modeBtn : null,
       h('button', { title: 'Fullscreen', onclick: () => stage.requestFullscreen?.() }, icon('expand')));
     const note = h('div', { class: 'src-note' }, h('span', { class: 'dot', style: { background: meta.kind === 'render' ? 'var(--ok)' : meta.kind === 'assembled' ? 'var(--info)' : 'var(--warn)' } }),
       h('span', {}, `${meta.label} · ${meta.duration.toFixed(1)}s · ${src === 'Exact render' ? 'what the user got' : 'press E for the exact composition'}`));
@@ -518,8 +520,7 @@ function ids(r, d) {
     h('div', { class: 'links', style: { marginTop: '10px' } },
       h('a', { class: 'btn', href: ADMIN + r.id, target: '_blank', rel: 'noopener' }, icon('external'), 'Wixel admin'),
       r.publishedUrl ? h('a', { class: 'btn', href: r.publishedUrl, target: '_blank', rel: 'noopener' }, icon('globe'), 'Published page') : null,
-      r.renderUrl ? h('a', { class: 'btn', href: r.renderUrl, target: '_blank', rel: 'noopener', download: '' }, icon('download'), 'Exact render mp4') : null,
-      isReady(mediaOf(r.id)) ? h('a', { class: 'btn', href: videoUrl(r.id), download: `${r.id}.mp4` }, icon('download'), 'Review copy') : null,
+      isReady(mediaOf(r.id)) ? h('button', { class: 'btn', onclick: () => downloadRun(r, state.skill) }, icon('download'), mediaOf(r.id).kind === 'render' ? 'Exact render mp4' : 'Review copy mp4') : null,
     ));
 }
 

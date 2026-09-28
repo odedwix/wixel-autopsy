@@ -7,7 +7,8 @@ import { getSessionBundle } from './admin.js';
 import { normalizeSession } from './normalize.js';
 import { getGenerationTrace, getJobTrace } from './temporal.js';
 import { listRuns, listSkills, getIndexedRun, runsIndex, runsForDay } from './runs.js';
-import { mediaStatus, mediaFile, queueDepth } from './media.js';
+import { mediaStatus, mediaFile, queueDepth, downloadSource } from './media.js';
+import { Readable } from 'node:stream';
 import { createReadStream } from 'node:fs';
 import { playerInput, bundleList, playerScript } from './player.js';
 import { loadReport } from './limits.js';
@@ -114,6 +115,29 @@ async function serveMedia(req, res, id, name) {
   createReadStream(file, { start, end }).pipe(res);
 }
 
+// Save-to-disk: the exact render streamed through (a cross-origin link can't force a download),
+// else the review copy, with a readable filename.
+async function serveDownload(req, res, id, name) {
+  const src = await downloadSource(id);
+  if (!src) return send(req, res, 404, { error: 'video not ready yet' });
+  const base = String(name || id).replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120) || id;
+  const headers = { 'content-type': 'video/mp4', 'content-disposition': `attachment; filename="${base}.mp4"`, 'cache-control': 'no-store' };
+  if (src.url) {
+    const up = await fetch(src.url, { signal: AbortSignal.timeout(120000) }).catch(() => null);
+    if (up?.ok && up.body) {
+      const len = up.headers.get('content-length');
+      res.writeHead(200, len ? { ...headers, 'content-length': len } : headers);
+      return Readable.fromWeb(up.body).on('error', () => res.destroy()).pipe(res);
+    }
+    // Render link gone or unreachable: fall back to the review copy rather than failing.
+  }
+  const file = src.file || mediaFile(id, 'review.mp4');
+  const stat = await fs.stat(file).catch(() => null);
+  if (!stat) return send(req, res, 404, { error: 'video not ready yet' });
+  res.writeHead(200, { ...headers, 'content-length': stat.size });
+  createReadStream(file).pipe(res);
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/player/iframe-bootstrap.js') {
@@ -124,6 +148,8 @@ const server = http.createServer(async (req, res) => {
   }
   const mm = url.pathname.match(/^\/media\/([\w-]{36})\/([\w.]+)$/);
   if (mm) return serveMedia(req, res, mm[1], mm[2]);
+  const dm = url.pathname.match(/^\/download\/([\w-]{36})$/);
+  if (dm) return serveDownload(req, res, dm[1], url.searchParams.get('name'));
   const t0 = Date.now();
   for (const [re, handler] of routes) {
     const m = url.pathname.match(re);

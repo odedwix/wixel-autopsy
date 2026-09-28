@@ -1,7 +1,8 @@
 import { $, h, icon, ago, fmtInt, getJson, debounce } from './util.js';
 import { state, set, onChange, toggleFilter, clearFilter } from './state.js';
 import { FACETS, STATS, SORTS, applyFilters, facetCounts, facetOptions, outputProfile, setProfile, typeLabel } from './filters.js';
-import { initGrid, setRuns, relayout, markSelected, scrollToIndex, columns, applySound, stopHover } from './grid.js';
+import { initGrid, setRuns, relayout, markSelected, scrollToIndex, columns, applySound, stopHover, isVideoRun } from './grid.js';
+import { downloadRun } from './media.js';
 import { initInspect, openInspect, closeInspect, inspectedPlayer, prefetchDetail, toggleLive, toggleWide, setInspectTabByIndex } from './inspect.js';
 import { computeInsights, renderInsights, headlines } from './insights.js';
 import { setSkills, renderSkillButton, openSkillPicker, rememberSkill } from './skillpicker.js';
@@ -547,9 +548,5 @@ document.addEventListener('keydown', (e) => {
 
 function downloadSelected() {
   const r = allRuns.find((x) => x.id === state.selected);
-  if (!r) return;
-  const a = h('a', { href: r.renderUrl || `/media/${r.id}/review.mp4`, download: `${r.id}.mp4`, target: '_blank', rel: 'noopener' });
-  document.body.append(a);
-  a.click();
-  a.remove();
+  if (r && !downloadRun(r, state.skill)) toast(isVideoRun(r) ? 'The video is still being prepared — try again in a moment' : 'This run has no video to download');
 }
