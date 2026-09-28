@@ -108,7 +108,7 @@ export function normalizeSession(bundle) {
     switch (e.entryType) {
       case 'USER_MESSAGE': {
         const m = e.userMessage || {};
-        userMessages.push({ at, text: m.text || '', kind: m.kind || null, attachments: m.attachments || [], stageContext: m.messageContext?.stageContext || null });
+        userMessages.push({ at, turnId: e.turnId, text: m.text || '', kind: m.kind || null, attachments: m.attachments || [], stageContext: m.messageContext?.stageContext || null });
         break;
       }
       case 'TURN_BOUNDARY': {
@@ -124,7 +124,7 @@ export function normalizeSession(bundle) {
           t.durationMs = tb.durationMs ? Number(tb.durationMs) : null;
           t.reason = tb.reason || null;
           t.lastAssistantMessage = tb.lastAssistantMessage || null;
-          if (t.kind === 'FAILED') errors.push({ at, source: 'turn', message: tb.reason || 'Turn failed' });
+          if (t.kind === 'FAILED') errors.push({ at, turnId: e.turnId, source: 'turn', message: tb.reason || 'Turn failed' });
         }
         turns.set(e.turnId, t);
         break;
@@ -132,7 +132,7 @@ export function normalizeSession(bundle) {
       case 'SYSTEM_EVENT': {
         const se = e.systemEvent || {};
         if (se.eventName === 'iteration_start') lastIterationStart = at;
-        if (se.eventName === 'empty_response_retry') errors.push({ at, source: 'model', message: 'Empty model response (retried)' });
+        if (se.eventName === 'empty_response_retry') errors.push({ at, turnId: e.turnId, source: 'model', message: 'Empty model response (retried)' });
         if (se.eventName === 'turn_analysis') {
           const p = se.payload || {};
           const t = turns.get(e.turnId) || { turnId: e.turnId };
@@ -149,6 +149,7 @@ export function normalizeSession(bundle) {
         const mc = e.modelCall || {};
         modelCalls.push({
           at,
+          turnId: e.turnId,
           model: mc.model,
           purpose: mc.purpose,
           status: mc.status?.replace('MODEL_CALL_STATUS_', ''),
@@ -159,7 +160,7 @@ export function normalizeSession(bundle) {
           latencyMs: lastIterationStart ? at - lastIterationStart : null,
           startedAt: lastIterationStart,
         });
-        if (mc.status && !mc.status.endsWith('SUCCESS')) errors.push({ at, source: 'model', message: `${mc.model}: ${mc.status}` });
+        if (mc.status && !mc.status.endsWith('SUCCESS')) errors.push({ at, turnId: e.turnId, source: 'model', message: `${mc.model}: ${mc.status}` });
         break;
       }
       case 'TOOL_CALL': {
@@ -225,7 +226,7 @@ export function normalizeSession(bundle) {
         if (failed) {
           const message = tr.errorMessage || (typeof outputRaw === 'string' ? outputRaw : JSON.stringify(outputRaw))?.slice(0, 2000) || 'failed';
           step.error = message;
-          errors.push({ at, source: 'tool', stepId: step.id, tool: step.tool, method: step.method, message });
+          errors.push({ at, turnId: step.turnId, source: 'tool', stepId: step.id, tool: step.tool, method: step.method, message });
         }
         break;
       }
@@ -368,11 +369,11 @@ export function normalizeSession(bundle) {
     if (ev.eventType === 'USER_FEEDBACK') feedback.push({ at, turnId: ev.turnId, value: p.feedback, tags: p.tags ? String(p.tags).split(',') : [], type: p.type });
     if (ev.eventType === 'OUT_OF_FUNDS') {
       outOfFunds.push({ at, turnId: ev.turnId, message: p.message, method: p.method, surfaced: p.surfaced });
-      errors.push({ at, source: 'credits', message: p.message || 'Out of credits', method: p.method });
+      errors.push({ at, turnId: ev.turnId, source: 'credits', message: p.message || 'Out of credits', method: p.method });
     }
     if (ev.eventType === 'MODEL_STREAM_ERROR') {
       streamErrors.push({ at, turnId: ev.turnId, error: p.error, message: p.message });
-      errors.push({ at, source: 'model', message: p.error || p.message || 'Model stream error' });
+      errors.push({ at, turnId: ev.turnId, source: 'model', message: p.error || p.message || 'Model stream error' });
     }
   }
   errors.sort((a, b) => (a.at || 0) - (b.at || 0));
@@ -431,4 +432,28 @@ export function normalizeSession(bundle) {
     timing: { firstAt, lastAt, wallMs: firstAt && lastAt ? lastAt - firstAt : null, byCategory },
     status: running ? 'running' : outputs?.scenes.length ? (errors.length ? 'done-with-errors' : 'done') : errors.length ? 'failed' : 'no-output',
   };
+}
+
+// Which turns of a session count for `skill`: the same rule as the day queries (queries.js
+// ownCtes). A turn loading the skill claims the session; later turns stay with it until one loads
+// a skill outside `family`. `family: null` counts every turn. Turn order is by start time.
+export function turnOwnership(rec, skill, family) {
+  const loads = new Map();
+  const firstAt = new Map();
+  for (const s of rec.steps || []) {
+    if (!firstAt.has(s.turnId) || s.startedAt < firstAt.get(s.turnId)) firstAt.set(s.turnId, s.startedAt);
+    if (s.tool === 'skill' && s.args?.name) loads.set(s.turnId, [...(loads.get(s.turnId) || []), s.args.name]);
+  }
+  for (const t of rec.turns || []) if (t.startedAt) firstAt.set(t.turnId, Math.min(t.startedAt, firstAt.get(t.turnId) ?? Infinity));
+  const order = [...firstAt.keys()].filter(Boolean).sort((a, b) => firstAt.get(a) - firstAt.get(b));
+  const fam = new Set(family || []);
+  let on = false;
+  const turns = order.map((turnId, i) => {
+    const skills = [...new Set(loads.get(turnId) || [])];
+    if (!family) on = true;
+    else if (skills.includes(skill)) on = true;
+    else if (skills.some((x) => x !== skill && !fam.has(x))) on = false;
+    return { turnId, n: i + 1, owned: on, skills, startedAt: firstAt.get(turnId) };
+  });
+  return { skill, family, whole: !family, turns, owned: turns.filter((t) => t.owned).map((t) => t.turnId) };
 }

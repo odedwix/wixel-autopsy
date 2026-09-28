@@ -17,14 +17,27 @@ export function downloadName(run, skill) {
   const day = run.createdAt ? new Date(run.createdAt).toISOString().slice(0, 10) : '';
   return [skill, title, day, run.id.slice(0, 8)].filter(Boolean).join('-');
 }
-export function downloadRun(run, skill) {
-  if (!isReady(mediaOf(run.id))) return false;
+const save = (href) => {
   const a = document.createElement('a');
-  a.href = `/download/${run.id}?name=${encodeURIComponent(downloadName(run, skill))}`;
+  a.href = href;
   a.download = '';
   document.body.append(a);
   a.click();
   a.remove();
+};
+
+export function downloadRun(run, skill) {
+  if (!isReady(mediaOf(run.id))) return false;
+  save(`/download/${run.id}?name=${encodeURIComponent(downloadName(run, skill))}`);
+  return true;
+}
+
+// Any other output (slides, doc, story, logo, image): the user's own export when reachable, the
+// original image, or a PDF of its pages — the proxy picks (asset-download.js).
+export function downloadOutput(run, output, skill) {
+  if (!output?.id) return false;
+  if (output.type === 'video') return downloadRun(run, skill);
+  save(`/download-asset/${run.id}/${output.id}?name=${encodeURIComponent(downloadName({ ...run, adName: output.name || run.adName }, skill || output.type))}`);
   return true;
 }
 

@@ -4,9 +4,11 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { config } from './config.js';
 import { getSessionBundle } from './admin.js';
-import { normalizeSession } from './normalize.js';
+import { normalizeSession, turnOwnership } from './normalize.js';
 import { getGenerationTrace, getJobTrace } from './temporal.js';
-import { listRuns, listSkills, getIndexedRun, runsIndex, runsForDay } from './runs.js';
+import { listRuns, listSkills, getIndexedRun, runsIndex, runsForDay, familyFor, resolveFamily, listUserRuns } from './runs.js';
+import { rememberUser, resolveUser } from './users.js';
+import { assetSource, pagesPdf, imageAsJpeg } from './asset-download.js';
 import { mediaStatus, mediaFile, queueDepth, downloadSource } from './media.js';
 import { Readable } from 'node:stream';
 import { createReadStream } from 'node:fs';
@@ -62,11 +64,23 @@ const routes = [
   [/^\/api\/runs-day$/, async (_m, q) => {
     const day = required(q, 'day');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw Object.assign(new Error('day must be YYYY-MM-DD'), { status: 400 });
-    return runsForDay({ skill: required(q, 'skill'), day, sessions: Number(q.get('n') || 0) });
+    const skill = required(q, 'skill');
+    return runsForDay({ skill, family: await resolveFamily(skill, q.get('fam')), day, sessions: Number(q.get('n') || 0) });
   }],
+  // A skill's family (the helpers counted with it) and why each is in it.
+  [/^\/api\/family$/, async (_m, q) => familyFor(required(q, 'skill'))],
+  // User mode: every session one user ran in the window, any skill.
+  [/^\/api\/resolve-user$/, async (_m, q) => resolveUser(q.get('q'))],
+  [/^\/api\/user-runs$/, async (_m, q) => listUserRuns({ userId: required(q, 'user'), days: Number(q.get('days') || 30) })],
   [/^\/api\/session\/([\w-]{36})$/, async ([, id], q) => {
     const bundle = await getSessionBundle(id, { fresh: q.get('fresh') === '1' });
-    return q.get('raw') === '1' ? bundle : normalizeSession(bundle);
+    rememberUser(bundle.meta).catch(() => {});
+    if (q.get('raw') === '1') return bundle;
+    const rec = normalizeSession(bundle);
+    // With a skill: which turns count for it (the rest are other skills' work).
+    const skill = q.get('skill');
+    if (skill) rec.scope = turnOwnership(rec, skill, await resolveFamily(skill, q.get('fam')));
+    return rec;
   }],
   [/^\/api\/trace\/([\w-]{36})$/, async ([, wid], q) => getGenerationTrace(wid, { fresh: q.get('fresh') === '1' })],
   [/^\/api\/media\/([\w-]{36})$/, async ([, id], q) => mediaStatus(getIndexedRun(id) || { id }, { priority: q.get('priority') === '1', retry: q.get('retry') === '1' })],
@@ -138,6 +152,33 @@ async function serveDownload(req, res, id, name) {
   createReadStream(file).pipe(res);
 }
 
+// Non-video outputs: the user's exact download, the original image, or a PDF of page previews.
+async function serveAssetDownload(req, res, runId, assetId, name) {
+  try {
+    const src = await assetSource(runId, assetId);
+    if (src.kind === 'video') return serveDownload(req, res, runId, name);
+    const base = String(name || assetId).replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120) || assetId;
+    const head = (ext, type, extra = {}) => ({ 'content-type': type, 'content-disposition': `attachment; filename="${base}.${ext}"`, 'cache-control': 'no-store', 'x-autopsy-source': src.label, ...extra });
+    if (src.kind === 'pdf') {
+      const pdf = await pagesPdf(src.pages);
+      res.writeHead(200, head('pdf', 'application/pdf', { 'content-length': pdf.buf.length }));
+      return res.end(pdf.buf);
+    }
+    if (src.kind === 'image') {
+      const jpg = await imageAsJpeg(src.url);
+      res.writeHead(200, head('jpg', 'image/jpeg', { 'content-length': jpg.length }));
+      return res.end(jpg);
+    }
+    const up = await fetch(src.url, { signal: AbortSignal.timeout(120000) });
+    if (!up.ok || !up.body) return send(req, res, 502, { error: `source ${up.status}` });
+    const len = up.headers.get('content-length');
+    res.writeHead(200, head(src.ext, up.headers.get('content-type') || 'application/octet-stream', len ? { 'content-length': len } : {}));
+    Readable.fromWeb(up.body).on('error', () => res.destroy()).pipe(res);
+  } catch (err) {
+    if (!res.headersSent) send(req, res, err.status || 500, { error: String(err.message || err) });
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname === '/player/iframe-bootstrap.js') {
@@ -150,6 +191,8 @@ const server = http.createServer(async (req, res) => {
   if (mm) return serveMedia(req, res, mm[1], mm[2]);
   const dm = url.pathname.match(/^\/download\/([\w-]{36})$/);
   if (dm) return serveDownload(req, res, dm[1], url.searchParams.get('name'));
+  const am = url.pathname.match(/^\/download-asset\/([\w-]{36})\/([\w-]{36})$/);
+  if (am) return serveAssetDownload(req, res, am[1], am[2], url.searchParams.get('name'));
   const t0 = Date.now();
   for (const [re, handler] of routes) {
     const m = url.pathname.match(re);

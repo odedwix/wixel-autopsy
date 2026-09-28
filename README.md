@@ -48,13 +48,50 @@ npm run pull         # warm the cache with a 50-run sample and print a coverage 
 
 ## Any skill, any output
 
-Not every skill makes video. A run's **outputs** are the top-level assets its session wrote, taken from the `TURN_UPDATED_ASSETS` session events (asset id, type, name, snapshot) and joined to `v1_asset_crud` for thumbnails and publishes and to `users_193` for downloads.
+Not every skill makes video. A run's **outputs** are the top-level assets its counted turns wrote (see below), taken from the `TURN_UPDATED_ASSETS` session events (asset id, type, name, snapshot) and joined to `v1_asset_crud` for thumbnails and publishes and to `users_193` for downloads.
 - **Output profile:** each skill gets one, learned from its runs and shown in the tab row, e.g. "Makes: Logo 97% · Image 11% · Video 3%". Each type is a filter.
 - **Cards** show the skill's main output type with a type badge and an "N outputs" count. Hovering plays video outputs; for other types it flips through the run's outputs. The card shape is **Auto** by default: logos and images 1:1, slides 16:9, docs 3:4, video 9:16.
 - **The details panel** shows non-video outputs as a gallery: the selected output, a strip of all outputs, and pages for docs and slides.
 - **Result filter:** Produced output / Tried, no output / Never tried. "Tried" means a media job, an image tool or an asset write.
 - **Busy skills are sampled.** Above about 400 sessions a day, a deterministic sample is taken: sessions whose id starts with certain hex characters. The status bar shows the share. Heavy days are also split into hour windows when a query times out.
 - **Stale work is cancelled.** Switching skill or window drops the old selection's queued Trino queries.
+
+## One skill at a time (sessions mix skills)
+
+Most sessions use several skills: 30–40% of a skill's session turns are usually other skills'
+work, such as a logo made after an ad or a slideshow after "try a slideshow instead". A session counts for the
+selected skill **turn by turn**:
+
+- The turn that loads the skill claims the session. Turns before it never count.
+- Later turns stay with it until one loads a skill outside its **family**. That turn and the ones after it are other skills' work and are left out of runs, outputs, timing, errors and insights.
+- **Family = the skill's helpers.** These are worked out from how often skills load in the same turn:
+  - partners loaded in ≥3% of its turns;
+  - sub-steps of those partners, meaning skills that load with them ≥50% of the time (for example wixel-ads → video-creation → video-plan-approval);
+  - the shared utilities (site-content, wix-apis, export-handler), which never end a skill's turns.
+
+  A family is pinned for 30 days per skill.
+- **Outputs** are the assets the counted turns wrote, or created while those turns ran. The product often logs an asset only on a later edit turn.
+
+The **Counting** button next to the skill shows each helper and why it's there. You can edit the family, or switch to whole sessions. Co-loading can't always tell which of two mutual partners is in charge (wixel-ads and video-creation list each other).
+
+The run view marks the counted turns ("Counting 1 of 7 turns…"), with **Show them** to see the whole session. Cards flag sessions that also used other skills. The **Skills in the session** filter shows which skills people combine.
+
+## User mode
+
+Pick **Users** in the skill picker (⌘K), or click a user's email in any run, to see every session that person ran, across all skills.
+
+The admin API lists sessions by user id only, so an email is found from sessions Autopsy has already fetched. A user id, a session id or an admin link always works.
+
+## Downloads
+
+**Download** (or **D**) saves any output. Autopsy picks the best source available:
+
+| Output | What you get |
+|---|---|
+| Video | the exact render the user got, at full quality, else the review copy |
+| Slides, doc, story (pages) | the user's own export when it's reachable; editor exports are private, so usually a PDF of the page previews (~1000px) |
+| Logo, plain image | the original image file |
+| Composed design (text on an image) | the design as the user saw it |
 
 ## UI
 
@@ -136,13 +173,17 @@ Every upstream call goes through `server/limits.js`: a concurrency cap and minim
 |---|---|---|
 | `GET /api/skills?days=30` | skills with ≥5 sessions | Trino |
 | `GET /api/runs-index?skill=…&days=…` | which UTC days have runs (plus when the skill last ran, if none) | Trino (cheap: skill calls only) |
-| `GET /api/runs-day?skill=…&day=YYYY-MM-DD&n=<sessions>` | one day's runs; the UI loads these 3 at a time, newest first. `n` (from the index) turns on sampling for busy days | Trino |
+| `GET /api/runs-day?skill=…&day=YYYY-MM-DD&n=<sessions>&fam=` | one day's runs, counting the skill's turns only; the UI loads these 3 at a time, newest first. `n` (from the index) turns on sampling for busy days. `fam`: `default` (computed family), `all` (whole sessions) or a comma list | Trino |
+| `GET /api/family?skill=` | the skill's family (helpers counted with it) and why each is in it | Trino (cached) |
+| `GET /api/resolve-user?q=` | email / user id / session link → user | local index, admin API |
+| `GET /api/user-runs?user=&days=` | every session one user ran, any skill | admin API, Trino |
 | `GET /api/runs?skill=wixel-ads&days=7` | all days at once (scripts) | Trino, one query per non-empty day |
-| `GET /api/session/:id` | normalized run record (`?raw=1` for the raw bundle) | admin API |
+| `GET /api/session/:id?skill=&fam=` | normalized run record; with `skill`, `scope` says which turns count for it (`?raw=1` for the raw bundle) | admin API |
 | `GET /api/trace/:workflowId` | Temporal chain + Genix graph runs with per-node data | Temporal Cloud |
 | `GET /api/media/:runId?priority=1` | review-media status; queues a build if there is none | ffmpeg |
 | `GET /media/:runId/review.mp4 \| poster.jpg \| sprite.jpg` | review media (Range requests supported) | local cache |
 | `GET /download/:runId?name=` | save the video: the full-quality exact render when there is one (streamed through), else the review copy | render CDN / local cache |
+| `GET /download-asset/:runId/:assetId?name=` | save any other output: the user's export if reachable, the original image, or a PDF of its page previews | Wix CDN, ffmpeg |
 | `GET /api/trace-job/:jobId?at=<ms>` | the same trace, for a **failed** generation (only a jobId) | Temporal Cloud |
 | `GET /api/media-batch?ids=a,b,…` | review-media status for the cards on screen | local |
 | `GET /api/player-input/:runId?root=<assetId>` | the live product player's input, built from the asset tree | admin API |

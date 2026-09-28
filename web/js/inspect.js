@@ -1,5 +1,5 @@
 import { h, icon, ago, dur, dateTime, tc, getJson, copy } from './util.js';
-import { state, set } from './state.js';
+import { state, set, famParam } from './state.js';
 import { renderTimeline } from './timeline.js';
 import { renderScenes, renderBrand, renderAssets, renderRaw } from './deep.js';
 import { shareRun } from './share.js';
@@ -7,14 +7,67 @@ import { caps, HINT } from './caps.js';
 import { toast } from './ui.js';
 import { MOOD, worstMood, failedRun, hasAd, primaryOutput, typeLabel } from './filters.js';
 import { isVideoRun } from './grid.js';
-import { mediaOf, isReady, prioritize, onMedia, videoUrl, spriteUrl, placeSprite, downloadRun } from './media.js';
+import { mediaOf, isReady, prioritize, onMedia, videoUrl, spriteUrl, placeSprite, downloadRun, downloadOutput } from './media.js';
+import { showUser } from './skillpicker.js';
 
 const ADMIN = 'https://wix-bo.com/wixel-agent/admin/#/sessions/';
 const detailCache = new Map();
 
+// In skill mode the detail says which turns count for the skill (same rule as the grid).
 export function prefetchDetail(id) {
-  if (!detailCache.has(id)) detailCache.set(id, getJson(`/api/session/${id}`).catch((e) => ({ error: e.message })));
-  return detailCache.get(id);
+  const q = state.mode === 'user' ? '' : `?skill=${encodeURIComponent(state.skill)}&fam=${encodeURIComponent(famParam())}`;
+  const key = `${id}${q}`;
+  if (!detailCache.has(key)) detailCache.set(key, getJson(`/api/session/${id}${q}`).catch((e) => ({ error: e.message })));
+  return detailCache.get(key);
+}
+
+// The run as this view counts it: only the skill's turns, unless "show other skills" is on.
+// Everything turn-bound is filtered; timing and the request are recomputed from what's left.
+function counted(d) {
+  const sc = d?.scope;
+  if (!sc || sc.whole || state.showOther || sc.owned.length === sc.turns.length) return d;
+  const own = new Set(sc.owned);
+  const keep = (x) => !x.turnId || own.has(x.turnId);
+  const steps = (d.steps || []).filter(keep);
+  const modelCalls = (d.modelCalls || []).filter(keep);
+  const userMessages = (d.userMessages || []).filter(keep);
+  const ats = [...steps.flatMap((x) => [x.startedAt, x.endedAt]), ...modelCalls.flatMap((m) => [m.startedAt, m.at]), ...userMessages.map((m) => m.at)].filter(Boolean);
+  const firstAt = ats.length ? Math.min(...ats) : d.timing?.firstAt;
+  const lastAt = ats.length ? Math.max(...ats) : d.timing?.lastAt;
+  const byCategory = {};
+  for (const x of steps) if (x.durationMs != null) byCategory[x.category] = (byCategory[x.category] || 0) + Number(x.durationMs);
+  byCategory.model = modelCalls.reduce((a, m) => a + (m.latencyMs || 0), 0);
+  return {
+    ...d,
+    steps,
+    modelCalls,
+    userMessages,
+    prompt: userMessages[0]?.text ?? d.prompt,
+    turns: (d.turns || []).filter(keep),
+    errors: (d.errors || []).filter(keep),
+    feedback: (d.feedback || []).filter(keep),
+    outOfFunds: (d.outOfFunds || []).filter(keep),
+    streamErrors: (d.streamErrors || []).filter(keep),
+    sentiments: (d.sentiments || []).filter(keep),
+    generations: steps.filter((x) => x.workflowId).length,
+    cost: { ...d.cost, inputTokens: modelCalls.reduce((a, m) => a + m.inputTokens, 0), outputTokens: modelCalls.reduce((a, m) => a + m.outputTokens, 0) },
+    timing: { ...d.timing, firstAt, lastAt, wallMs: firstAt && lastAt ? lastAt - firstAt : null, byCategory },
+  };
+}
+
+// "Counting turns 1–2 of 7 for wixel-ads · the rest used logo-create…  [Show them]"
+function scopeBanner(d) {
+  const sc = d?.scope;
+  if (!sc || sc.whole || sc.owned.length === sc.turns.length) return null;
+  const other = sc.turns.filter((t) => !t.owned);
+  const otherSkills = [...new Set(other.flatMap((t) => t.skills))];
+  const nums = (ts) => ts.map((t) => t.n).join(', ');
+  return h('div', { class: `scope-banner${state.showOther ? ' showing' : ''}` },
+    icon('alert', 'sm'),
+    h('span', {}, state.showOther
+      ? `Showing the whole session. Turns ${nums(other)} aren't ${sc.skill.endsWith('s') ? `${sc.skill}'` : `${sc.skill}'s`} work${otherSkills.length ? ` (${otherSkills.join(', ')})` : ''} — the grid and insights leave them out.`
+      : `Counting ${sc.owned.length} of ${sc.turns.length} turns for ${sc.skill}. Turn${other.length > 1 ? 's' : ''} ${nums(other)} ${other.length > 1 ? 'are' : 'is'} other ${otherSkills.length ? `skills' work (${otherSkills.join(', ')})` : 'work before the skill was loaded'}.`),
+    h('button', { class: 'btn ghost', onclick: () => { set({ showOther: !state.showOther }, { silent: true }); renderTab(); } }, state.showOther ? 'Hide them' : 'Show them'));
 }
 
 let panel;
@@ -82,14 +135,16 @@ export function toggleWide() {
 
 function renderTab() {
   const mount = panel.querySelector('#detailMount');
-  const d = current?.detail;
-  if (!mount || !d) return;
-  if (d.error) return mount.replaceChildren(...details(current.run, d));
+  const full = current?.detail;
+  if (!mount || !full) return;
+  if (full.error) return mount.replaceChildren(...details(current.run, full));
+  const d = counted(full);
+  const banner = scopeBanner(full);
   const tab = state.inspectTab || 'overview';
   const box = h('div', { class: 'section dz' });
   const seek = (sec) => current?.player?.seekSec(sec);
-  if (tab === 'overview') return mount.replaceChildren(...details(current.run, d));
-  mount.replaceChildren(box);
+  if (tab === 'overview') return mount.replaceChildren(...[banner, ...details(current.run, d)].filter(Boolean));
+  mount.replaceChildren(...[banner, box].filter(Boolean));
   if (tab === 'timeline') renderTimeline(box, d);
   if (tab === 'scenes') renderScenes(box, d, { seek });
   if (tab === 'brand') renderBrand(box, d);
@@ -110,6 +165,7 @@ export const inspectedPlayer = () => current?.player || null;
 export const inspectedRun = () => current?.run || null;
 
 // ---------- header ----------
+const fileSkill = () => (state.mode === 'user' ? null : state.skill);
 function header(r, d) {
   const email = d?.user?.email;
   const ut = r.userType === 'employee' || d?.user?.isWixEmail ? 'employee' : r.userType;
@@ -118,7 +174,7 @@ function header(r, d) {
       h('h2', { title: r.prompt }, r.adName?.replace(/\s*[-—]\s*Root$/i, '') || r.title || 'Untitled run'),
       h('div', { class: 'sub' },
         ut && ut !== 'unknown' ? h('span', { class: `utype ${ut}` }, ut === 'employee' ? 'Employee' : ut === 'wixel-team' ? 'Team' : 'Real') : null,
-        email ? h('span', { title: 'User email' }, email) : null,
+        email || r.userId ? h('button', { class: 'link-btn', title: 'Every run by this user, any skill', onclick: () => showUser({ id: d?.user?.id || r.userId, email: email || null }) }, icon('user', 'sm'), email || 'this user') : null,
         h('span', { class: 'sep' }, '·'),
         h('time', { title: new Date(r.createdAt).toLocaleString() }, `${dateTime(r.createdAt)} (${ago(r.createdAt)})`),
         h('span', { class: 'sep' }, '·'),
@@ -126,7 +182,9 @@ function header(r, d) {
         r.agent ? [h('span', { class: 'sep' }, '·'), h('span', {}, `${r.agent}${r.source ? ` / ${r.source}` : ''}`)] : null,
       ),
     ),
-    isVideoRun(r) ? h('button', { class: 'btn share-btn', title: 'Download the video (D) — the exact render when there is one', onclick: () => downloadRun(current?.run || r, state.skill) || toast('The video is still being prepared — try again in a moment') }, icon('download'), 'Download') : null,
+    isVideoRun(r)
+      ? h('button', { class: 'btn share-btn', title: 'Download the video (D) — the exact render when there is one', onclick: () => downloadRun(current?.run || r, fileSkill()) || toast('The video is still being prepared — try again in a moment') }, icon('download'), 'Download')
+      : primaryOutput(r) ? h('button', { class: 'btn share-btn', title: `Download the ${typeLabel(primaryOutput(r).type).toLowerCase()} (D) — the user's own export when reachable, else the original image or a PDF of its pages`, onclick: () => downloadOutput(current?.run || r, current?.player?.currentOutput?.() || primaryOutput(r), fileSkill()) }, icon('download'), 'Download') : null,
     h('button', { class: 'btn share-btn', title: 'Share this run', onclick: (e) => shareRun(e.currentTarget, current?.run || r, current?.detail || d) }, icon('external'), 'Share'),
     h('button', { class: 'icon-btn', title: 'Wide panel (W)', onclick: () => toggleWide() }, icon('expand')),
     h('a', { class: 'icon-btn', href: ADMIN + r.id, target: '_blank', rel: 'noopener', title: 'Open in Wixel admin (O)' }, icon('external')),
@@ -361,9 +419,13 @@ class OutputViewer {
       h('span', {}, `${typeLabel(o.type)} · ${o.name || 'Untitled'}${this.outputs.length > 1 ? ` · ${this.index + 1} of ${this.outputs.length} outputs` : ''}`),
       h('span', { style: { flex: 1 } }),
       o.publishedUrl ? h('a', { href: o.publishedUrl, target: '_blank', rel: 'noopener' }, 'Published ↗') : null,
-      o.downloadUrl ? h('a', { href: o.downloadUrl, target: '_blank', rel: 'noopener' }, `Downloaded file ↗`) : null,
+      o.id ? h('button', { class: 'link-btn', title: o.type === 'video' ? 'Download this video' : pages.length ? `PDF of its ${pages.length} pages (or the user's own export when reachable)` : 'The original image (or the design as the user saw it)', onclick: () => downloadOutput(this.run, o, fileSkill()) }, icon('download', 'sm'), pages.length ? 'Download PDF' : 'Download') : null,
       src ? h('a', { href: src, target: '_blank', rel: 'noopener' }, 'Open image ↗') : null);
     this.mount.replaceChildren(stage, strip, pageStrip, info);
+  }
+
+  currentOutput() {
+    return this.outputs[this.index] || null;
   }
 
   // Player interface: arrows step through outputs.

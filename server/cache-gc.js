@@ -7,7 +7,7 @@ import { config } from './config.js';
 // graph traces, … and the day lists last (the slow Trino ones). Reads bump an entry's mtime
 // (see cache.js / media.js), so mtime means "last used".
 
-const ORDER = ['media', 'sessions', 'graph-runs', 'job-traces', 'bundles', 'runs-index', 'steps-day', 'runs-day'];
+const ORDER = ['media', 'sessions', 'user-sessions', 'graph-runs', 'job-traces', 'bundles', 'runs-index', 'steps-day', 'runs-day'];
 const KEEP = new Set(['vendor', 'meta']); // the built player and per-account lookups: tiny and precious
 const LOG_MAX = 10 * 1024 * 1024;
 

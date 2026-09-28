@@ -1,11 +1,12 @@
 import { $, h, icon, ago, fmtInt, getJson, debounce } from './util.js';
-import { state, set, onChange, toggleFilter, clearFilter } from './state.js';
-import { FACETS, STATS, SORTS, applyFilters, facetCounts, facetOptions, outputProfile, setProfile, typeLabel } from './filters.js';
+import { state, set, onChange, toggleFilter, clearFilter, famParam } from './state.js';
+import { FACETS, STATS, SORTS, applyFilters, facetCounts, facetOptions, outputProfile, setProfile, typeLabel, primaryOutput } from './filters.js';
 import { initGrid, setRuns, relayout, markSelected, scrollToIndex, columns, applySound, stopHover, isVideoRun } from './grid.js';
-import { downloadRun } from './media.js';
+import { downloadRun, downloadOutput } from './media.js';
 import { initInspect, openInspect, closeInspect, inspectedPlayer, prefetchDetail, toggleLive, toggleWide, setInspectTabByIndex } from './inspect.js';
 import { computeInsights, renderInsights, headlines } from './insights.js';
 import { setSkills, renderSkillButton, openSkillPicker, rememberSkill } from './skillpicker.js';
+import { renderScopeButton, openFamilyEditor } from './family.js';
 import { toast } from './ui.js';
 import { shareInsights } from './share.js';
 import { capsReady } from './caps.js';
@@ -27,6 +28,7 @@ let scope = []; // allRuns inside the rolling time window
 let loadStart = 0;
 let lastLoad = null;
 let loadTicker = null;
+let userInfo = null; // user mode: { id, email } and session count from the server
 
 // Time windows are rolling (the last 1h / 24h / … from now), not UTC calendar days.
 const WINDOWS = { '1h': 1 / 24, '24h': 1, '3d': 3, '7d': 7, '14d': 14, '30d': 30, '90d': 90 };
@@ -50,7 +52,7 @@ loadRuns();
 pollLoad();
 
 onChange((patch) => {
-  if ('skill' in patch || 'days' in patch) {
+  if ('skill' in patch || 'days' in patch || 'mode' in patch || 'user' in patch || 'families' in patch) {
     if ('open' in patch && !patch.open) closeInspect();
     syncTopbar();
     return loadRuns();
@@ -86,7 +88,8 @@ async function loadRuns() {
   lastSeen = null;
   loading = { done: 0, total: null };
   loadStart = Date.now();
-  rememberSkill(state.skill);
+  userInfo = null;
+  if (state.mode !== 'user') rememberSkill(state.skill);
   skeleton();
   // While loading, the progress bar and status tick every second so it never looks frozen.
   clearInterval(loadTicker);
@@ -94,6 +97,7 @@ async function loadRuns() {
   showProgress();
   // A link/reload with a run open shows it immediately; its detail doesn't depend on the list.
   if (state.open && state.selected) openInspect({ id: state.selected, _stub: true });
+  if (state.mode === 'user') return loadUserRuns(token, signal);
   try {
     const index = await getJson(`/api/runs-index?skill=${encodeURIComponent(state.skill)}&days=${requestDays()}`, { signal });
     if (token !== loadToken) return;
@@ -107,9 +111,14 @@ async function loadRuns() {
       while (queue.length) {
         const { day, sessions } = queue.shift();
         try {
-          const runs = await getJson(`/api/runs-day?skill=${encodeURIComponent(state.skill)}&day=${day}&n=${sessions}`, { signal });
+          const runs = await getJson(`/api/runs-day?skill=${encodeURIComponent(state.skill)}&day=${day}&n=${sessions}&fam=${encodeURIComponent(famParam())}`, { signal });
           if (token !== loadToken) return;
           for (const r of runs) if (!seen.has(r.id) && seen.add(r.id)) allRuns.push(r);
+          // The run opened from a link shows its full row as soon as its day lands.
+          if (state.open && state.selected) {
+            const open = runs.find((r) => r.id === state.selected);
+            if (open) openInspect(open);
+          }
         } catch (err) {
           if (token !== loadToken) return;
           missing.push({ day, error: err.message });
@@ -143,6 +152,38 @@ async function loadRuns() {
   }
 }
 
+// User mode: one request; the server lists the user's sessions and loads their days.
+async function loadUserRuns(token, signal) {
+  try {
+    const res = await getJson(`/api/user-runs?user=${encodeURIComponent(state.user.id)}&days=${requestDays()}`, { signal });
+    if (token !== loadToken) return;
+    allRuns = res.runs;
+    missing = res.missingDays || [];
+    userInfo = { ...res.user, sessions: res.sessions };
+    // Fill in the email when the link only carried the id.
+    if (res.user?.email && res.user.email !== state.user.email) set({ user: { ...state.user, email: res.user.email } }, { silent: true });
+  } catch (err) {
+    if (token !== loadToken) return;
+    loading = null;
+    endProgress();
+    status(`Failed to load this user's runs: ${err.message}`);
+    $('#gridSizer').replaceChildren(h('div', { class: 'empty-state' }, h('h2', {}, 'Couldn’t load this user’s runs'), h('p', {}, err.message), h('button', { class: 'btn', onclick: loadRuns }, 'Retry')));
+    return;
+  }
+  loading = null;
+  endProgress();
+  syncTopbar();
+  refreshView();
+  pruneFilters();
+  if (state.open && state.selected) {
+    const r = allRuns.find((x) => x.id === state.selected);
+    if (r) openInspect(r);
+  }
+}
+
+// What the view is about, for status lines and share labels.
+const subject = () => (state.mode === 'user' ? `${state.user?.email || `user ${state.user?.id?.slice(0, 8)}`} · all skills` : state.skill);
+
 // ---------- loading feedback ----------
 function showProgress() {
   const bar = $('#loadbar');
@@ -153,7 +194,7 @@ function showProgress() {
   const secs = Math.round((Date.now() - loadStart) / 1000);
   const q = lastLoad?.trino?.queued || 0;
   const busy = secs > 8 && (q || lastLoad?.trino?.inflight) ? ` · Trino is busy (${lastLoad.trino.inflight} running${q ? `, ${q} queued` : ''}) — still working` : '';
-  const what = loading.total == null ? `Finding which days ${state.skill} ran` : `Loading day ${Math.min(loading.done + 1, loading.total)} of ${loading.total} (${fmtInt(loading.sessions)} sessions)`;
+  const what = state.mode === 'user' ? `Loading every session by ${subject().replace(' · all skills', '')}` : loading.total == null ? `Finding which days ${state.skill} ran` : `Loading day ${Math.min(loading.done + 1, loading.total)} of ${loading.total} (${fmtInt(loading.sessions)} sessions)`;
   if (!allRuns.length) status(`${what}… ${secs}s${busy}`);
   else refreshStatus(busy);
 }
@@ -203,7 +244,7 @@ function pruneFilters() {
   }
   if (removed.length) {
     set({ filters });
-    toast(`Removed filters that don’t fit ${state.skill}: ${removed.join(' · ')}`, { ms: 7000 });
+    toast(`Removed filters that don’t fit ${subject()}: ${removed.join(' · ')}`, { ms: 7000 });
   }
 }
 
@@ -257,7 +298,15 @@ function refreshStatus(busy = '') {
   const progress = loading ? (loading.total == null ? ' · finding days…' : ` · loading day ${Math.min(loading.done + 1, loading.total)} of ${loading.total}…`) : '';
   const sampled = allRuns.some((r) => r.sampleRate < 1) && loadedSessions ? ` · busy days sampled: showing ${fmtInt(allRuns.length)} of ~${fmtInt(loadedSessions)} sessions (${Math.round((allRuns.length / loadedSessions) * 100)}%)` : '';
   const failed = missing.length ? ` · ⚠ ${missing.length} day(s) failed to load (${missing.map((m) => m.day).join(', ')}) — reload to retry` : '';
-  status(`${fmtInt(view.length)} of ${fmtInt(scope.length)} runs · ${state.skill} · last ${windowLabel()}${progress}${busy}${sampled}${failed}`);
+  status(`${fmtInt(view.length)} of ${fmtInt(scope.length)} runs · ${subject()} · last ${windowLabel()}${progress}${busy}${sampled}${failed}${scopeNote()}`);
+}
+
+// How much of these sessions was other skills' work (left out, see the Counting button).
+function scopeNote() {
+  if (state.mode === 'user' || !scope.length) return '';
+  if (state.families?.[state.skill] === 'all') return ' · counting whole sessions';
+  const mixed = scope.filter((r) => r.otherSkills?.length).length;
+  return mixed ? ` · ${fmtInt(mixed)} also used other skills (their turns not counted)` : '';
 }
 
 // "Makes: Logo 97% · Image 7%" — the skill's output types, each a one-click filter.
@@ -286,6 +335,11 @@ function emptyState() {
   const at = lastSeen?.at || newest || null;
   const ageDays = at ? (Date.now() - at) / 86400000 : null;
   const fit = ageDays != null ? Object.entries(WINDOWS).find(([, d]) => d > ageDays) : null;
+  if (state.mode === 'user') {
+    return h('div', { class: 'empty-state' }, h('h2', {}, `No sessions by ${subject().replace(' · all skills', '')} in the last ${windowLabel()}`),
+      h('p', {}, userInfo ? 'Try a longer time window.' : ''),
+      state.days < 90 ? h('button', { class: 'btn', onclick: () => set({ days: 90 }) }, 'Show the last 90d') : null);
+  }
   return h('div', { class: 'empty-state' },
     h('h2', {}, `No ${state.skill} runs in the last ${windowLabel()}`),
     h('p', {}, at
@@ -311,7 +365,7 @@ const insightActions = {
     set({ tab: 'videos' });
     select(id, { open: true });
   },
-  label: () => `${state.skill} · last ${windowLabel()} · ${fmtInt(view.length)} runs${Object.keys(state.filters).length || state.q ? ' (filtered)' : ''}`,
+  label: () => `${state.mode === 'user' ? 'one user · all skills' : state.skill} · last ${windowLabel()} · ${fmtInt(view.length)} runs${Object.keys(state.filters).length || state.q ? ' (filtered)' : ''}`,
   share: (anchor) => shareInsights(anchor, insights, insightActions.label()),
   rerender: () => renderInsightViews(),
   get expanded() {
@@ -451,6 +505,7 @@ function moveSelection(delta) {
 // ---------- top bar ----------
 function bindTopbar() {
   $('#skillBtn').addEventListener('click', () => openSkillPicker($('#skillBtn')));
+  $('#scopeBtn').addEventListener('click', () => openFamilyEditor($('#scopeBtn')));
   $('#days').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (b) set({ days: WINDOWS[b.dataset.win] });
@@ -493,6 +548,7 @@ function syncTopbar() {
   snd.replaceChildren(icon(state.sound ? 'volume' : 'mute'));
   $('#filters').hidden = !state.filtersOpen;
   renderSkillButton($('#skillBtn'));
+  renderScopeButton($('#scopeBtn'));
 }
 
 // ---------- keyboard ----------
@@ -548,5 +604,7 @@ document.addEventListener('keydown', (e) => {
 
 function downloadSelected() {
   const r = allRuns.find((x) => x.id === state.selected);
-  if (r && !downloadRun(r, state.skill)) toast(isVideoRun(r) ? 'The video is still being prepared — try again in a moment' : 'This run has no video to download');
+  if (!r) return;
+  if (!isVideoRun(r)) return downloadOutput(r, primaryOutput(r), state.mode === 'user' ? null : state.skill) || toast('This run has no output to download');
+  if (!downloadRun(r, state.mode === 'user' ? null : state.skill)) toast('The video is still being prepared — try again in a moment');
 }

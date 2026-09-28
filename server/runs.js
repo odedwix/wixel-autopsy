@@ -1,6 +1,9 @@
-import { sql } from './admin.js';
+import crypto from 'node:crypto';
+import { sql, getJson } from './admin.js';
+import { config } from './config.js';
+import { limited } from './limits.js';
 import { cached, readCache, writeCache } from './cache.js';
-import { RUNS_QUERY_VERSION, STEPS_QUERY_VERSION, runsDayQuery, eventsDayQuery, stepsDayQuery, skillsQuery, runsIndexQuery, lastSeenQuery } from './queries.js';
+import { RUNS_QUERY_VERSION, STEPS_QUERY_VERSION, runsDayQuery, eventsDayQuery, stepsDayQuery, skillsQuery, runsIndexQuery, lastSeenQuery, skillPairsQuery } from './queries.js';
 
 const DAY = 86400000;
 const utcDay = (t) => new Date(t).toISOString().slice(0, 10);
@@ -71,6 +74,7 @@ async function projectSignals(projectIds, day) {
            max_by(name, _event_time) AS name,
            max_by(type, _event_time) AS type,
            max_by(updated_date, _event_time) AS updated,
+           min(created_date) AS created,
            max_by(thumbnail_url, _event_time) FILTER (WHERE thumbnail_url IS NOT NULL) AS thumb,
            max_by(published_info.published_asset_link, _event_time) FILTER (WHERE published_info.published_asset_link IS NOT NULL) AS published_url,
            min(_event_time) FILTER (WHERE published_info IS NOT NULL) AS published_at
@@ -154,14 +158,44 @@ export function sampleFor(sessions) {
   return HEX.slice(0, Math.max(1, Math.floor((16 * PER_DAY_TARGET) / sessions)));
 }
 
-function dayRows(skill, day, sample = null) {
+// Cache key part for a scope: the skill + which family counted (or "all" for whole sessions),
+// or a user and the exact sessions (a user's day gains sessions while it's recent).
+const hash = (x) => crypto.createHash('sha1').update(x).digest('hex').slice(0, 10);
+function scopeKey(sc) {
+  if (sc.ids) return `user__${sc.user}__${hash([...sc.ids].sort().join(','))}`;
+  return `${sc.skill}__${Array.isArray(sc.family) ? `f${hash([...sc.family].sort().join(','))}` : 'all'}${sc.sample ? `__s${sc.sample}` : ''}`;
+}
+
+// Session events arrive per turn (id␟turn[␟value]); keep the ones from counted turns (and
+// session-level ones with no turn). All asset writes are still counted once, so a run whose only
+// writes were other skills' work shows no outputs instead of falling back to project assets.
+function eventFields(e, ownedTurns) {
+  const owned = ownedTurns ? new Set(ownedTurns) : null;
+  const parse = (list) => (list || []).map((x) => {
+    const [id, turn, ...rest] = String(x).split(String.fromCharCode(31));
+    return { id, turn, value: rest.join(String.fromCharCode(31)) };
+  });
+  const mine = (list) => parse(list).filter((x) => !owned || !x.turn || owned.has(x.turn));
+  const assets = parse(e.asset_events_t);
+  return {
+    thumbs_up: mine(e.thumbs_up_t).length,
+    thumbs_down: mine(e.thumbs_down_t).length,
+    feedback_tags: mine(e.feedback_tags_t).map((x) => x.value),
+    out_of_funds: mine(e.out_of_funds_t).length,
+    stream_errors: mine(e.stream_errors_t).length,
+    asset_events: mine(e.asset_events_t).map((x) => x.value),
+    all_asset_events: assets.length,
+  };
+}
+
+function dayRows(scope, day) {
   // A day's rows keep changing while its sessions may still be active (entries are read
   // up to 2 days past the skill load); after that they're final.
   const final = Date.parse(`${day}T00:00:00Z`) + 3 * DAY < Date.now();
-  return cached('runs-day', `v${RUNS_QUERY_VERSION}__${skill}__${day}${sample ? `__s${sample}` : ''}`, final ? Infinity : 3 * 60000, async () => {
+  return cached('runs-day', `v${RUNS_QUERY_VERSION}__${scopeKey(scope)}__${day}`, final ? Infinity : 3 * 60000, async () => {
     const [rows, events] = await Promise.all([
-      sliced((hours) => runsDayQuery({ skill, day, hours, sample })),
-      sliced((hours) => eventsDayQuery({ skill, day, hours, sample })).catch(() => []),
+      sliced((hours) => runsDayQuery({ scope, day, hours })),
+      sliced((hours) => eventsDayQuery({ scope, day, hours })).catch(() => []),
     ]);
     const [attrs] = await Promise.all([
       sessionAttrs(rows.map((r) => r.session_id), day),
@@ -172,8 +206,7 @@ function dayRows(skill, day, sample = null) {
     const ev = new Map(events.map((e) => [e.session_id, e]));
     const value = rows.map((r) => {
       const a = attrs.get(r.session_id) || {};
-      const { session_id: _, ...e } = ev.get(r.session_id) || {};
-      return { ...r, ...e, ...a, project: projects.get(a.project_id) || null };
+      return { ...r, ...eventFields(ev.get(r.session_id) || {}, r.owned_turns), ...a, project: projects.get(a.project_id) || null };
     });
     return { value, ttlMs: final ? Infinity : 3 * 60000 };
   }, { staleWhileRevalidate: true });
@@ -205,22 +238,26 @@ function parseAssetEvents(list) {
   return out;
 }
 
-// A run's outputs: the top-level assets its session wrote (from TURN_UPDATED_ASSETS). Sessions
-// without those events fall back to the project's top-level assets touched after the run started
-// (projects outlive sessions, so an older session's asset is never credited to this run).
+// A run's outputs: top-level assets its counted turns wrote (TURN_UPDATED_ASSETS) or that were
+// created while they ran. The product often logs an asset only on a later turn that edits it
+// (slides-creation builds a deck; slides-edit's turn is the one that reports it), so creation
+// time is what ties an asset to the skill that made it. Sessions without asset events at all also
+// take assets updated in that window. Projects outlive sessions, so older assets never count.
 function outputsOf(r) {
   const started = tsMs(r.first_ts) || 0;
+  // When other skills took the session over after the counted turns, the window ends there (other
+  // work before the skill was loaded doesn't limit it).
+  const handedOver = tsMs(r.whole_last_ts) > tsMs(r.last_ts) + 1000;
+  // Otherwise shortly after the last counted turn: assets made by hand in the editor later aren't output.
+  const until = (tsMs(r.last_ts) || Infinity) + (handedOver ? 120000 : 300000);
+  const inWindow = (t) => Boolean(t) && t >= started - 60000 && t <= until;
+  const anyEvents = Number(r.all_asset_events) > 0;
   const top = r.project?.assets || [];
-  const topById = new Map(top.map((a) => [a.asset_id, a]));
   const written = parseAssetEvents(r.asset_events);
-  let picked;
-  if (written.size) {
-    picked = [...written.values()].filter((w) => topById.has(w.id)).map((w) => ({ w, a: topById.get(w.id) }));
-    // The asset table can lag the events; if none matched yet, trust the events (minus scene parts).
-    if (!picked.length) picked = [...written.values()].filter((w) => !/^scene\b/i.test(w.name || '')).map((w) => ({ w, a: null }));
-  } else {
-    picked = top.filter((a) => !a.updated || tsMs(a.updated) >= started - 60000).map((a) => ({ w: null, a }));
-  }
+  let picked = top.filter((a) => written.has(a.asset_id) || inWindow(tsMs(a.created)) || (!anyEvents && inWindow(tsMs(a.updated))))
+    .map((a) => ({ w: written.get(a.asset_id) || null, a }));
+  // The asset table can lag the events; if none matched yet, trust the events (minus scene parts).
+  if (!picked.length && written.size) picked = [...written.values()].filter((w) => !/^scene\b/i.test(w.name || '')).map((w) => ({ w, a: null }));
   const outs = picked.map(({ w, a }) => ({
     id: a?.asset_id || w.id,
     type: normType(a?.type || w?.assetType),
@@ -304,6 +341,10 @@ function toRun(r, userType) {
     longestTurnMs: num(r.longest_turn_ms),
     methods: (r.methods || []).filter(Boolean).sort(),
     skills: (r.skills || []).filter(Boolean).sort(),
+    // What the whole session did beyond the turns counted here (other skills' work).
+    allSkills: (r.all_skills || r.skills || []).filter(Boolean).sort(),
+    otherSkills: (r.all_skills || []).filter((x) => x && !(r.skills || []).includes(x)).sort(),
+    allTurns: num(r.all_turns) ?? num(r.turns),
     codexVersions: (r.codex_versions || []).filter(Boolean),
     firstClip: r.first_clip || null,
     lastClip: r.last_clip || null,
@@ -333,10 +374,10 @@ export function runsIndex({ skill, days = 7 }) {
 }
 
 // Per-session step stats for one day (insights). Cached on the same rules as the day's rows.
-function dayStepRows(skill, day, sample = null) {
+function dayStepRows(scope, day) {
   const final = Date.parse(`${day}T00:00:00Z`) + 3 * DAY < Date.now();
-  return cached('steps-day', `v${STEPS_QUERY_VERSION}__${skill}__${day}${sample ? `__s${sample}` : ''}`, final ? Infinity : 3 * 60000, async () => {
-    const rows = await sliced((hours) => stepsDayQuery({ skill, day, hours, sample }));
+  return cached('steps-day', `v${STEPS_QUERY_VERSION}__${scopeKey(scope)}__${day}`, final ? Infinity : 3 * 60000, async () => {
+    const rows = await sliced((hours) => stepsDayQuery({ scope, day, hours }));
     return { value: rows, ttlMs: final ? Infinity : 3 * 60000 };
   }, { staleWhileRevalidate: true });
 }
@@ -369,31 +410,132 @@ function stepFields(sr) {
 }
 
 // One day's runs, ready for the grid.
-// `sessions` is the day's count from the index; above the target the day is sampled.
-export async function runsForDay({ skill, day, sessions = 0 }) {
-  const sample = sampleFor(sessions);
-  const [rawRows, stepRows] = await Promise.all([dayRows(skill, day, sample), dayStepRows(skill, day, sample).catch(() => [])]);
+async function scopedDay(scope, day, sampleRate = 1) {
+  const [rawRows, stepRows] = await Promise.all([dayRows(scope, day), dayStepRows(scope, day).catch(() => [])]);
   const seen = new Set();
   const rows = rawRows.filter((r) => !seen.has(r.session_id) && seen.add(r.session_id));
   const userType = await resolveUserTypes(rows.map((r) => r.account_id));
   const bySession = new Map(stepRows.map((r) => [r.session_id, r]));
-  const sampleRate = sample ? sample.length / 16 : 1;
   const runs = rows.map((r) => ({ ...toRun(r, userType), ...stepFields(bySession.get(r.session_id)), sampleRate }));
   for (const r of runs) runIndex.set(r.id, r);
   return runs;
 }
 
-export async function listRuns({ skill, days = 7 }) {
+// `sessions` is the day's count from the index; above the target the day is sampled.
+// `family`: the skills counted with it (null = whole sessions).
+export async function runsForDay({ skill, family, day, sessions = 0 }) {
+  const sample = sampleFor(sessions);
+  return scopedDay({ skill, family, sample }, day, sample ? sample.length / 16 : 1);
+}
+
+export async function listRuns({ skill, family, days = 7 }) {
   const index = await runsIndex({ skill, days });
   // A day that fails still leaves the others usable; the client is told which days are missing.
   const missingDays = [];
-  const perDay = await mapLimit(index.dayList, 3, (d) => runsForDay({ skill, day: d.day, sessions: d.sessions }).catch((err) => {
+  const perDay = await mapLimit(index.dayList, 3, (d) => runsForDay({ skill, family, day: d.day, sessions: d.sessions }).catch((err) => {
     missingDays.push({ day: d.day, error: String(err.message || err).slice(0, 200) });
     return [];
   }));
   const seen = new Set();
   const runs = perDay.flat().filter((r) => !seen.has(r.id) && seen.add(r.id)).sort((a, b) => b.createdAt - a.createdAt);
   return { runs, missingDays, lastSeen: index.lastSeen };
+}
+
+// ---- skill families ----
+// A skill's family: the helpers it loads in the same turn often enough to be part of its job
+// (≥3% of its turns), plus the sub-steps of those helpers (wixel-ads → video-creation →
+// video-plan-approval). Hubs, skills loaded alongside many others (site-content, wix-apis,
+// export-handler), are kept as helpers but never followed, or every skill would end up in every
+// family. Co-loading can't tell which of two mutual partners is in charge (wixel-ads and
+// video-creation each list the other), so families are shown and editable in the UI.
+// Pinned for 30 days per skill so cached days (keyed by the family) stay valid.
+const FAMILY_VERSION = 7;
+function skillPairs() {
+  return cached('meta', 'skill-pairs', DAY, async () => ({ value: await retryOnce(() => sql(skillPairsQuery(), { maxRows: 5000 })), ttlMs: DAY }));
+}
+
+export function familyFor(skill) {
+  return cached('meta', `family-v${FAMILY_VERSION}__${skill}`, 30 * DAY, async () => {
+    const pairs = await skillPairs();
+    const of = new Map();
+    for (const p of pairs) {
+      const list = of.get(p.a) || [];
+      list.push({ skill: p.b, share: Number(p.together) / Number(p.a_turns), turns: Number(p.a_turns) });
+      of.set(p.a, list);
+    }
+    const partners = (x, min) => (of.get(x) || []).filter((p) => p.share >= min);
+    const shareOf = (x, y) => (of.get(x) || []).find((p) => p.skill === y)?.share || 0;
+    // A hub is a utility: loaded alongside many skills (≥5 partners at ≥3% of its turns) AND relied
+    // on by many (≥8 established skills load it in ≥3% of theirs) — site-content, wix-apis,
+    // export-handler. Engines that are also products (single-page-design, image generation) are
+    // relied on but not broadly co-loaded; small bundles (brand-kit) the reverse.
+    const turnsOf = (x) => of.get(x)?.[0]?.turns || 0;
+    const reliedOn = (x) => [...of.keys()].filter((y) => y !== x && turnsOf(y) >= 100 && shareOf(y, x) >= 0.03).length;
+    const hub = (x) => partners(x, 0.03).length >= 5 && reliedOn(x) >= 8;
+    const detail = new Map();
+    // A hub viewed on its own counts only the turns that load it: it's a helper to every
+    // product, so following its partners would pull all of them in.
+    const selfHub = hub(skill);
+    if (!selfHub) for (const p of partners(skill, 0.03)) detail.set(p.skill, { skill: p.skill, share: p.share, via: null, hub: hub(p.skill) });
+    // Sub-steps of a helper: skills that mostly load with it (≥50% of their own turns), e.g.
+    // video-plan-approval with video-creation (88%). A skill that merely co-occurs (a separate
+    // product loaded next to export-handler now and then) doesn't count.
+    for (const h of [...detail.values()].filter((d) => !d.hub)) {
+      for (const [d] of of) {
+        if (d !== skill && !detail.has(d) && shareOf(d, h.skill) >= 0.5 && shareOf(h.skill, d) >= 0.05) detail.set(d, { skill: d, share: shareOf(d, h.skill), via: h.skill, hub: hub(d) });
+      }
+    }
+    // Shared helpers (hubs) never end another skill's turns: a later "download it" turn loads
+    // export-handler, a "use my site" turn site-content, and that's still the same job.
+    if (!selfHub) for (const [x] of of) if (x !== skill && !detail.has(x) && hub(x)) detail.set(x, { skill: x, share: shareOf(skill, x), via: null, hub: true, shared: true });
+    const list = [...detail.values()].sort((a, b) => Number(Boolean(a.shared)) - Number(Boolean(b.shared)) || b.share - a.share);
+    return { value: { skill, family: list.map((d) => d.skill), detail: list, hub: selfHub, turns: of.get(skill)?.[0]?.turns || 0, computedAt: Date.now() }, ttlMs: 30 * DAY };
+  });
+}
+
+// "default" (or nothing) → the computed family; "all" → whole sessions; else a comma list.
+export async function resolveFamily(skill, fam) {
+  if (fam === 'all') return null;
+  if (fam && fam !== 'default') return [...new Set(fam.split(',').map((x) => x.trim()).filter((x) => /^[\w.:-]{1,80}$/.test(x)))];
+  return (await familyFor(skill)).family;
+}
+
+// ---- user mode: every session one user ran, any skill ----
+// The admin API lists a user's sessions (newest first, 50 a page); their rows come from the
+// same day queries, scoped to those session ids and counting whole sessions.
+export async function userSessions(userId, days) {
+  if (!/^[\w-]{36}$/.test(userId)) throw Object.assign(new Error('bad user id'), { status: 400 });
+  const since = Date.now() - days * DAY;
+  return cached('user-sessions', `${userId}__${days}`, 2 * 60000, async () => {
+    const out = [];
+    let cursor = null;
+    for (let page = 0; page < 20; page++) {
+      const res = await limited('admin', () => getJson(`${config.adminBase}/sessions?userId=${userId}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`));
+      const list = res.sessions || [];
+      out.push(...list.map((x) => ({ id: x.id, createdAt: Date.parse(x.createdAt), email: x.userEmail || null })));
+      cursor = res.cursor;
+      if (!cursor || !list.length || Date.parse(list.at(-1).createdAt) < since) break;
+    }
+    return { value: out.filter((x) => x.createdAt >= since), ttlMs: 2 * 60000 };
+  }, { staleWhileRevalidate: true });
+}
+
+export async function listUserRuns({ userId, days = 30 }) {
+  const n = Math.max(1, Math.min(90, Number(days) || 30));
+  const sessions = await userSessions(userId, n);
+  const byDay = new Map();
+  for (const x of sessions) {
+    const day = utcDay(x.createdAt);
+    byDay.set(day, [...(byDay.get(day) || []), x.id]);
+  }
+  const missingDays = [];
+  const perDay = await mapLimit([...byDay], 3, ([day, ids]) => scopedDay({ ids, user: userId }, day).catch((err) => {
+    missingDays.push({ day, error: String(err.message || err).slice(0, 200) });
+    return [];
+  }));
+  const seen = new Set();
+  const runs = perDay.flat().filter((r) => !seen.has(r.id) && seen.add(r.id)).sort((a, b) => b.createdAt - a.createdAt);
+  return { user: { id: userId, email: sessions.find((x) => x.email)?.email || null }, runs, missingDays, sessions: sessions.length };
 }
 
 export function listSkills({ days = 30 } = {}) {
