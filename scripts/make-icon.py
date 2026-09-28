@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Draws the Skill Runs app icon (1024x1024 PNG): a macOS-style rounded tile with a violet→indigo
+"""Draws the Autopsy app icon (1024x1024 PNG): a macOS-style rounded tile with a violet→indigo
 gradient and a 2x2 grid of run cards — video (play), image, doc and insights (bars).
 Rendered at 4x and downsampled for clean edges.  Usage: make-icon.py out.png"""
 import sys

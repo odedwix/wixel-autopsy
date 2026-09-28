@@ -1,5 +1,5 @@
 {
-  "name": "skill-run-explorer",
+  "name": "wixel-autopsy",
   "private": true,
   "type": "module",
   "scripts": {
@@ -14,5 +14,6 @@
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "description": "Autopsy \u2014 browse and dissect any Wixel agent skill's runs, insights and Genix graph runs"
 }

@@ -1,6 +1,7 @@
 // View state: persisted to localStorage (restored on reload) and mirrored into the URL hash
 // (so any view is a shareable link). The hash wins when both are present.
 
+// Storage key kept from the tool's first name so saved views survive the rename to Autopsy.
 const KEY = 'skill-runs:v1';
 
 const defaults = {

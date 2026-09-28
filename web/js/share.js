@@ -3,7 +3,7 @@ import { state } from './state.js';
 import { popover, closePopover, copyText, mailto } from './ui.js';
 import { primaryOutput, typeLabel, worstMood, hasAd, failedRun } from './filters.js';
 
-// Sharing. The app runs on localhost, so its own links only open for someone running Skill Runs;
+// Sharing. The app runs on localhost, so its own links only open for someone running Autopsy;
 // every share also offers links that work for anyone: the Wixel admin page (BO access) and the
 // output's own public URL (exact render / published page / image). No end-user emails are shared.
 
@@ -41,7 +41,7 @@ function runSummary(run, detail) {
     '',
     out ? `${out.label}: ${out.url}` : null,
     `Wixel admin (BO access): ${ADMIN}${run.id}`,
-    `Skill Runs (local app): ${appLink({ selected: run.id, open: true })}`,
+    `Autopsy (local app): ${appLink({ selected: run.id, open: true })}`,
   ];
   return lines.filter((l) => l !== null).join('\n');
 }
@@ -52,11 +52,11 @@ export function shareRun(anchor, run, detail) {
   const item = (ic, label, sub, fn) => h('button', { class: 'sh-row', onclick: () => { fn(); closePopover(); } }, icon(ic), h('span', {}, h('b', {}, label), h('small', {}, sub)));
   popover(anchor, h('div', { class: 'sh-pop' },
     h('div', { class: 'sh-h' }, 'Share this run'),
-    item('copy', 'Copy app link', 'Opens this run in Skill Runs (for people running it locally)', () => copyText(appLink({ selected: run.id, open: true, inspectTab: state.inspectTab }), 'App link')),
+    item('copy', 'Copy app link', 'Opens this run in Autopsy (for people running it locally)', () => copyText(appLink({ selected: run.id, open: true, inspectTab: state.inspectTab }), 'App link')),
     item('external', 'Copy Wixel admin link', 'Anyone with back-office access', () => copyText(ADMIN + run.id, 'Admin link')),
     out ? item('film', `Copy ${out.label.toLowerCase()} link`, 'Public — opens anywhere', () => copyText(out.url, `${out.label} link`)) : null,
     item('copy', 'Copy summary', 'Text for Slack / notes', () => copyText(runSummary(run, detail), 'Summary')),
-    item('external', 'Email…', 'Opens your mail app with the summary and links', () => mailto({ subject: `[Skill Runs] ${state.skill}: ${title} · ${new Date(run.createdAt || Date.now()).toISOString().slice(0, 10)}`, body: runSummary(run, detail) })),
+    item('external', 'Email…', 'Opens your mail app with the summary and links', () => mailto({ subject: `[Autopsy] ${state.skill}: ${title} · ${new Date(run.createdAt || Date.now()).toISOString().slice(0, 10)}`, body: runSummary(run, detail) })),
   ), { align: 'right', width: 330 });
 }
 
@@ -88,7 +88,7 @@ export function insightsSummary(ins, label) {
     ins.quotes.length ? '\nWhy users were unhappy:' : null,
     ins.quotes.length ? top(ins.quotes, 4, (r) => `  • “${r.sentimentDetail}”`) : null,
     '',
-    `Open in Skill Runs (local app): ${appLink({ tab: 'insights', filters: state.filters, q: state.q })}`,
+    `Open in Autopsy (local app): ${appLink({ tab: 'insights', filters: state.filters, q: state.q })}`,
   ].filter((l) => l !== null).join('\n');
 }
 
@@ -98,7 +98,7 @@ export function shareInsights(anchor, ins, label) {
     h('div', { class: 'sh-h' }, 'Share these insights'),
     item('copy', 'Copy app link', 'Opens these insights with the same filters (local app)', () => copyText(appLink({ tab: 'insights', filters: state.filters, q: state.q }), 'App link')),
     item('copy', 'Copy summary', 'Key numbers, failing tools, errors, asks — text', () => copyText(insightsSummary(ins, label), 'Summary')),
-    item('external', 'Email…', 'Opens your mail app with the summary', () => mailto({ subject: `[Skill Runs] ${state.skill} insights · ${label.split(' · ')[1] || ''} · ${new Date().toISOString().slice(0, 10)}`, body: insightsSummary(ins, label) })),
+    item('external', 'Email…', 'Opens your mail app with the summary', () => mailto({ subject: `[Autopsy] ${state.skill} insights · ${label.split(' · ')[1] || ''} · ${new Date().toISOString().slice(0, 10)}`, body: insightsSummary(ins, label) })),
     item('download', 'Export PDF…', 'Print dialog → “Save as PDF”; links stay clickable', () => exportPdf(label)),
   ), { align: 'right', width: 330 });
 }

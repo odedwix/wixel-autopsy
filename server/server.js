@@ -163,6 +163,6 @@ server.listen(config.port, '127.0.0.1', () => {
   claim();
   startSweeping();
   const url = `http://localhost:${config.port}`;
-  console.log(`skill-run-explorer on ${url} (pid ${process.pid})`);
+  console.log(`autopsy on ${url} (pid ${process.pid})`);
   if (process.argv.includes('--open')) spawn('open', [url], { stdio: 'ignore', detached: true }).unref();
 });

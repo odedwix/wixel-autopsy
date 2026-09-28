@@ -1,4 +1,6 @@
-# Skill Run Explorer
+# Autopsy
+
+*Take a Wixel skill's runs apart: what it made, what went wrong, and why.*
 
 A fast, local browser for every run of any Wixel agent skill. It shows what each run made (videos, images, logos, docs, slides…) along with:
 - the request, the scraped brand, and every step with its timing
@@ -7,7 +9,7 @@ A fast, local browser for every run of any Wixel agent skill. It shows what each
 
 The Insights tab summarizes the skill as a whole: failure rates, timings, top errors, what users asked for, and more.
 
-Built in three levels: a grid of runs → a run's deep dive → the Genix graph run behind a generation. Start with `npm start` or the **Skill Runs** app on the Desktop.
+Built in three levels: a grid of runs → a run's deep dive → the Genix graph run behind a generation. Start with `npm start` or the **Autopsy** app on the Desktop.
 
 ## Install (new machine)
 
@@ -91,7 +93,7 @@ Not every skill makes video. A run's **outputs** are the top-level assets its se
   - The graph summary lists failed nodes, the critical path, the slowest and most expensive nodes, and the graph's inputs and outputs.
   - **V** switches to a waterfall of the nodes; **F** fits; **[ ]** steps through nodes; pinch or ⌘-scroll zooms; drag pans; **Esc** closes.
   - The header leads with the graph's own outcome, because a Temporal workflow can complete while a node inside it failed.
-- **Sharing.** The app runs on localhost, so its own links only open for people running Skill Runs; every share also offers links that work for anyone.
+- **Sharing.** The app runs on localhost, so its own links only open for people running Autopsy; every share also offers links that work for anyone.
   - **A run** (Share in its header): copy the app link, the Wixel admin link (anyone with BO access), or the output's public link (exact render, published page or image). There's also a text summary and an email draft (`mailto:`). End-user emails are never included.
   - **Insights** (Share insights): copy the app link with the same filters, copy a text summary (numbers, failing tools, top errors, asks, unhappy-user quotes), email it, or **Export PDF** through the print dialog ("Save as PDF"; links stay clickable and URLs are printed).
 - **Skill picker** (⌘K): searchable, with the 5 most recently viewed skills on top.

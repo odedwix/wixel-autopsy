@@ -8,7 +8,7 @@ warn() { print -P "  %F{yellow}!%f $1"; }
 bad() { print -P "  %F{red}✗%f $1"; }
 FAIL=0
 
-echo "Skill Runs setup"
+echo "Autopsy setup"
 echo
 
 # 1. Node
@@ -44,11 +44,11 @@ if [ -f .cache/vendor/iframe-bootstrap.js ]; then ok "Product player — exact l
 # 6. Desktop launcher (macOS)
 if [ "$(uname)" = "Darwin" ] && command -v osacompile >/dev/null; then
   if python3 -c "import PIL" 2>/dev/null; then
-    sh scripts/make-launcher.sh >/dev/null && ok "Desktop launcher: ~/Desktop/Skill Runs.app"
+    sh scripts/make-launcher.sh >/dev/null && ok "Desktop launcher: ~/Desktop/Autopsy.app"
   else
     warn "Desktop launcher skipped (needs Python Pillow: pip3 install pillow) — use npm start"
   fi
 fi
 
 echo
-echo "Done. Start it with:  npm start   (or double-click Skill Runs on your Desktop)"
+echo "Done. Start it with:  npm start   (or double-click Autopsy on your Desktop)"

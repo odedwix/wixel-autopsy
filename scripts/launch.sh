@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Start (or restart) Skill Runs in the background and open it in the browser.
+# Start (or restart) Autopsy in the background and open it in the browser.
 # The server replaces any copy already running (see server/singleton.js); output goes to .cache/app.log.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 NODE="$(command -v node || echo /opt/homebrew/opt/node@22/bin/node)"

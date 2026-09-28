@@ -1,8 +1,8 @@
 #!/bin/zsh
-# Builds "Skill Runs.app" on the Desktop: double-click restarts the app and opens it.
+# Builds "Autopsy.app" on the Desktop: double-click restarts the app and opens it.
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP="$HOME/Desktop/Skill Runs.app"
+APP="$HOME/Desktop/Autopsy.app"
 TMP="$(mktemp -d)"
 
 osacompile -o "$APP" -e "do shell script \"/bin/zsh -lc '$ROOT/scripts/launch.sh'\""
