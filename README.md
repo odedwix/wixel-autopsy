@@ -1,10 +1,13 @@
 # Skill Run Explorer
 
-A fast browser for every run of a Wixel agent skill (starting with `wixel-ads`). It shows each run's videos, request, scraped brand, steps and timing, errors, and the Genix graph runs behind each generation.
+A fast, local browser for every run of any Wixel agent skill. It shows what each run made (videos, images, logos, docs, slides…) along with:
+- the request, the scraped brand, and every step with its timing
+- errors, user mood and feedback
+- the Genix graph runs behind each generation
 
-Status: **phase 3**. The grid, insights, the per-run deep dive and the drawn Genix graph runs are all done.
+The Insights tab summarizes the skill as a whole: failure rates, timings, top errors, what users asked for, and more.
 
-Open http://localhost:5178 after `npm run proxy`. Run `npm run build:player` once for the exact live player.
+Built in three levels: a grid of runs → a run's deep dive → the Genix graph run behind a generation. Start with `npm start` or the **Skill Runs** app on the Desktop.
 
 ## Install (new machine)
 
@@ -53,32 +56,33 @@ Not every skill makes video. A run's **outputs** are the top-level assets its se
 
 ## UI
 
-- **Grid** (virtualized):
-  - Hovering a card plays it, with sound if S is on. Moving the mouse scrubs: the sprite frame shows instantly while the real frame seeks.
-  - Badges show the video source: Exact / Assembled / Clip / Preparing.
-  - Red-topped cards are runs that generated but produced no video; the card shows the first error.
-  - Signals per card: downloaded (editor or agent), published, worst mood across turns, thumbs up/down, issues, out of credits. The user type (Real / Employee / Team) sits next to the time.
+- **Grid** (virtualized). The first tab is named after the skill's main output (Videos / Logos / Slides…).
+  - **Video outputs:** hovering a card plays it, with sound if S is on. Moving the mouse scrubs: the sprite frame shows instantly while the real frame seeks. Badges show the video source: Exact / Assembled / Clip / Preparing.
+  - **Other outputs:** hovering flips through everything the run made, and a type badge and "N outputs" count sit on the card.
+  - **Runs that tried but produced nothing** have a red top edge and show the first error. Hovering the error icon lists every failing step with its message.
+  - **Signals per card:** downloaded (editor or agent), published, worst mood across turns, thumbs up/down, issues, out of credits. The user type (Real / Employee / Team) sits next to the time.
 - **Filters:** faceted, each option with its count. Summary tiles double as one-click filters.
 - **Remembered state:** everything is saved in localStorage and mirrored in the URL (`#v=…`), so a reload restores the view and any view can be shared as a link.
 - **Inspect** (click or Enter):
-  - Review player with a custom scrub bar: scene segments, sprite preview, `,`/`.` frame steps, speed.
-  - **E** switches to the exact live composition: the product's own Remotion player, vendored from `wixel-video-client` by `npm run build:player`.
+  - **Video runs:** a review player with a custom scrub bar (scene segments, sprite preview, `,`/`.` frame steps, speed). **E** switches to the exact live composition: the product's own Remotion player, vendored from `wixel-video-client` by `npm run build:player`.
+  - **Other runs:** an output gallery with a large view, a strip of all outputs, and pages for docs and slides. The arrow keys step through outputs.
+  - **Share** in the header (see Sharing below).
   - Tabs (keys **1–6**; **W** widens the panel):
-    - **Overview:** outcome, mood by turn, request plus follow-ups, errors, scenes, identifiers.
+    - **Overview:** outcome, mood by turn, the request (the user's own words, with injected `<HIDDEN>` context folded away) plus follow-ups, errors, scenes, identifiers.
     - **Timeline:** a waterfall of every step, with agent thinking time on its own row and user-message markers.
       - Idle gaps between turns are compressed, and agent plumbing (read / write / list) can be hidden.
       - Hovering a bar shows a tooltip; clicking a row shows the prompt, input and output media, arguments, output and error.
-      - **Trace the Genix graph run** reads Temporal (only when you click) and lists each node's status, queue time, run time, cost and root cause.
+      - **Open graph run** opens the drawn Genix graph (below), and **Nodes table** shows the same data inline. Both read Temporal only when you click, and need a Temporal key.
     - **Scenes:** each shot next to the chain that made it, in a Picture lane (image → edit → video → voice merge) and a Voice & sound lane (TTS script → trim), with every step's prompt, model and time.
       - The chain is traced through media ids shared between one step's output and the next step's input.
     - **Brand:** the scraped site (logo, colours, fonts, screenshot) next to what the ad's text actually used, with ✓ on matches and a verdict such as "2 of 4 site colours… 0 of 5 fonts".
     - **Assets:** every piece of media in the run, grouped as uploads / website / generated images / clips / voice & music.
     - **Raw:** the normalized record per key, plus a link to the raw admin bundle.
 - **Insights** (tab, or **I**): computed in the browser from the runs in view, so they follow the skill, window, filters and search, and cost nothing upstream. Per-session step stats come from one extra Trino query per day (`stepsDayQuery`), cached like the day rows.
-  - Overview: finished-video rate, request → final / first clip (median, p90), average generation call, download and publish rates, frustration, cost per finished video.
+  - Overview: output rate (produced output ÷ tried), request → final output / first generation (median, p90), average generation call, download and publish rates, frustration, cost per run with output, main output type.
   - Tools & methods, sortable: calls, failures, fail rate, average and slowest time, runs hit. Clicking a row filters to the runs where that step failed.
   - Generation models; funnel; where the time goes; top error signatures; what users asked for (classified intent plus title subjects); most repeated prompts (many users = template, one user = retrying); mood and feedback quotes; runs per day; skill versions.
-  - A headline strip above the grid summarizes the top insights, and each one links to its card.
+  - A headline strip above the grid summarizes the top insights, and each one links to its card. Cards pack into masonry columns to keep scrolling to a minimum.
 - **Genix graph run** (level 3: "Open graph run" on a timeline step, or click a step card in Scenes). A full-screen view of that generation's graph, read from Temporal only when you open it.
   - Layered left-to-right layout (longest-path layers plus barycenter ordering), with graph inputs on the left and outputs on the right.
   - Each node shows its status, a mini timing bar of when it queued and ran inside the graph, time, cost, provider and an output thumbnail. Nodes that didn't run are dashed.
@@ -97,6 +101,22 @@ Not every skill makes video. A run's **outputs** are the top-level assets its se
 - **Error icon on a card:** hovering it lists the failing steps with their messages.
 - **Keyboard:** `?` lists all shortcuts.
 
+## Project layout
+
+| Path | What |
+|---|---|
+| `server/server.js` | HTTP server: API routes, static files, media with Range support, single-instance takeover |
+| `server/queries.js` | All Trino SQL: skills, runs index, per-day runs / events / steps (hour windows + sampling) |
+| `server/runs.js` | Day loading, caching, sampling, per-run outputs and signals, employee detection |
+| `server/admin.js` · `server/normalize.js` | Wixel admin API client; session → run record (steps, lineage, brand, asset tree) |
+| `server/temporal.js` | Temporal traces → graph runs (per-node data, failed-job lookup) |
+| `server/media.js` · `server/player.js` | Review videos (ffmpeg) and the live product player input |
+| `server/limits.js` · `server/context.js` · `server/cache.js` · `server/cache-gc.js` | Upstream limiters and load counters, request cancellation, disk cache, size cap |
+| `web/js/app.js` | Boot, loading, filters panel, summary, keyboard |
+| `web/js/grid.js` · `inspect.js` · `timeline.js` · `deep.js` · `graph.js` | Grid, details panel, timeline, scenes / brand / assets / raw, graph run |
+| `web/js/insights.js` · `share.js` · `skillpicker.js` · `ui.js` · `filters.js` · `state.js` | Insights, sharing, skill picker, tooltips / toasts / popovers, facets, persisted state |
+| `scripts/` | `setup.sh`, `launch.sh`, `make-launcher.sh`, `make-icon.py`, `build-player.sh`, `pull-sample.js` |
+
 ## Load on production systems
 
 Every upstream call goes through `server/limits.js`: a concurrency cap and minimum spacing per system, plus rolling counters shown live in the status bar ("Upstream, 5 min").
@@ -114,13 +134,18 @@ Every upstream call goes through `server/limits.js`: a concurrency cap and minim
 |---|---|---|
 | `GET /api/skills?days=30` | skills with ≥5 sessions | Trino |
 | `GET /api/runs-index?skill=…&days=…` | which UTC days have runs (plus when the skill last ran, if none) | Trino (cheap: skill calls only) |
-| `GET /api/runs-day?skill=…&day=YYYY-MM-DD` | one day's runs; the UI loads these 3 at a time, newest first | Trino |
+| `GET /api/runs-day?skill=…&day=YYYY-MM-DD&n=<sessions>` | one day's runs; the UI loads these 3 at a time, newest first. `n` (from the index) turns on sampling for busy days | Trino |
 | `GET /api/runs?skill=wixel-ads&days=7` | all days at once (scripts) | Trino, one query per non-empty day |
 | `GET /api/session/:id` | normalized run record (`?raw=1` for the raw bundle) | admin API |
 | `GET /api/trace/:workflowId` | Temporal chain + Genix graph runs with per-node data | Temporal Cloud |
 | `GET /api/media/:runId?priority=1` | review-media status; queues a build if there is none | ffmpeg |
 | `GET /media/:runId/review.mp4 \| poster.jpg \| sprite.jpg` | review media (Range requests supported) | local cache |
 | `GET /api/trace-job/:jobId?at=<ms>` | the same trace, for a **failed** generation (only a jobId) | Temporal Cloud |
+| `GET /api/media-batch?ids=a,b,…` | review-media status for the cards on screen | local |
+| `GET /api/player-input/:runId?root=<assetId>` | the live product player's input, built from the asset tree | admin API |
+| `GET /_api/wixel-viewer-bundle-server/bundles?…` | same-origin pass-through for the player's component bundles | manage.wix.com (public) |
+| `GET /api/health` | what this install can do (Temporal key, ffmpeg, player), plus cache use | local |
+| `GET /api/load` | upstream calls in the last 5 minutes, the media queue, and cache use | local |
 
 ## Where the data comes from, and the limits
 
