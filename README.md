@@ -142,6 +142,7 @@ Every upstream call goes through `server/limits.js`: a concurrency cap and minim
 | `GET /api/trace/:workflowId` | Temporal chain + Genix graph runs with per-node data | Temporal Cloud |
 | `GET /api/media/:runId?priority=1` | review-media status; queues a build if there is none | ffmpeg |
 | `GET /media/:runId/review.mp4 \| poster.jpg \| sprite.jpg` | review media (Range requests supported) | local cache |
+| `GET /download/:runId?name=` | save the video: the full-quality exact render when there is one (streamed through), else the review copy | render CDN / local cache |
 | `GET /api/trace-job/:jobId?at=<ms>` | the same trace, for a **failed** generation (only a jobId) | Temporal Cloud |
 | `GET /api/media-batch?ids=a,b,…` | review-media status for the cards on screen | local |
 | `GET /api/player-input/:runId?root=<assetId>` | the live product player's input, built from the asset tree | admin API |

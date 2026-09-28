@@ -309,14 +309,27 @@ function startHover(c, e) {
   hover.restTimer = setTimeout(() => play(), 120);
 }
 
+// Browsers block sound until the page has had a click or key press. Hover then plays muted and
+// says so on the card, instead of silently dropping the dialogue.
+let soundUnlocked = navigator.userActivation?.hasBeenActive || false;
+for (const ev of ['pointerdown', 'keydown']) {
+  window.addEventListener(ev, () => {
+    soundUnlocked = true;
+    document.querySelectorAll('.sound-hint').forEach((n) => n.remove());
+    if (hover.video && state.sound && hover.video.muted) hover.video.muted = false;
+  }, { capture: true, passive: true });
+}
+
 function play() {
   const v = hover.video;
   if (!v || !hover.card) return;
   v.muted = !state.sound;
   v.play().catch(() => {
-    // Autoplay with sound needs one prior click on the page; fall back to muted.
     v.muted = true;
     v.play().catch(() => {});
+    if (state.sound && !soundUnlocked && hover.card && !hover.card._thumb.querySelector('.sound-hint')) {
+      hover.card._thumb.append(h('span', { class: 'badge sound-hint' }, icon('mute', 'sm'), 'Sound blocked — click anywhere once'));
+    }
   });
 }
 

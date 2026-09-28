@@ -10,6 +10,24 @@ export const videoUrl = (id) => `/media/${id}/review.mp4`;
 export const spriteUrl = (id) => `/media/${id}/sprite.jpg`;
 export const posterUrl = (id) => `/media/${id}/poster.jpg`;
 
+// Save a run's video: /download streams the exact render when there is one, else the review copy,
+// as <skill>-<title>-<date>-<id8>.mp4.
+export function downloadName(run, skill) {
+  const title = (run.adName || run.title || 'video').replace(/\s*[-—]\s*Root$/i, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 50);
+  const day = run.createdAt ? new Date(run.createdAt).toISOString().slice(0, 10) : '';
+  return [skill, title, day, run.id.slice(0, 8)].filter(Boolean).join('-');
+}
+export function downloadRun(run, skill) {
+  if (!isReady(mediaOf(run.id))) return false;
+  const a = document.createElement('a');
+  a.href = `/download/${run.id}?name=${encodeURIComponent(downloadName(run, skill))}`;
+  a.download = '';
+  document.body.append(a);
+  a.click();
+  a.remove();
+  return true;
+}
+
 const FINAL = new Set(['ready', 'failed', 'unavailable']);
 let wanted = [];
 let timer;

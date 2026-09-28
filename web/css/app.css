@@ -533,6 +533,9 @@ table.ins tbody tr:hover td { background: var(--surface-2); }
 .tl { position: relative; }
 .tl-axis { position: relative; height: 18px; border-bottom: 1px solid var(--border); margin-bottom: 2px; }
 .tl-axis .tick { position: absolute; top: 2px; font: 10px var(--mono); color: var(--text-3); padding-left: 3px; border-left: 1px solid var(--border-strong); height: 14px; white-space: nowrap; }
+.tl-axis .tick.major { color: var(--text-2); }
+.tl-axis .tick.end { right: 0; padding: 0 3px 0 0; border-left: 0; border-right: 1px solid var(--border-strong); color: var(--text); font-weight: 600; }
+.tl-grid { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px solid var(--border); opacity: 0.55; }
 .tl-axis .brk { position: absolute; top: 0; height: 18px; display: grid; place-items: center; color: var(--text-3); font-size: 11px; }
 .tl-body { position: relative; }
 .tl-overlay { position: absolute; top: 0; bottom: 0; pointer-events: none; z-index: 1; }
@@ -828,3 +831,7 @@ table.ins td { padding: 3px 6px; }
 .hidden-ctx { margin-top: 8px; }
 .hidden-ctx summary { cursor: pointer; color: var(--text-3); font-size: 12px; }
 .scene video.im { width: 100%; object-fit: cover; display: block; background: var(--media-bg); }
+.badge.sound-hint { top: auto; bottom: 30px; left: 50%; transform: translateX(-50%); white-space: nowrap; background: rgba(10, 11, 13, 0.82); }
+.unmute { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 8px; padding: 10px 16px; border: 0; border-radius: 22px; background: rgba(10, 11, 13, 0.78); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; backdrop-filter: blur(6px); }
+.unmute:hover { background: var(--accent); }
+.unmute .i { width: 18px; height: 18px; }

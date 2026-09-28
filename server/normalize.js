@@ -279,6 +279,18 @@ export function normalizeSession(bundle) {
         userParameters: root.externalConfig?.user_parameters ?? null,
         conversationSummary: root.externalConfig?.conversation_summary ?? null,
         music: root.externalConfig?.background_music ?? null,
+        // Root audio tracks: a voiceover (extension "tts") and/or music ("audio-timeline"). Voice is
+        // usually baked into scene clips, but some ads keep it here. A missing volume means 1; a
+        // volume-0 tts is wixel-ads' muted captions carrier.
+        rootAudio: (root.components || []).map((c) => ({ ext: String(c.data?.extensionId || ''), p: c.data?.props || {} }))
+          .filter(({ p }) => /\.(mp3|wav|m4a|aac)(\?|$)/i.test(String(p.url || p.resultUrl || p.result_url || '')))
+          .map(({ ext, p }) => ({
+            kind: /tts/i.test(ext) || p.captionsUrl || p.captionsEnabled !== undefined ? 'voice' : 'music',
+            url: p.url || p.resultUrl || p.result_url,
+            volume: p.volume == null ? 1 : Number(p.volume),
+            shiftSec: Number(p.frame_shift || 0) / 24,
+            trimStartSec: Number(p.trim_start || 0) / 24,
+          })),
         captions: root.externalConfig?.captionsStyle ?? null,
         styleGuidelines: root.externalConfig?.context?.style_guidelines ?? null,
         scenes: scenes.map(sceneRecord).sort((a, b) => a.order - b.order),

@@ -55,8 +55,8 @@ export function set(patch, { silent = false } = {}) {
 }
 
 function save() {
-  const { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab, inspectTab, inspectWide, shapeAuto } = state;
-  const persisted = { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab, inspectTab, inspectWide, shapeAuto };
+  const { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab, inspectTab, inspectWide, shapeAuto, recentSkills } = state;
+  const persisted = { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab, inspectTab, inspectWide, shapeAuto, recentSkills };
   try {
     localStorage.setItem(KEY, JSON.stringify(persisted));
   } catch {}
