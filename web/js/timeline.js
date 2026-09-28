@@ -1,5 +1,6 @@
 import { h, icon, dur, getJson, copy } from './util.js';
 import { CAT_COLOR, CAT_LABEL } from './insights.js';
+import { openGraphView } from './graph.js';
 
 // Step waterfall for one run. Idle gaps (the user away between turns) are compressed to a
 // fixed-width break, so an hour-long session with 12 minutes of work still reads at a glance.
@@ -53,7 +54,9 @@ function tip(el, text) {
   return el;
 }
 
+let currentTitle = '';
 export function renderTimeline(root, d, { onSeekScene } = {}) {
+  currentTitle = d.outputs?.name || d.title || 'Run';
   const opts = { hidePlumbing: true, only: 'all' };
   let openId = null;
 
@@ -153,7 +156,8 @@ function stepDetail(s, t0) {
     outText && !outMedia.length ? h('details', {}, h('summary', {}, 'Raw output'), h('pre', { class: 'tl-pre' }, outText.slice(0, 6000))) : null,
     h('details', {}, h('summary', {}, 'Arguments'), h('pre', { class: 'tl-pre' }, JSON.stringify(s.args, null, 2).slice(0, 6000))),
     canTrace ? h('div', { class: 'links' },
-      h('button', { class: 'btn', onclick: () => loadTrace(s, trace) }, icon('sparkle'), 'Trace the Genix graph run'),
+      h('button', { class: 'btn primary', onclick: () => openGraphView({ title: currentTitle, step: s }) }, icon('sparkle'), 'Open graph run'),
+      h('button', { class: 'btn', onclick: () => loadTrace(s, trace) }, 'Nodes table'),
       h('span', { class: 'desc', style: { alignSelf: 'center' } }, 'Reads Temporal (prod) — only when you click')) : null,
     trace);
   return box;

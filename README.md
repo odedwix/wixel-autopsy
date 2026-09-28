@@ -2,7 +2,7 @@
 
 A fast browser for every run of a Wixel agent skill (starting with `wixel-ads`). It shows each run's videos, request, scraped brand, steps and timing, errors, and the Genix graph runs behind each generation.
 
-Status: **phase 2**. The grid, insights and the per-run deep dive are done. The drawn Genix graph view (phase 3) is next.
+Status: **phase 3**. The grid, insights, the per-run deep dive and the drawn Genix graph runs are all done.
 
 Open http://localhost:5178 after `npm run proxy`. Run `npm run build:player` once for the exact live player.
 
@@ -34,6 +34,14 @@ Open http://localhost:5178 after `npm run proxy`. Run `npm run build:player` onc
   - Tools & methods, sortable: calls, failures, fail rate, average and slowest time, runs hit. Clicking a row filters to the runs where that step failed.
   - Generation models; funnel; where the time goes; top error signatures; what users asked for (classified intent plus title subjects); most repeated prompts (many users = template, one user = retrying); mood and feedback quotes; runs per day; skill versions.
   - A headline strip above the grid summarizes the top insights, and each one links to its card.
+- **Genix graph run** (level 3: "Open graph run" on a timeline step, or click a step card in Scenes). A full-screen view of that generation's graph, read from Temporal only when you open it.
+  - Layered left-to-right layout (longest-path layers plus barycenter ordering), with graph inputs on the left and outputs on the right.
+  - Each node shows its status, a mini timing bar of when it queued and ran inside the graph, time, cost, provider and an output thumbnail. Nodes that didn't run are dashed.
+  - The critical path (the chain that set the end time) is highlighted. Hovering or selecting a node lights up everything upstream and downstream.
+  - The node inspector shows timings, cost, endpoint, task queue and `when` condition. Each input is labelled with its source (graph input, `← upstream.handle`, or static param). It also shows the output (media previews), the failure root cause plus the full cause chain, and a Temporal link.
+  - The graph summary lists failed nodes, the critical path, the slowest and most expensive nodes, and the graph's inputs and outputs.
+  - **V** switches to a waterfall of the nodes; **F** fits; **[ ]** steps through nodes; pinch or ⌘-scroll zooms; drag pans; **Esc** closes.
+  - The header leads with the graph's own outcome, because a Temporal workflow can complete while a node inside it failed.
 - **Keyboard:** `?` lists all shortcuts.
 
 ## Load on production systems
@@ -44,7 +52,7 @@ Every upstream call goes through `server/limits.js`: a concurrency cap and minim
 |---|---|---|---|
 | Trino (via the admin SQL endpoint) | shared analytics cluster, not production serving | 4 concurrent, ≥250 ms apart | list, index and step queries. A day older than 3 days is cached forever, so steady state is a few queries per 3 minutes for the last 3 days |
 | Wixel admin API | production BO service reading the agent's session store | 3 concurrent, ≥150 ms apart | opening a run, hovering a card for 600 ms, assembling an ad without a render. Cached forever once the session has been idle 30 minutes |
-| Temporal Cloud prod namespace | shares request limits with production workers | 2 concurrent, ≥250 ms apart | only the graph-run drill-down (phase 3). Nothing in the UI calls it yet |
+| Temporal Cloud prod namespace | shares request limits with production workers | 2 concurrent, ≥250 ms apart | only when you open a graph run or a nodes table. Each trace is about 3–5 calls, cached forever once finished |
 | Wix CDN (wixmp) | media delivery | ffmpeg, 2 builds at a time | downloading clips and renders for review copies |
 
 ## Run
