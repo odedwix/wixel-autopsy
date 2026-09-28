@@ -12,12 +12,9 @@
 <body>
   <header class="topbar">
     <div class="brand"><svg class="i"><use href="#i-film" /></svg><span>Skill Runs</span></div>
-    <label class="field skill">
-      <span class="field-label">Skill</span>
-      <select id="skill"></select>
-    </label>
+    <button class="skill-btn" id="skillBtn" title="Switch skill (⌘K)"></button>
     <div class="seg" id="days" role="radiogroup" aria-label="Time window">
-      <button data-days="1">24h</button><button data-days="3">3d</button><button data-days="7">7d</button><button data-days="14">14d</button><button data-days="30">30d</button><button data-days="90">90d</button>
+      <button data-win="1h">1h</button><button data-win="24h">24h</button><button data-win="3d">3d</button><button data-win="7d">7d</button><button data-win="14d">14d</button><button data-win="30d">30d</button><button data-win="90d">90d</button>
     </div>
     <div class="search">
       <svg class="i"><use href="#i-search" /></svg>
@@ -47,12 +44,13 @@
     <button id="theme" class="icon-btn" title="Theme"><svg class="i"><use href="#i-contrast" /></svg></button>
     <button id="help" class="icon-btn" title="Keyboard shortcuts (?)"><svg class="i"><use href="#i-keyboard" /></svg></button>
   </header>
+  <div class="loadbar" id="loadbar"><i></i></div>
 
   <div class="layout">
     <aside class="filters" id="filters" aria-label="Filters"></aside>
     <main class="main">
       <div class="tabs" role="tablist">
-        <button role="tab" data-tab="videos" title="Videos (V)">Videos <kbd>V</kbd></button>
+        <button role="tab" data-tab="videos" title="Outputs (V)"><span id="tabMain">Videos</span> <kbd>V</kbd></button>
         <button role="tab" data-tab="insights" title="Insights (I)">Insights <kbd>I</kbd></button>
         <div class="profile" id="profile" title="What this skill makes, learned from its runs"></div>
       </div>
@@ -81,7 +79,8 @@
         <dt>E</dt><dd>Exact live player ↔ review copy</dd>
         <dt>1 – 6</dt><dd>Details tabs: overview, timeline, scenes, brand, assets, raw</dd>
         <dt>W</dt><dd>Wide details panel</dd>
-        <dt>/</dt><dd>Search</dd>
+        <dt>/</dt><dd>Search runs</dd>
+        <dt>⌘K</dt><dd>Switch skill</dd>
         <dt>V / I</dt><dd>Videos / Insights</dd>
         <dt>F</dt><dd>Toggle filters</dd>
         <dt>S</dt><dd>Sound on hover</dd>

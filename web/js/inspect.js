@@ -2,6 +2,7 @@ import { h, icon, ago, dur, dateTime, tc, getJson, copy } from './util.js';
 import { state, set } from './state.js';
 import { renderTimeline } from './timeline.js';
 import { renderScenes, renderBrand, renderAssets, renderRaw } from './deep.js';
+import { shareRun } from './share.js';
 import { MOOD, worstMood, failedRun, hasAd, primaryOutput, typeLabel } from './filters.js';
 import { isVideoRun } from './grid.js';
 import { mediaOf, isReady, prioritize, onMedia, videoUrl, spriteUrl, placeSprite } from './media.js';
@@ -123,6 +124,7 @@ function header(r, d) {
         r.agent ? [h('span', { class: 'sep' }, '·'), h('span', {}, `${r.agent}${r.source ? ` / ${r.source}` : ''}`)] : null,
       ),
     ),
+    h('button', { class: 'btn share-btn', title: 'Share this run', onclick: (e) => shareRun(e.currentTarget, current?.run || r, current?.detail || d) }, icon('external'), 'Share'),
     h('button', { class: 'icon-btn', title: 'Wide panel (W)', onclick: () => toggleWide() }, icon('expand')),
     h('a', { class: 'icon-btn', href: ADMIN + r.id, target: '_blank', rel: 'noopener', title: 'Open in Wixel admin (O)' }, icon('external')),
     h('button', { class: 'icon-btn', title: 'Close (Esc)', onclick: () => panel._close() }, icon('x')),

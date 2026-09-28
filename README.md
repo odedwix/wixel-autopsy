@@ -52,6 +52,14 @@ Not every skill makes video. A run's **outputs** are the top-level assets its se
   - The graph summary lists failed nodes, the critical path, the slowest and most expensive nodes, and the graph's inputs and outputs.
   - **V** switches to a waterfall of the nodes; **F** fits; **[ ]** steps through nodes; pinch or ⌘-scroll zooms; drag pans; **Esc** closes.
   - The header leads with the graph's own outcome, because a Temporal workflow can complete while a node inside it failed.
+- **Sharing.** The app runs on localhost, so its own links only open for people running Skill Runs; every share also offers links that work for anyone.
+  - **A run** (Share in its header): copy the app link, the Wixel admin link (anyone with BO access), or the output's public link (exact render, published page or image). There's also a text summary and an email draft (`mailto:`). End-user emails are never included.
+  - **Insights** (Share insights): copy the app link with the same filters, copy a text summary (numbers, failing tools, top errors, asks, unhappy-user quotes), email it, or **Export PDF** through the print dialog ("Save as PDF"; links stay clickable and URLs are printed).
+- **Skill picker** (⌘K): searchable, with the 5 most recently viewed skills on top.
+- **Time windows** are rolling (1h / 24h / 3d / … from now) rather than UTC calendar days.
+- **Loading feedback:** a progress bar under the header, per-second status, and a "Trino is busy" note when queries queue.
+- **Filters that don't fit a skill** are removed automatically, with a toast that says what was removed. That covers both single values that match nothing and combinations that together match nothing (the most restrictive filter goes first).
+- **Error icon on a card:** hovering it lists the failing steps with their messages.
 - **Keyboard:** `?` lists all shortcuts.
 
 ## Load on production systems

@@ -2,6 +2,8 @@ import { h, icon, ago, dur } from './util.js';
 import { state } from './state.js';
 import { hasAd, failedRun, attempted, worstMood, MOOD, primaryOutput, typeLabel, getProfile } from './filters.js';
 import { mediaOf, isReady, want, onMedia, prioritize, videoUrl, spriteUrl, placeSprite } from './media.js';
+import { richTip } from './ui.js';
+import { stepKey } from './filters.js';
 
 // Virtualized card grid. Only rows in (or near) the viewport exist in the DOM; cards are keyed by
 // run id and reused across scrolls. One shared <video> does hover playback.
@@ -174,9 +176,25 @@ function signals(r) {
   if (r.thumbsUp) out.push(sig('up', 'ok', r.thumbsUp > 1 ? r.thumbsUp : '', 'Thumbs up'));
   if (r.thumbsDown) out.push(sig('down', 'err', r.thumbsDown > 1 ? r.thumbsDown : '', `Thumbs down${r.feedbackTags.length ? `: ${r.feedbackTags.join(', ')}` : ''}`));
   const issues = (r.errors || 0) + (r.failedTurns || 0) + (r.streamErrors || 0);
-  if (issues) out.push(sig('alert', 'err', issues, `${r.errors} tool errors, ${r.failedTurns} failed turns, ${r.streamErrors} model stream errors${r.firstError ? `\nFirst: ${r.firstError}` : ''}`));
+  if (issues) out.push(richTip(sig('alert', 'err', issues, ''), () => errorList(r)));
   if (r.outOfFunds) out.push(sig('card', 'warn', '', 'Ran out of credits'));
   return out;
+}
+
+// What went wrong in a run, for the error icon's hover: each failing step with its message.
+function errorList(r) {
+  const rows = (r.steps || []).filter((x) => x[4] > 0).sort((a, b) => b[4] - a[4]).slice(0, 8)
+    .map(([tool, method, , n, e, , , err]) => h('div', { class: 'tip-row' }, h('b', {}, `${stepKey(tool, method)} ×${e}`), h('span', { class: 'tip-dim' }, ` of ${n}`), err ? h('div', { class: 'tip-msg' }, err.slice(0, 180)) : null));
+  const extra = [
+    r.failedTurns ? `${r.failedTurns} failed turn${r.failedTurns > 1 ? 's' : ''}` : null,
+    r.streamErrors ? `${r.streamErrors} model stream error${r.streamErrors > 1 ? 's' : ''}` : null,
+    r.outOfFunds ? 'ran out of credits' : null,
+  ].filter(Boolean);
+  return [
+    h('div', { class: 'tip-h' }, `${r.errors || 0} tool error${r.errors === 1 ? '' : 's'}${extra.length ? ` · ${extra.join(' · ')}` : ''}`),
+    ...(rows.length ? rows : r.firstError ? [h('div', { class: 'tip-msg' }, r.firstError)] : []),
+    h('div', { class: 'tip-dim', style: { marginTop: '6px' } }, 'Open the run → Timeline → Failed for the full detail'),
+  ];
 }
 
 function buildCard(r) {

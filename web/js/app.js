@@ -4,6 +4,9 @@ import { FACETS, STATS, SORTS, applyFilters, facetCounts, facetOptions, outputPr
 import { initGrid, setRuns, relayout, markSelected, scrollToIndex, columns, applySound, stopHover } from './grid.js';
 import { initInspect, openInspect, closeInspect, inspectedPlayer, prefetchDetail, toggleLive, toggleWide, setInspectTabByIndex } from './inspect.js';
 import { computeInsights, renderInsights, headlines } from './insights.js';
+import { setSkills, renderSkillButton, openSkillPicker, rememberSkill } from './skillpicker.js';
+import { toast } from './ui.js';
+import { shareInsights } from './share.js';
 
 let allRuns = [];
 let view = [];
@@ -18,6 +21,17 @@ let insights = null;
 const insightState = { expanded: {}, scrollTo: null };
 const loadEl = h('span', { class: 'load' });
 let loading = null; // { done, total, sessions } while days are streaming in
+let scope = []; // allRuns inside the rolling time window
+let loadStart = 0;
+let lastLoad = null;
+let loadTicker = null;
+
+// Time windows are rolling (the last 1h / 24h / … from now), not UTC calendar days.
+const WINDOWS = { '1h': 1 / 24, '24h': 1, '3d': 3, '7d': 7, '14d': 14, '30d': 30, '90d': 90 };
+const windowLabel = () => Object.entries(WINDOWS).find(([, v]) => Math.abs(v - state.days) < 1e-9)?.[0] || `${state.days}d`;
+const inWindow = (r) => r.createdAt >= Date.now() - state.days * 86400000;
+// UTC day slices needed to cover the rolling window.
+const requestDays = () => Math.min(90, Math.ceil(state.days) + 1);
 const expanded = new Set();
 
 // ---------- boot ----------
@@ -49,12 +63,10 @@ onChange((patch) => {
 
 // ---------- data ----------
 async function loadSkills() {
-  const sel = $('#skill');
-  sel.replaceChildren(h('option', { value: state.skill }, state.skill));
+  renderSkillButton($('#skillBtn'));
   try {
-    const skills = await getJson('/api/skills?days=30');
-    sel.replaceChildren(...skills.map((s) => h('option', { value: s.skill, selected: s.skill === state.skill }, `${s.skill}  ·  ${fmtInt(s.sessions)}`)));
-    if (!skills.some((s) => s.skill === state.skill)) sel.prepend(h('option', { value: state.skill, selected: true }, state.skill));
+    setSkills(await getJson('/api/skills?days=30'));
+    renderSkillButton($('#skillBtn'));
   } catch {}
 }
 
@@ -67,15 +79,21 @@ async function loadRuns() {
   loadAbort = new AbortController();
   const { signal } = loadAbort;
   allRuns = [];
+  scope = [];
   missing = [];
   lastSeen = null;
   loading = { done: 0, total: null };
+  loadStart = Date.now();
+  rememberSkill(state.skill);
   skeleton();
-  status(`Finding which days ${state.skill} ran in the last ${state.days}d…`);
+  // While loading, the progress bar and status tick every second so it never looks frozen.
+  clearInterval(loadTicker);
+  loadTicker = setInterval(showProgress, 1000);
+  showProgress();
   // A link/reload with a run open shows it immediately; its detail doesn't depend on the list.
   if (state.open && state.selected) openInspect({ id: state.selected, _stub: true });
   try {
-    const index = await getJson(`/api/runs-index?skill=${encodeURIComponent(state.skill)}&days=${state.days}`, { signal });
+    const index = await getJson(`/api/runs-index?skill=${encodeURIComponent(state.skill)}&days=${requestDays()}`, { signal });
     if (token !== loadToken) return;
     lastSeen = index.lastSeen;
     loading.total = index.dayList.length;
@@ -95,6 +113,11 @@ async function loadRuns() {
           missing.push({ day, error: err.message });
         }
         loading.done++;
+        // Don't leave the grid empty behind filters that don't fit this skill while the rest loads.
+        if (loading.done === 1) {
+          scope = allRuns.filter(inWindow);
+          if (scope.length && !applyFilters(scope, state.filters, state.q).length) pruneFilters();
+        }
         scheduleRefresh();
       }
     };
@@ -103,15 +126,82 @@ async function loadRuns() {
   } catch (err) {
     if (token !== loadToken) return;
     loading = null;
+    endProgress();
     status(`Failed to load runs: ${err.message}`);
     $('#gridSizer').replaceChildren(h('div', { class: 'empty-state' }, h('h2', {}, 'Couldn’t load runs'), h('p', {}, err.message), h('button', { class: 'btn', onclick: loadRuns }, 'Retry')));
     return;
   }
   loading = null;
+  endProgress();
   refreshView();
+  pruneFilters();
   if (state.open && state.selected) {
     const r = allRuns.find((x) => x.id === state.selected);
     if (r) openInspect(r);
+  }
+}
+
+// ---------- loading feedback ----------
+function showProgress() {
+  const bar = $('#loadbar');
+  if (!loading) return endProgress();
+  bar.classList.add('on');
+  bar.classList.toggle('ind', loading.total == null || loading.total === 0);
+  if (loading.total) bar.style.setProperty('--p', `${Math.max(6, (loading.done / loading.total) * 100)}%`);
+  const secs = Math.round((Date.now() - loadStart) / 1000);
+  const q = lastLoad?.trino?.queued || 0;
+  const busy = secs > 8 && (q || lastLoad?.trino?.inflight) ? ` · Trino is busy (${lastLoad.trino.inflight} running${q ? `, ${q} queued` : ''}) — still working` : '';
+  const what = loading.total == null ? `Finding which days ${state.skill} ran` : `Loading day ${Math.min(loading.done + 1, loading.total)} of ${loading.total} (${fmtInt(loading.sessions)} sessions)`;
+  if (!allRuns.length) status(`${what}… ${secs}s${busy}`);
+  else refreshStatus(busy);
+}
+
+function endProgress() {
+  clearInterval(loadTicker);
+  loadTicker = null;
+  const bar = $('#loadbar');
+  bar.style.setProperty('--p', '100%');
+  setTimeout(() => !loading && bar.classList.remove('on', 'ind'), 250);
+}
+
+// After a skill/window change, drop filter values that match nothing in this skill's runs
+// (e.g. "Wixel team" when no team member ran it), so the view is never empty for no reason.
+function pruneFilters() {
+  if (!scope.length) return;
+  const filters = { ...state.filters };
+  const removed = [];
+  for (const f of FACETS) {
+    const vals = filters[f.key];
+    if (!vals?.length) continue;
+    const opts = facetOptions(f, scope);
+    const keep = vals.filter((v) => {
+      const o = opts.find((x) => x.value === v);
+      return o && scope.some(o.test);
+    });
+    for (const v of vals) if (!keep.includes(v)) removed.push(`${f.label}: ${opts.find((x) => x.value === v)?.label || v}`);
+    if (keep.length) filters[f.key] = keep;
+    else delete filters[f.key];
+  }
+  // Still nothing? The combination contradicts this skill: drop whole filters, most restrictive
+  // first (the one whose removal brings back the most runs), until something shows.
+  const label = (key) => {
+    const f = FACETS.find((x) => x.key === key);
+    const opts = facetOptions(f, scope);
+    return `${f.label}: ${(filters[key] || []).map((v) => opts.find((o) => o.value === v)?.label || v).join(', ')}`;
+  };
+  for (let guard = 0; guard < 8 && !applyFilters(scope, filters, state.q).length && Object.keys(filters).length; guard++) {
+    let best = null;
+    for (const key of Object.keys(filters)) {
+      const { [key]: _, ...rest } = filters;
+      const n = applyFilters(scope, rest, state.q).length;
+      if (!best || n > best.n) best = { key, n };
+    }
+    removed.push(label(best.key));
+    delete filters[best.key];
+  }
+  if (removed.length) {
+    set({ filters });
+    toast(`Removed filters that don’t fit ${state.skill}: ${removed.join(' · ')}`, { ms: 7000 });
   }
 }
 
@@ -137,27 +227,35 @@ function skeleton() {
 }
 
 function refreshView() {
-  const profile = outputProfile(allRuns);
+  scope = allRuns.filter(inWindow);
+  const profile = outputProfile(scope);
   setProfile(profile);
   renderProfile(profile);
-  view = applyFilters(allRuns, state.filters, state.q).sort(SORTS[state.sort] || SORTS.newest);
+  // The first tab is named after what the skill makes (Logos, Slides, Videos…).
+  const main = profile[0]?.type;
+  const lbl = main ? typeLabel(main) : 'Runs';
+  $('#tabMain').textContent = /s$/.test(lbl) ? lbl : `${lbl}s`;
+  view = applyFilters(scope, state.filters, state.q).sort(SORTS[state.sort] || SORTS.newest);
   const sizer = $('#gridSizer');
   const keepSkeleton = loading && !allRuns.length;
   if (!keepSkeleton) sizer.querySelectorAll('.skeleton, .empty-state').forEach((n) => n.remove());
   setRuns(view);
   sizer.querySelectorAll('.empty-state').forEach((n) => n.remove());
   if (!keepSkeleton && !view.length) sizer.append(emptyState());
-  const counts = facetCounts(allRuns, state.filters, state.q);
+  const counts = facetCounts(scope, state.filters, state.q);
   renderFilters(counts);
   renderSummary(counts);
   renderChips();
   insights = computeInsights(view);
   renderInsightViews();
-  $('#statusLine').dataset.count = view.length;
-  const progress = loading ? (loading.total == null ? ' · finding days…' : ` · loading day ${Math.min(loading.done + 1, loading.total)} of ${loading.total} (${fmtInt(loading.sessions)} sessions)…`) : '';
+  refreshStatus();
+}
+
+function refreshStatus(busy = '') {
+  const progress = loading ? (loading.total == null ? ' · finding days…' : ` · loading day ${Math.min(loading.done + 1, loading.total)} of ${loading.total}…`) : '';
   const sampled = allRuns.some((r) => r.sampleRate < 1) && loadedSessions ? ` · busy days sampled: showing ${fmtInt(allRuns.length)} of ~${fmtInt(loadedSessions)} sessions (${Math.round((allRuns.length / loadedSessions) * 100)}%)` : '';
   const failed = missing.length ? ` · ⚠ ${missing.length} day(s) failed to load (${missing.map((m) => m.day).join(', ')}) — reload to retry` : '';
-  status(`${fmtInt(view.length)} of ${fmtInt(allRuns.length)} runs · ${state.skill} · last ${state.days}d${progress}${sampled}${failed}`);
+  status(`${fmtInt(view.length)} of ${fmtInt(scope.length)} runs · ${state.skill} · last ${windowLabel()}${progress}${busy}${sampled}${failed}`);
 }
 
 // "Makes: Logo 97% · Image 7%" — the skill's output types, each a one-click filter.
@@ -173,23 +271,25 @@ function renderProfile(profile) {
 
 // Why the grid is empty, and the one click that fixes it.
 function emptyState() {
-  if (allRuns.length) {
-    return h('div', { class: 'empty-state' }, h('h2', {}, 'No runs match these filters'), h('p', {}, `${fmtInt(allRuns.length)} runs are hidden by the filters or search.`),
+  if (scope.length) {
+    return h('div', { class: 'empty-state' }, h('h2', {}, 'No runs match these filters'), h('p', {}, `${fmtInt(scope.length)} runs are hidden by the filters or search.`),
       h('button', { class: 'btn', onclick: () => { set({ q: '' }); clearFilter(); } }, 'Clear filters'));
   }
   if (missing.length) {
     return h('div', { class: 'empty-state' }, h('h2', {}, `Couldn’t load ${missing.length} day(s)`), h('p', {}, missing[0].error?.slice(0, 200) || ''),
       h('button', { class: 'btn', onclick: loadRuns }, 'Retry'));
   }
-  const at = lastSeen?.at;
+  // Loaded runs exist but none inside a short window (e.g. 1h): suggest the next window up.
+  const newest = allRuns.reduce((m, r) => Math.max(m, r.createdAt || 0), 0);
+  const at = lastSeen?.at || newest || null;
   const ageDays = at ? (Date.now() - at) / 86400000 : null;
-  const fit = ageDays != null ? [3, 7, 14, 30, 90].find((d) => d > ageDays) : null;
+  const fit = ageDays != null ? Object.entries(WINDOWS).find(([, d]) => d > ageDays) : null;
   return h('div', { class: 'empty-state' },
-    h('h2', {}, `No ${state.skill} runs in the last ${state.days} days`),
+    h('h2', {}, `No ${state.skill} runs in the last ${windowLabel()}`),
     h('p', {}, at
-      ? `It last ran ${ago(at)} (${new Date(at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}) · ${fmtInt(lastSeen.sessions90d)} sessions in the last 90 days.`
+      ? `It last ran ${ago(at)} (${new Date(at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })})${lastSeen?.sessions90d != null ? ` · ${fmtInt(lastSeen.sessions90d)} sessions in the last 90 days` : ''}.`
       : 'It hasn’t run in the last 90 days.'),
-    fit && fit !== state.days ? h('button', { class: 'btn', onclick: () => set({ days: fit }) }, `Show the last ${fit} days`) : null);
+    fit && fit[1] !== state.days ? h('button', { class: 'btn', onclick: () => set({ days: fit[1] }) }, `Show the last ${fit[0]}`) : null);
 }
 
 function status(text) {
@@ -209,7 +309,8 @@ const insightActions = {
     set({ tab: 'videos' });
     select(id, { open: true });
   },
-  label: () => `${state.skill} · last ${state.days} days · ${fmtInt(view.length)} runs${Object.keys(state.filters).length || state.q ? ' (filtered)' : ''}`,
+  label: () => `${state.skill} · last ${windowLabel()} · ${fmtInt(view.length)} runs${Object.keys(state.filters).length || state.q ? ' (filtered)' : ''}`,
+  share: (anchor) => shareInsights(anchor, insights, insightActions.label()),
   rerender: () => renderInsightViews(),
   get expanded() {
     return insightState.expanded;
@@ -255,6 +356,7 @@ function applyTab() {
 async function pollLoad() {
   try {
     const l = await getJson('/api/load');
+    lastLoad = l;
     const lane = (name, label) => {
       const x = l[name];
       return h('span', { title: `${label}: ${x.inflight} in flight, ${x.queued} queued, ${x.total} since start, ${x.errors} errors (max ${x.concurrency} concurrent)` },
@@ -268,7 +370,7 @@ async function pollLoad() {
 }
 
 // ---------- filters panel ----------
-function renderFilters(counts = facetCounts(allRuns, state.filters, state.q)) {
+function renderFilters(counts = facetCounts(scope, state.filters, state.q)) {
   const panel = $('#filters');
   panel.hidden = !state.filtersOpen;
   const scroll = panel.scrollTop;
@@ -314,7 +416,7 @@ function renderChips() {
   const chips = [];
   for (const f of FACETS) {
     for (const v of state.filters[f.key] || []) {
-      const o = facetOptions(f, allRuns).find((x) => x.value === v);
+      const o = facetOptions(f, scope).find((x) => x.value === v);
       chips.push(h('button', { class: 'chip', title: 'Remove', onclick: () => toggleFilter(f.key, v) }, h('b', {}, `${f.label}:`), o?.label || v, icon('x')));
     }
   }
@@ -345,10 +447,10 @@ function moveSelection(delta) {
 
 // ---------- top bar ----------
 function bindTopbar() {
-  $('#skill').addEventListener('change', (e) => set({ skill: e.target.value, selected: null, open: false }));
+  $('#skillBtn').addEventListener('click', () => openSkillPicker($('#skillBtn')));
   $('#days').addEventListener('click', (e) => {
     const b = e.target.closest('button');
-    if (b) set({ days: Number(b.dataset.days) });
+    if (b) set({ days: WINDOWS[b.dataset.win] });
   });
   $('#aspect').addEventListener('click', (e) => {
     const b = e.target.closest('button');
@@ -378,7 +480,7 @@ function bindTopbar() {
 }
 
 function syncTopbar() {
-  for (const b of $('#days').children) b.setAttribute('aria-checked', String(Number(b.dataset.days) === state.days));
+  for (const b of $('#days').children) b.setAttribute('aria-checked', String(Math.abs(WINDOWS[b.dataset.win] - state.days) < 1e-9));
   for (const b of $('#aspect').children) b.setAttribute('aria-checked', String(b.dataset.aspect === state.aspect));
   $('#size').value = state.size;
   $('#sort').value = state.sort;
@@ -387,7 +489,7 @@ function syncTopbar() {
   snd.setAttribute('aria-pressed', String(state.sound));
   snd.replaceChildren(icon(state.sound ? 'volume' : 'mute'));
   $('#filters').hidden = !state.filtersOpen;
-  if ($('#skill').value !== state.skill) $('#skill').value = state.skill;
+  renderSkillButton($('#skillBtn'));
 }
 
 // ---------- keyboard ----------
@@ -399,6 +501,10 @@ document.addEventListener('keydown', (e) => {
     if (state.open) return set({ open: false });
     if (state.q) return set({ q: '' });
     return;
+  }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    return openSkillPicker($('#skillBtn'));
   }
   if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
   const p = inspectedPlayer();

@@ -292,7 +292,7 @@ function toolsTable(ins, act) {
 
 export function renderInsights(root, ins, act) {
   if (!ins.n) {
-    root.replaceChildren(h('div', { class: 'empty-state' }, h('h2', {}, 'No runs in view'), h('p', {}, 'Insights follow the skill, window, filters and search.')));
+    root.replaceChildren(h('div', { class: 'ins-empty' }, h('h2', {}, 'No runs in view'), h('p', {}, 'Insights follow the skill, window, filters and search.')));
     return;
   }
   const p50 = (a) => dur(pct(a, 50));
@@ -412,7 +412,8 @@ export function renderInsights(root, ins, act) {
       }))) : h('p', { class: 'desc' }, 'No version data.'));
 
   // Wide cards across the top, then the rest packed into masonry columns (no height gaps).
-  root.replaceChildren(h('p', { class: 'ins-note' }, `Insights for ${act.label()}. Click anything to filter the runs.`),
+  root.replaceChildren(h('div', { class: 'ins-top' }, h('p', { class: 'ins-note' }, `Insights for ${act.label()}. Click anything to filter the runs.`),
+      h('button', { class: 'btn', onclick: (e) => act.share(e.currentTarget) }, icon('external'), 'Share insights')),
     h('div', { class: 'ins-wide' }, overview, tools),
     h('div', { class: 'ins-masonry' }, funnel, mood, errors, timing, modelsCard, asks, rep, trend, vers));
   if (act.scrollTo) root.querySelector(`#ins-${act.scrollTo}`)?.scrollIntoView({ block: 'start' });
