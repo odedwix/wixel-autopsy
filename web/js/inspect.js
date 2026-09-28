@@ -438,13 +438,33 @@ function mood(d) {
   })));
 }
 
+// The user's own words first; injected context (<HIDDEN>…) folds away. The fade + "Show all"
+// only appear when the text actually overflows (measured after render), never over a short prompt.
+function splitPrompt(text) {
+  const t = String(text || '');
+  const i = t.search(/<HIDDEN>/i);
+  if (i < 0) return { said: t.trim(), hidden: null };
+  return { said: t.slice(0, i).trim(), hidden: t.slice(i).replace(/<\/?HIDDEN>/gi, '').trim() };
+}
+
+function promptBlock(text, cls = '') {
+  const { said, hidden } = splitPrompt(text);
+  const p = h('div', { class: `prompt ${cls}` }, said || '—');
+  const more = h('button', { class: 'linkish', hidden: true, onclick: () => { p.classList.toggle('open'); more.textContent = p.classList.contains('open') ? 'Show less' : 'Show all'; } }, 'Show all');
+  requestAnimationFrame(() => {
+    if (p.scrollHeight > p.clientHeight + 4) {
+      p.classList.add('long');
+      more.hidden = false;
+    }
+  });
+  return [p, more, hidden ? h('details', { class: 'hidden-ctx' }, h('summary', {}, 'Hidden context sent with the request'), h('pre', { class: 'tl-pre' }, hidden)) : null];
+}
+
 function request(d) {
-  const p = h('div', { class: 'prompt' }, d.prompt || '—');
-  const more = h('button', { class: 'linkish', onclick: () => { p.classList.toggle('open'); more.textContent = p.classList.contains('open') ? 'Show less' : 'Show all'; } }, 'Show all');
   const follow = (d.userMessages || []).slice(1);
-  return section('Request', null, p, (d.prompt || '').length > 400 ? more : null,
+  return section('Request', null, ...promptBlock(d.prompt),
     follow.length ? h('div', { style: { marginTop: '10px' } }, h('h4', {}, 'Follow-ups', h('span', { class: 'n' }, follow.length)),
-      ...follow.map((m) => h('div', { class: 'prompt open', style: { color: 'var(--text-2)', marginBottom: '6px', maxHeight: 'none' } }, `› ${m.text}`))) : null);
+      ...follow.map((m) => h('div', { class: 'prompt open followup' }, `› ${splitPrompt(m.text).said}`))) : null);
 }
 
 function errorsSection(d) {
@@ -455,11 +475,22 @@ function errorsSection(d) {
     h('pre', {}, String(e.message).slice(0, 800))))));
 }
 
+// A scene without a snapshot shows the picture its clip was made from (the image-to-video input),
+// or failing that a frame of the clip itself.
+function sceneThumb(s, d) {
+  if (s.thumbnailUrl) return h('div', { class: 'im', style: { backgroundImage: `url(${s.thumbnailUrl})` } });
+  const byId = new Map((d.steps || []).map((x) => [x.id, x]));
+  const img = (s.lineage || []).map((id) => byId.get(id)).flatMap((x) => x?.mediaOut || []).find((m) => m.kind === 'image');
+  if (img) return h('div', { class: 'im', style: { backgroundImage: `url(${img.url})` } });
+  if (s.clipUrl) return h('video', { class: 'im', src: `${s.clipUrl}#t=0.5`, muted: true, preload: 'metadata', playsinline: true });
+  return h('div', { class: 'im' });
+}
+
 function scenes(d) {
   const sc = d.outputs?.scenes || [];
   if (!sc.length) return null;
   return section('Scenes', sc.length, h('div', { class: 'scenes' }, sc.map((s) => h('div', { class: 'scene', title: s.texts?.join('\n') || s.name, onclick: () => current?.player?.seekSec(s.startSec) },
-    h('div', { class: 'im', style: { backgroundImage: s.thumbnailUrl ? `url(${s.thumbnailUrl})` : 'none' } }),
+    sceneThumb(s, d),
     h('div', { class: 'tc' }, `${tc(s.startSec)} · ${((s.endSec - s.startSec)).toFixed(1)}s`),
     h('div', { class: 'n' }, s.texts?.[0] || s.name)))));
 }
