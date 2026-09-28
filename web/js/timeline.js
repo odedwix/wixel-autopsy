@@ -50,6 +50,25 @@ function timeScale(spans, width) {
   return { toX, breaks, start: merged[0]?.[0] || 0, pxPerMs, width, segs };
 }
 
+// Axis ticks: every active segment starts with a labelled tick, then round-number ticks
+// (1s … 1h steps, ~80px apart) inside it, all as elapsed time since the run began.
+const STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200].map((s) => s * 1000);
+const tickLabel = (ms) => (ms && ms % 3600000 === 0 ? `${ms / 3600000}h` : ms && ms % 60000 === 0 ? `${ms / 60000}m` : dur(ms));
+function axisTicks(sc, t0) {
+  const step = STEPS.find((s) => s * sc.pxPerMs >= 80) || STEPS.at(-1);
+  const ticks = [];
+  const room = (x) => ticks.every((t) => Math.abs(t.x - x) >= 52) && x <= sc.width - 56; // clear of neighbours and the end label
+  for (const seg of sc.segs) {
+    const x0 = seg.x;
+    if (room(x0) || !ticks.length) ticks.push({ x: x0, label: `+${dur(seg.a - t0)}`, major: true });
+    for (let t = Math.ceil((seg.a - t0) / step) * step; t0 + t < seg.b; t += step) {
+      const x = seg.x + (t0 + t - seg.a) * sc.pxPerMs;
+      if (room(x)) ticks.push({ x, label: tickLabel(t) });
+    }
+  }
+  return ticks;
+}
+
 function tip(el, text) {
   el.title = text;
   return el;
@@ -74,11 +93,14 @@ export function renderTimeline(root, d, { onSeekScene } = {}) {
     const t0 = sc.start;
 
     const axis = h('div', { class: 'tl-axis', style: { marginLeft: `${LABEL_W}px`, width: `${width}px` } });
-    // A tick at each active segment start, labelled with the time since the run began.
-    for (const seg of sc.segs) axis.append(h('span', { class: 'tick', style: { left: `${seg.x}px` } }, `+${dur(seg.a - t0)}`));
+    const ticks = axisTicks(sc, t0);
+    for (const t of ticks) axis.append(h('span', { class: `tick${t.major ? ' major' : ''}`, style: { left: `${t.x}px` } }, t.label));
+    const endMs = (sc.segs.at(-1)?.b ?? t0) - t0;
+    axis.append(h('span', { class: 'tick end', title: 'Time from the first step to the last' }, dur(endMs)));
     for (const b of sc.breaks) axis.append(h('span', { class: 'brk', style: { left: `${b.x}px`, width: `${GAP_PX}px` }, title: `${dur(b.idle)} idle` }, '⋯'));
 
     const overlay = h('div', { class: 'tl-overlay', style: { left: `${LABEL_W}px`, width: `${width}px` } },
+      ...ticks.filter((t) => t.x > 0).map((t) => h('div', { class: 'tl-grid', style: { left: `${t.x}px` } })),
       ...sc.breaks.map((b) => h('div', { class: 'tl-gap', style: { left: `${b.x}px`, width: `${GAP_PX}px` }, title: `${dur(b.idle)} idle` })),
       ...(d.userMessages || []).map((m, i) => tip(h('div', { class: 'tl-user', style: { left: `${sc.toX(m.at)}px` } }), `User message ${i + 1} at +${dur(m.at - t0)}\n${String(m.text).slice(0, 200)}`)));
 
