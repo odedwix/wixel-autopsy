@@ -59,9 +59,12 @@ Every upstream call goes through `server/limits.js`: a concurrency cap and minim
 
 ```bash
 npm install          # uses Wix's npm registry (.npmrc); the public one is blocked on the Wix network
-npm run proxy        # http://localhost:5178
+npm start            # (re)starts the app and opens http://localhost:5178
+npm run proxy        # same, without opening the browser
 npm run pull         # warm the cache with a 50-run sample and print a coverage report
 ```
+
+Starting the app always replaces a copy that's already running: the previous process, found through `.cache/proxy.pid` or as this server listening on the port, is stopped first. Nothing else is ever killed. If a different program holds the port, it exits with a message instead. Ctrl-C stops it.
 
 You need to be on the Wix network. The admin API needs no cookie from there. The Temporal key is read from `wixel-video-server/packages/ai-video-genix-grapher/.env` (`TEMPORAL_KEY`), or from `TEMPORAL_API_KEY` / `TEMPORAL_KEY_FILE`. It is never copied into this repo, and the proxy listens only on 127.0.0.1.
 

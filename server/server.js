@@ -11,6 +11,8 @@ import { mediaStatus, mediaFile, queueDepth } from './media.js';
 import { createReadStream } from 'node:fs';
 import { playerInput, bundleList, playerScript } from './player.js';
 import { loadReport } from './limits.js';
+import { takeOver, claim } from './singleton.js';
+import { spawn } from 'node:child_process';
 
 const WEB = path.join(config.root, 'web');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json' };
@@ -125,4 +127,16 @@ const server = http.createServer(async (req, res) => {
 });
 
 // Local only: this proxy holds a production Temporal key.
-server.listen(config.port, '127.0.0.1', () => console.log(`skill-run-explorer proxy on http://localhost:${config.port}`));
+// Starting the app replaces any copy already running, then (with --open) opens the browser.
+try {
+  await takeOver(config.port);
+} catch (err) {
+  console.error(err.message);
+  process.exit(1);
+}
+server.listen(config.port, '127.0.0.1', () => {
+  claim();
+  const url = `http://localhost:${config.port}`;
+  console.log(`skill-run-explorer on ${url} (pid ${process.pid})`);
+  if (process.argv.includes('--open')) spawn('open', [url], { stdio: 'ignore', detached: true }).unref();
+});

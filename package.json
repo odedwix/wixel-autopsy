@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "start": "node server/server.js --open",
     "proxy": "node server/server.js",
     "pull": "node scripts/pull-sample.js",
     "build:player": "sh scripts/build-player.sh"
