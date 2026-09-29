@@ -2,6 +2,8 @@ import { h, icon, dur, fmtInt, dateTime } from './util.js';
 import { state } from './state.js';
 import { popover, closePopover, copyText, mailto } from './ui.js';
 import { primaryOutput, typeLabel, worstMood, hasAd, failedRun } from './filters.js';
+import { printReport, downloadReport, headless } from './report.js';
+import { renderInsights } from './insights.js';
 
 // Sharing. The app runs on localhost, so its own links only open for someone running Autopsy;
 // every share also offers links that work for anyone: the Wixel admin page (BO access) and the
@@ -46,7 +48,7 @@ function runSummary(run, detail) {
   return lines.filter((l) => l !== null).join('\n');
 }
 
-export function shareRun(anchor, run, detail) {
+export function shareRun(anchor, run, detail, { exportPdf } = {}) {
   const out = publicOutputUrl(run);
   const title = primaryOutput(run)?.name || run.title || 'Wixel run';
   const item = (ic, label, sub, fn) => h('button', { class: 'sh-row', onclick: () => { fn(); closePopover(); } }, icon(ic), h('span', {}, h('b', {}, label), h('small', {}, sub)));
@@ -57,6 +59,7 @@ export function shareRun(anchor, run, detail) {
     out ? item('film', `Copy ${out.label.toLowerCase()} link`, 'Public — opens anywhere', () => copyText(out.url, `${out.label} link`)) : null,
     item('copy', 'Copy summary', 'Text for Slack / notes', () => copyText(runSummary(run, detail), 'Summary')),
     item('external', 'Email…', 'Opens your mail app with the summary and links', () => mailto({ subject: `[Autopsy] ${state.skill}: ${title} · ${new Date(run.createdAt || Date.now()).toISOString().slice(0, 10)}`, body: runSummary(run, detail) })),
+    exportPdf ? item('download', 'Export PDF report…', 'Everything about this run: request, outputs, timeline, steps, scenes, brand, assets — clickable links', exportPdf) : null,
   ), { align: 'right', width: 330 });
 }
 
@@ -92,32 +95,40 @@ export function insightsSummary(ins, label) {
   ].filter((l) => l !== null).join('\n');
 }
 
-export function shareInsights(anchor, ins, label) {
+export function shareInsights(anchor, ins, label, act) {
   const item = (ic, text, sub, fn) => h('button', { class: 'sh-row', onclick: () => { fn(); closePopover(); } }, icon(ic), h('span', {}, h('b', {}, text), h('small', {}, sub)));
   popover(anchor, h('div', { class: 'sh-pop' },
     h('div', { class: 'sh-h' }, 'Share these insights'),
     item('copy', 'Copy app link', 'Opens these insights with the same filters (local app)', () => copyText(appLink({ tab: 'insights', filters: state.filters, q: state.q }), 'App link')),
     item('copy', 'Copy summary', 'Key numbers, failing tools, errors, asks — text', () => copyText(insightsSummary(ins, label), 'Summary')),
     item('external', 'Email…', 'Opens your mail app with the summary', () => mailto({ subject: `[Autopsy] ${state.skill} insights · ${label.split(' · ')[1] || ''} · ${new Date().toISOString().slice(0, 10)}`, body: insightsSummary(ins, label) })),
-    item('download', 'Export PDF…', 'Print dialog → “Save as PDF”; links stay clickable', () => exportPdf(label)),
+    item('download', 'Export PDF…', 'The insights as they look here (dark, all colours), bigger type, clickable links — print dialog → “Save as PDF”', () => exportPdf(ins, label, act)),
   ), { align: 'right', width: 330 });
 }
 
-// PDF = the insights page printed: a print stylesheet hides the chrome and adds a header. The
-// browser names the file after the page title, so the title carries skill, window and date.
-function exportPdf(label) {
-  const stamp = new Date().toISOString().slice(0, 10);
+// PDF = the insights rendered into a report page (report.js): the UI's dark colours, bigger type,
+// every run reference a link. The file is named after the skill, window and date.
+export function exportPdf(ins, label, act) {
+  const now = new Date();
+  const stamp = `${now.toISOString().slice(0, 10)} ${String(now.getHours()).padStart(2, '0')}.${String(now.getMinutes()).padStart(2, '0')}`;
   const win = label.split(' · ')[1] || '';
-  const name = `${state.skill.replace(/[\/:*?"<>|]+/g, '-')} insights · ${win} · ${stamp}`;
-  document.getElementById('insights')?.setAttribute('data-print-title', `Skill insights — ${label} · ${new Date().toLocaleString()}`);
-  const prevTitle = document.title;
-  document.title = name;
-  document.body.classList.add('printing-insights');
-  const done = () => {
-    document.body.classList.remove('printing-insights');
-    document.title = prevTitle;
-    window.removeEventListener('afterprint', done);
-  };
-  window.addEventListener('afterprint', done);
-  setTimeout(() => window.print(), 50);
+  const fileName = `${state.mode === 'user' ? `${state.user?.email || 'user'} (all skills)` : state.skill} insights · ${win} · ${stamp}`;
+  if (headless()) return buildInsightsPdf(ins, label, act, fileName);
+  downloadReport({ kind: 'insights', fileName, inPage: () => buildInsightsPdf(ins, label, act, fileName) });
+}
+
+function buildInsightsPdf(ins, label, act, fileName) {
+  const subject = state.mode === 'user' ? `${state.user?.email || 'user'} (all skills)` : state.skill;
+  const filters = Object.entries(state.filters || {}).map(([k, v]) => `${k}: ${v.join(', ')}`).join(' · ');
+  printReport({
+    title: `${subject} — insights`,
+    subtitle: `${label}${filters ? ` · filters: ${filters}` : ''}${state.q ? ` · search “${state.q}”` : ''}`,
+    fileName,
+    links: [{ href: appLink({ tab: 'insights', filters: state.filters, q: state.q }), label: 'Open in Autopsy (local app)' }],
+    build: (body) => {
+      const box = h('div', { class: 'insights rp-insights' });
+      body.append(box);
+      renderInsights(box, ins, { ...act, label: act.label, share: () => {}, print: true, expanded: { tools: true }, scrollTo: null });
+    },
+  }).catch((err) => console.error(err));
 }

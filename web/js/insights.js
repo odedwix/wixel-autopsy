@@ -28,8 +28,8 @@ const isModelStep = (tool, method) => tool === 'generate_image' || tool === 'edi
   || (tool === 'invoke_rpc' && /^generate|^holdStill|LogoShot|^transformVideo|Speech|^CloneVoice|^upscale|^enhance|Animation$/.test(method || '') && !/^generateContentByProject/.test(method || ''));
 // Category marks carry identity in a table next to a text label, so they take the palette's
 // categorical order (never status colors).
-export const CAT_COLOR = { video: '#3987e5', image: '#d95926', tts: '#199e70', audio: '#c98500', scrape: '#d55181', analysis: '#9085e9', brand: '#008300', export: '#e66767', lookup: '#6d747d', rpc: '#6d747d', agent: '#6d747d' };
-export const CAT_LABEL = { video: 'Video', image: 'Image', tts: 'Voice / TTS', audio: 'Audio', scrape: 'Website scrape', analysis: 'Analysis', brand: 'Brand', export: 'Export', lookup: 'Lookups', rpc: 'Other RPC', agent: 'Agent tools' };
+export const CAT_COLOR = { video: '#3987e5', image: '#d95926', tts: '#199e70', audio: '#c98500', scrape: '#d55181', analysis: '#9085e9', brand: '#008300', export: '#e66767', assets: '#1fb5c7', lookup: '#6d747d', rpc: '#6d747d', agent: '#6d747d' };
+export const CAT_LABEL = { video: 'Video', image: 'Image', tts: 'Voice / TTS', audio: 'Audio', scrape: 'Website scrape', analysis: 'Analysis', brand: 'Brand', export: 'Export', assets: 'Saving assets', lookup: 'Lookups', rpc: 'Other RPC', agent: 'Agent tools' };
 
 
 // ---------- stats helpers ----------
@@ -248,6 +248,13 @@ function tooltip(el, text) {
   return el;
 }
 
+// A run reference: a real link to the Wixel admin page (clicks in a PDF; anyone with BO access),
+// which in the app opens the run here instead.
+const ADMIN = 'https://wix-bo.com/wixel-agent/admin/#/sessions/';
+function runLink(act, id, ...content) {
+  return h('a', { class: 'run-link', href: ADMIN + id, target: '_blank', rel: 'noopener', onclick: (e) => { if (!act.print && !e.metaKey && !e.ctrlKey) { e.preventDefault(); act.open(id); } } }, ...content);
+}
+
 function card(id, title, desc, ...body) {
   return h('section', { class: 'ins-card', id: `ins-${id}` }, h('h3', {}, title), desc ? h('p', { class: 'desc' }, desc) : null, ...body.filter(Boolean));
 }
@@ -355,7 +362,10 @@ export function renderInsights(root, ins, act) {
     ins.errs.length ? barList(ins.errs.slice(0, 10).map((e) => ({ label: e.sig, sub: e.step, value: e.runs.size, color: 'var(--viz-crit)', e })), {
       onClick: (r) => act.search(r.e.sig.replace(/<\w+>|N/g, ' ').split(/\s+/).filter((w) => w.length > 3).slice(0, 4).join(' ')),
       tipText: (r) => `${r.e.step}\n${r.e.example}\n\n${fmtInt(r.e.count)} failures in ${fmtInt(r.e.runs.size)} runs · click to search`,
-    }) : h('p', { class: 'desc' }, 'No tool errors in these runs.'));
+    }) : h('p', { class: 'desc' }, 'No tool errors in these runs.'),
+    // On paper, each top error links to a few of the runs it hit.
+    act.print && ins.errs.length ? h('div', {}, ins.errs.slice(0, 6).map((e) => h('div', { class: 'rp-examples' },
+      h('span', {}, `${e.step}: ${e.sig.slice(0, 70)}`), ...[...e.runs].slice(0, 3).map((id, i) => runLink(act, id, `run ${i + 1}`))))) : null);
 
   // What users asked for
   const asks = card('asks', 'What users asked for', 'Classified intent of the first turn, and the most common subjects in session titles.',
@@ -367,7 +377,8 @@ export function renderInsights(root, ins, act) {
   const rep = card('repeats', 'Most repeated requests', 'Identical prompts. Many users = a template or API caller; one user = retrying.',
     ins.repeated.length ? h('div', {}, ins.repeated.slice(0, 6).map((g) => tooltip(h('div', { class: 'rep', onclick: () => act.search(normPrompt(g.prompt).split(' ').slice(0, 6).join(' ')) },
       h('span', { class: 't' }, g.prompt.replace(/<HIDDEN>[\s\S]*/i, '').trim() || g.prompt),
-      h('span', { class: 'n' }, `${g.runs.length}× · ${g.users.size} user${g.users.size > 1 ? 's' : ''}`)),
+      h('span', { class: 'n' }, `${g.runs.length}× · ${g.users.size} user${g.users.size > 1 ? 's' : ''}`),
+      act.print ? runLink(act, g.runs[0].id, 'open a run') : null),
     `${g.runs.length} runs, ${g.users.size} distinct users\n${g.runs.filter(hasAd).length} finished · ${g.runs.filter(failedRun).length} failed\nlast ${ago(Math.max(...g.runs.map((r) => r.createdAt)))} · click to search`))) : h('p', { class: 'desc' }, 'No repeated prompts.'));
 
   // Mood & feedback
@@ -383,8 +394,8 @@ export function renderInsights(root, ins, act) {
       h('span', { class: 'pill err' }, icon('down', 'sm'), `${fmtInt(ins.thumbsDown)} thumbs down`),
       ...ins.tags.slice(0, 6).map(([t, n]) => h('span', { class: 'pill' }, `${t} ×${n}`)),
       ins.outOfFunds ? h('span', { class: 'pill warn' }, icon('card', 'sm'), `${fmtInt(ins.outOfFunds)} runs out of credits`) : null),
-    ins.quotes.length ? h('div', { class: 'quotes' }, ins.quotes.slice(0, 4).map((r) => h('div', { class: 'quote', onclick: () => act.open(r.id) }, `“${r.sentimentDetail}”`,
-      h('small', {}, `${r.title || 'Untitled'} · ${ago(r.createdAt)} · ${r.sentiments.includes('frustrated') ? 'frustrated' : 'confused'}`)))) : null);
+    ins.quotes.length ? h('div', { class: 'quotes' }, ins.quotes.slice(0, act.print ? 8 : 4).map((r) => runLink(act, r.id, h('div', { class: 'quote' }, `“${r.sentimentDetail}”`,
+      h('small', {}, `${r.title || 'Untitled'} · ${ago(r.createdAt)} · ${r.sentiments.includes('frustrated') ? 'frustrated' : 'confused'}`))))) : null);
 
   // Daily trend: stacked columns (status colors carry state, legend + tooltip carry labels)
   const maxDay = Math.max(1, ...ins.days.map((d) => d.finished + d.failed + d.none));

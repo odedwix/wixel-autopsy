@@ -8,14 +8,17 @@ import { config } from './config.js';
 // (see cache.js / media.js), so mtime means "last used".
 
 const ORDER = ['media', 'sessions', 'user-sessions', 'graph-runs', 'job-traces', 'bundles', 'runs-index', 'steps-day', 'runs-day'];
-const KEEP = new Set(['vendor', 'meta']); // the built player and per-account lookups: tiny and precious
+// Never evicted or counted: the built player, per-account lookups, the player build folder (it
+// links to the client's node_modules) and headless Chrome's scratch profile.
+const KEEP = new Set(['vendor', 'meta', 'player-build', 'chrome-pdf']);
 const LOG_MAX = 10 * 1024 * 1024;
 
 const capBytes = () => Math.max(0.2, Number(process.env.CACHE_MAX_GB || 3)) * 1024 ** 3;
 
+// lstat: symlinks count as themselves, never what they point at.
 async function sizeOf(p) {
-  const st = await fs.stat(p).catch(() => null);
-  if (!st) return { bytes: 0, mtime: 0 };
+  const st = await fs.lstat(p).catch(() => null);
+  if (!st || st.isSymbolicLink()) return { bytes: 0, mtime: 0 };
   if (!st.isDirectory()) return { bytes: st.size, mtime: st.mtimeMs };
   let bytes = 0;
   let mtime = st.mtimeMs;
@@ -54,7 +57,8 @@ export async function sweep() {
   if (total > cap) {
     const target = cap * 0.85; // leave headroom so it doesn't sweep on every write
     for (const ns of ORDER) {
-      const list = all.filter((e) => e.ns === ns).sort((a, b) => a.mtime - b.mtime);
+      // Anything touched in the last 10 minutes is in use (a capture writing frames, a day loading).
+      const list = all.filter((e) => e.ns === ns && e.mtime < Date.now() - 10 * 60000).sort((a, b) => a.mtime - b.mtime);
       for (const e of list) {
         if (total <= target) break;
         await fs.rm(e.file, { recursive: true, force: true });

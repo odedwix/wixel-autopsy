@@ -26,9 +26,11 @@ const save = (href) => {
   a.remove();
 };
 
-export function downloadRun(run, skill) {
+// `which: 'review'` saves the 540p review copy even when there's an exact render.
+export function downloadRun(run, skill, which) {
   if (!isReady(mediaOf(run.id))) return false;
-  save(`/download/${run.id}?name=${encodeURIComponent(downloadName(run, skill))}`);
+  const src = which === 'review' || which === 'exact' ? which : null;
+  save(`/download/${run.id}?name=${encodeURIComponent(downloadName(run, skill) + (src ? `-${src}` : ''))}${src ? `&src=${src}` : ''}`);
   return true;
 }
 

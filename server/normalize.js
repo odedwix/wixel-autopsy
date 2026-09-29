@@ -180,6 +180,14 @@ export function normalizeSession(bundle) {
           status: 'running',
           mediaIn: urlsIn(args).map((url) => ({ url, id: mediaId(url), kind: mediaKind(url) })),
         };
+        // Writing the result into the project (the scenes, the root ad, slides…): `write`/`read` on
+        // project/assets/*.json. Its own category, labelled by asset, so it isn't hidden as plumbing.
+        if ((tc.toolName === 'write' || tc.toolName === 'read') && /^project\/assets\//.test(args.path || '')) {
+          step.category = 'assets';
+          step.assetName = String(args.path).replace(/^project\/assets\//, '').replace(/--[0-9a-f]{6,}\.json$|\.json$/i, '');
+          step.assetOps = (args.edits || []).map((x) => x.op).filter(Boolean);
+          step.label = `${tc.toolName === 'write' ? 'save' : 'check'}: ${step.assetName}`;
+        }
         step.prompt = promptOf(step);
         calls.set(tc.toolCallId, step);
         steps.push(step);
@@ -360,12 +368,18 @@ export function normalizeSession(bundle) {
   // ---- cost + user-facing signals from session events ----
   let modelMicrocents = 0;
   const feedback = [];
+  const assetUpdates = [];
   const outOfFunds = [];
   const streamErrors = [];
   for (const ev of events) {
     const at = ms(ev.createdDate);
     const p = ev.payload || {};
     if (ev.eventType === 'MODEL_USAGE_RECORDED') modelMicrocents += Number(p.usage?.microcentsSpent || 0);
+    // The editor reporting assets a turn wrote (TURN_UPDATED_ASSETS): when they actually landed.
+    if (ev.eventType === 'TURN_UPDATED_ASSETS') {
+      const list = Array.isArray(p.assets) ? p.assets : parseJson(p.assets) || [];
+      assetUpdates.push({ at, turnId: ev.turnId, assets: (Array.isArray(list) ? list : []).map((a) => ({ id: a.id, name: a.name, type: String(a.assetType || '').replace(/^wixel-asset\//, '') })) });
+    }
     if (ev.eventType === 'USER_FEEDBACK') feedback.push({ at, turnId: ev.turnId, value: p.feedback, tags: p.tags ? String(p.tags).split(',') : [], type: p.type });
     if (ev.eventType === 'OUT_OF_FUNDS') {
       outOfFunds.push({ at, turnId: ev.turnId, message: p.message, method: p.method, surfaced: p.surfaced });
@@ -377,6 +391,41 @@ export function normalizeSession(bundle) {
     }
   }
   errors.sort((a, b) => (a.at || 0) - (b.at || 0));
+
+  // ---- building the result: composing and saving assets ----
+  // The model call right before a batch of asset saves is the agent writing those edits (large
+  // JSON, often most of the phase); the saves themselves take a second or two.
+  const saves = steps.filter((x) => x.category === 'assets' && x.tool === 'write');
+  for (const m of modelCalls) {
+    const next = steps.filter((x) => x.startedAt >= m.at && x.startedAt <= m.at + 3000);
+    const n = next.filter((x) => x.category === 'assets' && x.tool === 'write').length;
+    if (n) m.composes = n;
+  }
+  let assetBuild = null;
+  if (saves.length) {
+    // The phase: from the first composing call before the last generation-free stretch of saves to
+    // the last save/check, per run of consecutive asset work (other tools in between split it).
+    const composing = modelCalls.filter((m) => m.composes);
+    const checks = steps.filter((x) => x.category === 'assets' && x.tool === 'read');
+    const lastGen = steps.filter((x) => x.workflowId || x.jobId || ['image', 'video', 'tts', 'audio'].includes(x.category)).reduce((a, x) => Math.max(a, x.endedAt || x.startedAt || 0), 0);
+    const finalSaves = saves.filter((x) => x.startedAt >= lastGen);
+    const finalCompose = composing.filter((m) => m.at >= lastGen - 1000);
+    const start = Math.min(...[...finalCompose.map((m) => m.startedAt), ...finalSaves.map((x) => x.startedAt)].filter(Boolean));
+    const endAll = [...saves, ...checks].reduce((a, x) => Math.max(a, x.endedAt || x.startedAt || 0), 0);
+    const lastUpdate = assetUpdates.reduce((a, u) => Math.max(a, u.at || 0), 0);
+    assetBuild = {
+      saves: saves.length,
+      failed: saves.filter((x) => x.status === 'failed').length + checks.filter((x) => x.status === 'failed').length,
+      assets: [...new Set(saves.map((x) => x.assetName))],
+      saveMs: saves.reduce((a, x) => a + Number(x.durationMs || 0), 0),
+      checkMs: checks.reduce((a, x) => a + Number(x.durationMs || 0), 0),
+      composeMs: composing.reduce((a, m) => a + (m.latencyMs || 0), 0),
+      composeTokens: composing.reduce((a, m) => a + m.outputTokens, 0),
+      // The final build: after the last generation finished, until the last save or check.
+      final: finalSaves.length && Number.isFinite(start) ? { startAt: start, endAt: endAll, ms: endAll - start, afterLastGenMs: start - lastGen, saves: finalSaves.length } : null,
+      lastUpdateAt: lastUpdate || null,
+    };
+  }
 
   // ---- timing ----
   const byCategory = {};
@@ -417,6 +466,8 @@ export function normalizeSession(bundle) {
     modelCalls,
     errors,
     feedback,
+    assetUpdates,
+    assetBuild,
     outOfFunds,
     streamErrors,
     sentiments: turnList.filter((t) => t.sentiment).map((t) => ({ turnId: t.turnId, at: t.endedAt || t.startedAt, label: t.sentiment, detail: t.sentimentDetail })),

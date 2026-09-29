@@ -25,15 +25,18 @@ npm start            # (re)starts the app and opens http://localhost:5178
 | | Needed for | How |
 |---|---|---|
 | **Wix network** (office or VPN) | everything: the npm registry, the Wixel admin API, and Trino through it | no cookie or personal token needed from inside the network |
-| **Node 20+** | the app | `brew install node@22` |
+| **Node 22+** | the app (its built-in WebSocket drives headless Chrome) | `brew install node@22` |
 | ffmpeg *(optional)* | review videos and hover scrubbing | `brew install ffmpeg` |
 | Temporal API key *(optional)* | "Open graph run" (Genix graph runs) | `TEMPORAL_API_KEY=` in `.env`. It's a **production secret**: get your own from the Wixel/Genix team, and never commit or share it |
 | wixel-video-client checkout *(optional)* | the exact live product player (**E**) | clone `wix-private/wixel-video-client` to `~/dev/` (or set `WIXEL_VIDEO_CLIENT`), then `npm run build:player` |
+| Google Chrome *(optional)* | PDF reports saved straight to Downloads (no dialog), and **Exact composition** mp4 downloads | the normal install, or `CHROME_PATH=` in `.env` |
 | Python Pillow *(optional, macOS)* | the Desktop launcher icon | `pip3 install pillow` |
 
 The run list, details, timeline, scenes, brand, assets and insights work with just the Wix network and Node. Missing optional pieces switch off with a hint in the UI.
 
-Settings live in `.env` (gitignored; template in `.env.example`): `PORT`, `CACHE_MAX_GB`, `TEMPORAL_API_KEY` / `TEMPORAL_KEY_FILE`, `WIXEL_VIDEO_CLIENT`.
+Settings live in `.env` (gitignored; template in `.env.example`): `PORT`, `CACHE_MAX_GB`, `TEMPORAL_API_KEY` / `TEMPORAL_KEY_FILE`, `WIXEL_VIDEO_CLIENT`, `CHROME_PATH`.
+
+**Off the Wix network?** Autopsy checks every minute whether `bo.wix.com` answers, and right away after a request fails. When it doesn't answer, a banner says so (connect the VPN), with **Check again**. Cached data keeps working.
 
 **Data handling:** the app shows what the Wixel admin page shows, including end users' emails and prompts. It's for Wix staff only. The proxy listens on 127.0.0.1 only, and data is cached in `.cache/`, capped by `CACHE_MAX_GB` (default 3 GB, least-recently-used entries evicted first). Shared links and summaries never include end-user emails.
 
@@ -93,6 +96,22 @@ The admin API lists sessions by user id only, so an email is found from sessions
 | Logo, plain image | the original image file |
 | Composed design (text on an image) | the design as the user saw it |
 
+With more than one choice, **Download** (the button, the player's download icon, or **D**) opens a menu:
+- **Ads without a render:**
+  - **Full ad — regular:** the scenes joined with voice and music, no text overlays or captions.
+  - **Full ad — exact:** as the product plays it, with text overlays, captions and music. It's rendered from the product's own player: headless Chrome seeks it frame by frame, and the audio comes from the regular copy. It takes about 2 minutes the first time and is cached after that.
+- **Ads with a render:**
+  - **Full ad — exact:** the file the user got.
+  - **Full ad — small copy:** a 540p copy.
+- **Other outputs:** the run's other outputs (logos, slides…) are listed below.
+
+## Reports (PDF)
+
+- **A run:** Share → **Export PDF report**. It has the facts, outputs, request, errors, the timeline (with the result-building phase), every step (with links to its output and graph run), scenes, brand and assets.
+- **Insights:** Share insights → **Export PDF**.
+
+Both keep the dark UI's colours on A4 landscape, with type about 25% larger than the app. Run references are real links: Wixel admin (for anyone with BO access), outputs and Temporal. With Chrome installed, Autopsy's server renders the PDF in headless Chrome and it downloads straight to Downloads. Without Chrome, it falls back to the print dialog. The file name carries the run name, user, run time and date (insights: skill, window and date).
+
 ## UI
 
 - **Grid** (virtualized). The first tab is named after the skill's main output (Videos / Logos / Slides…).
@@ -143,6 +162,10 @@ The admin API lists sessions by user id only, so an email is found from sessions
 - **Loading feedback:** a progress bar under the header, per-second status, and a "Trino is busy" note when queries queue.
 - **Filters that don't fit a skill** are removed automatically, with a toast that says what was removed. That covers both single values that match nothing and combinations that together match nothing (the most restrictive filter goes first).
 - **Error icon on a card:** hovering it lists the failing steps with their messages.
+- **Text size** (**Aa** in the top bar, or ⌥+ / ⌥− / ⌥0): fonts and text rows scale while the layout keeps its size. Text wraps and the top bar takes a second row instead of the page zooming.
+- **Timeline → building the result:** the agent writing the result into the project (`write` on `project/assets/*.json`, labelled by asset) is its own category, not plumbing.
+  - The model calls that compose those edits are cyan on the thinking row.
+  - A summary shows how long the build took after the last generation, split into composing, saves and checks, plus when the editor confirmed the save, and any failed saves.
 - **Keyboard:** `?` lists all shortcuts.
 
 ## Project layout
@@ -152,6 +175,8 @@ The admin API lists sessions by user id only, so an email is found from sessions
 | `server/server.js` | HTTP server: API routes, static files, media with Range support, single-instance takeover |
 | `server/queries.js` | All Trino SQL: skills, runs index, per-day runs / events / steps (hour windows + sampling, turn scoping), skill co-load pairs |
 | `server/runs.js` | Day loading, caching, sampling, per-run outputs and signals, employee detection, skill families, user runs |
+| `server/pdf.js` · `server/exact.js` · `server/connectivity.js` | Headless Chrome sessions (PDF reports); Exact composition → mp4; the Wix network / VPN check |
+| `web/js/report.js` · `web/player/capture.html` · `scripts/player/capture-entry.tsx` | Printable reports; the frame-by-frame player page and its bundle entry (built by `build:player`) |
 | `server/users.js` · `server/asset-download.js` | Email → user index for user mode; downloads for non-video outputs (export, original image, or a PDF of the page previews) |
 | `server/admin.js` · `server/normalize.js` | Wixel admin API client; session → run record (steps, lineage, brand, asset tree) and turn ownership |
 | `server/temporal.js` | Temporal traces → graph runs (per-node data, failed-job lookup) |
@@ -165,6 +190,10 @@ The admin API lists sessions by user id only, so an email is found from sessions
 ## Load on production systems
 
 Every upstream call goes through `server/limits.js`: a concurrency cap and minimum spacing per system, plus rolling counters shown live in the status bar ("Upstream, 5 min").
+
+- **On-screen work first.** Work nobody is waiting on (background refreshes of cached recent days) runs at background priority: at most one slot, and only when nothing on screen is queued. It's skipped while Trino is busy; the next view of that data tries again.
+- **Backoff.** Three Trino timeouts within 2 minutes put the lane at 2 queries at a time, 1.2 s apart, for 3 minutes. The status bar says so ("easing off") instead of looking stuck.
+- **Cancelled when you move on.** Switching skill or window drops the old view's queued queries.
 
 | System | What it is | Cap | When it's called |
 |---|---|---|---|
@@ -189,6 +218,11 @@ Every upstream call goes through `server/limits.js`: a concurrency cap and minim
 | `GET /api/media/:runId?priority=1` | review-media status; queues a build if there is none | ffmpeg |
 | `GET /media/:runId/review.mp4 \| poster.jpg \| sprite.jpg` | review media (Range requests supported) | local cache |
 | `GET /download/:runId?name=` | save the video: the full-quality exact render when there is one (streamed through), else the review copy | render CDN / local cache |
+| `GET /download/:runId?src=review\|exact` | the 540p review copy, or the rendered Exact composition | local cache |
+| `GET /api/exact/:runId?start=1` | Exact composition status; `start=1` renders it (headless Chrome + ffmpeg) | local, Wix CDN |
+| `GET /api/report.pdf?kind=run\|insights&view=#v=…&name=` | a report as a PDF download, rendered by headless Chrome from the app's own report view | local |
+| `GET /api/connectivity?fresh=1` | whether bo.wix.com answers (Wix network / VPN) | admin API |
+| `GET /api/frame?url=` | one still from a clip, for printed reports | Wix CDN, ffmpeg |
 | `GET /download-asset/:runId/:assetId?name=` | save any other output: the user's export if reachable, the original image, or a PDF of its page previews | Wix CDN, ffmpeg |
 | `GET /api/trace-job/:jobId?at=<ms>` | the same trace, for a **failed** generation (only a jobId) | Temporal Cloud |
 | `GET /api/media-batch?ids=a,b,…` | review-media status for the cards on screen | local |

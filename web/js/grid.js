@@ -11,7 +11,7 @@ import { stepKey } from './filters.js';
 const GAP = 12;
 const META_H = 62;
 const SKILLS_H = 15; // user mode: the skills line under the title
-const metaH = () => META_H + (state.mode === 'user' ? SKILLS_H : 0);
+const metaH = () => Math.round((META_H + (state.mode === 'user' ? SKILLS_H : 0)) * (Number(state.textScale) || 1));
 const OVERSCAN_ROWS = 2;
 
 let scroller;

@@ -3,12 +3,12 @@ import { state, set, onChange, toggleFilter, clearFilter, famParam } from './sta
 import { FACETS, STATS, SORTS, applyFilters, facetCounts, facetOptions, outputProfile, setProfile, typeLabel, primaryOutput } from './filters.js';
 import { initGrid, setRuns, relayout, markSelected, scrollToIndex, columns, applySound, stopHover, isVideoRun } from './grid.js';
 import { downloadRun, downloadOutput } from './media.js';
-import { initInspect, openInspect, closeInspect, inspectedPlayer, prefetchDetail, toggleLive, toggleWide, setInspectTabByIndex } from './inspect.js';
+import { initInspect, openInspect, closeInspect, inspectedPlayer, prefetchDetail, toggleLive, toggleWide, setInspectTabByIndex, listLoaded } from './inspect.js';
 import { computeInsights, renderInsights, headlines } from './insights.js';
 import { setSkills, renderSkillButton, openSkillPicker, rememberSkill } from './skillpicker.js';
 import { renderScopeButton, openFamilyEditor } from './family.js';
-import { toast } from './ui.js';
-import { shareInsights } from './share.js';
+import { toast, popover, closePopover } from './ui.js';
+import { shareInsights, exportPdf as exportInsightsPdf } from './share.js';
 import { capsReady } from './caps.js';
 
 let allRuns = [];
@@ -38,8 +38,38 @@ const inWindow = (r) => r.createdAt >= Date.now() - state.days * 86400000;
 const requestDays = () => Math.min(90, Math.ceil(state.days) + 1);
 const expanded = new Set();
 
+// ---------- text size ----------
+// Text grows, the layout doesn't: every font size and text-row height in app.css is a multiple of
+// --fs, so bigger text reflows (wraps, taller rows) inside the same columns and panels.
+const TEXT_STEPS = [0.9, 1, 1.1, 1.2, 1.35, 1.5, 1.6];
+function applyTextScale() {
+  const z = Math.min(1.6, Math.max(0.9, Number(state.textScale) || 1));
+  document.documentElement.style.setProperty('--fs', String(z));
+}
+function stepText(dir) {
+  const cur = Number(state.textScale) || 1;
+  const next = dir === 0 ? 1 : dir > 0 ? TEXT_STEPS.find((x) => x > cur + 1e-6) ?? cur : [...TEXT_STEPS].reverse().find((x) => x < cur - 1e-6) ?? cur;
+  set({ textScale: next });
+  toast(`Text size ${Math.round(next * 100)}%`, { ms: 1200 });
+}
+function openTextSize(btn) {
+  const pct = () => `${Math.round((Number(state.textScale) || 1) * 100)}%`;
+  const label = h('span', { class: 'ts-val' }, pct());
+  const bump = (d) => {
+    stepText(d);
+    label.textContent = pct();
+  };
+  popover(btn, h('div', { class: 'ts-pop' },
+    h('span', { class: 'ts-k' }, 'Text size'),
+    h('button', { class: 'btn', title: 'Smaller (⌥−)', onclick: () => bump(-1) }, 'A−'),
+    label,
+    h('button', { class: 'btn', title: 'Bigger (⌥+)', onclick: () => bump(1) }, 'A+'),
+    h('button', { class: 'btn ghost', title: 'Reset (⌥0)', onclick: () => { bump(0); closePopover(); } }, 'Reset')), { align: 'right' });
+}
+
 // ---------- boot ----------
 document.documentElement.dataset.theme = state.theme;
+applyTextScale();
 initGrid($('#gridScroll'), $('#gridSizer'), {
   select: (id) => select(id, { open: true }),
   open: (id) => select(id, { open: true }),
@@ -61,6 +91,10 @@ onChange((patch) => {
   if ('tab' in patch) applyTab();
   if ('aspect' in patch || 'size' in patch) relayout();
   if ('sound' in patch) applySound();
+  if ('textScale' in patch) {
+    applyTextScale();
+    relayout();
+  }
   if ('open' in patch && !patch.open) closeInspect();
   syncTopbar();
 });
@@ -97,6 +131,8 @@ async function loadRuns() {
   showProgress();
   // A link/reload with a run open shows it immediately; its detail doesn't depend on the list.
   if (state.open && state.selected) openInspect({ id: state.selected, _stub: true });
+  // A run's PDF report (rendered by the proxy's headless Chrome) needs that run only.
+  if (new URLSearchParams(location.search).get('report') === 'run') return endProgress();
   if (state.mode === 'user') return loadUserRuns(token, signal);
   try {
     const index = await getJson(`/api/runs-index?skill=${encodeURIComponent(state.skill)}&days=${requestDays()}`, { signal });
@@ -150,6 +186,16 @@ async function loadRuns() {
     const r = allRuns.find((x) => x.id === state.selected);
     if (r) openInspect(r);
   }
+  autoReport();
+}
+
+// ?report=insights builds the insights PDF once everything has loaded (scripted / headless export).
+let autoInsights = false;
+function autoReport() {
+  listLoaded();
+  if (autoInsights || new URLSearchParams(location.search).get('report') !== 'insights' || !insights) return;
+  autoInsights = true;
+  exportInsightsPdf(insights, insightActions.label(), insightActions);
 }
 
 // User mode: one request; the server lists the user's sessions and loads their days.
@@ -179,6 +225,7 @@ async function loadUserRuns(token, signal) {
     const r = allRuns.find((x) => x.id === state.selected);
     if (r) openInspect(r);
   }
+  autoReport();
 }
 
 // What the view is about, for status lines and share labels.
@@ -193,7 +240,8 @@ function showProgress() {
   if (loading.total) bar.style.setProperty('--p', `${Math.max(6, (loading.done / loading.total) * 100)}%`);
   const secs = Math.round((Date.now() - loadStart) / 1000);
   const q = lastLoad?.trino?.queued || 0;
-  const busy = secs > 8 && (q || lastLoad?.trino?.inflight) ? ` · Trino is busy (${lastLoad.trino.inflight} running${q ? `, ${q} queued` : ''}) — still working` : '';
+  const backoff = lastLoad?.trino?.backoffUntil ? ` · Trino is timing out — easing off (${lastLoad.trino.concurrency} at a time) until ${new Date(lastLoad.trino.backoffUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '';
+  const busy = backoff || (secs > 8 && (q || lastLoad?.trino?.inflight) ? ` · Trino is busy (${lastLoad.trino.inflight} running${q ? `, ${q} queued` : ''}) — still working` : '');
   const what = state.mode === 'user' ? `Loading every session by ${subject().replace(' · all skills', '')}` : loading.total == null ? `Finding which days ${state.skill} ran` : `Loading day ${Math.min(loading.done + 1, loading.total)} of ${loading.total} (${fmtInt(loading.sessions)} sessions)`;
   if (!allRuns.length) status(`${what}… ${secs}s${busy}`);
   else refreshStatus(busy);
@@ -366,7 +414,7 @@ const insightActions = {
     select(id, { open: true });
   },
   label: () => `${state.mode === 'user' ? 'one user · all skills' : state.skill} · last ${windowLabel()} · ${fmtInt(view.length)} runs${Object.keys(state.filters).length || state.q ? ' (filtered)' : ''}`,
-  share: (anchor) => shareInsights(anchor, insights, insightActions.label()),
+  share: (anchor) => shareInsights(anchor, insights, insightActions.label(), insightActions),
   rerender: () => renderInsightViews(),
   get expanded() {
     return insightState.expanded;
@@ -407,16 +455,39 @@ function applyTab() {
   renderInsightViews();
 }
 
+// ---------- connectivity: off the Wix VPN → say so ----------
+// The proxy probes bo.wix.com every minute (and right after a network failure); anything but ok
+// shows a banner with the reason and a re-check, and cached data keeps working underneath.
+let netState = null;
+function renderNet(net) {
+  const el = $('#netBanner');
+  if (!net || net.status === 'ok' || net.status === 'unknown') {
+    if (netState && netState !== 'ok' && netState !== 'unknown' && net?.status === 'ok') toast('Connected to Wix again — live data is back', { ms: 4000 });
+    netState = net?.status || null;
+    el.hidden = true;
+    return;
+  }
+  netState = net.status;
+  el.hidden = false;
+  el.className = `net-banner ${net.status}`;
+  const btn = h('button', { class: 'btn', onclick: async () => {
+    btn.textContent = 'Checking…';
+    renderNet(await getJson('/api/connectivity?fresh=1').catch(() => net));
+  } }, 'Check again');
+  el.replaceChildren(icon('alert', 'sm'), h('span', {}, h('b', {}, net.status === 'degraded' ? 'Admin API errors' : 'Not connected to Wix'), ' — ', net.message || ''), h('span', { class: 'when' }, `checked ${ago(net.checkedAt)}`), btn);
+}
+
 // ---------- production load readout ----------
 // Every upstream call goes through the proxy's limiters; show what they did recently.
 async function pollLoad() {
   try {
     const l = await getJson('/api/load');
     lastLoad = l;
+    renderNet(l.net);
     const lane = (name, label) => {
       const x = l[name];
-      return h('span', { title: `${label}: ${x.inflight} in flight, ${x.queued} queued, ${x.total} since start, ${x.errors} errors (max ${x.concurrency} concurrent)` },
-        h('b', {}, label), ' ', h('span', { class: x.queued ? 'busy' : '' }, `${x.last5m}`));
+      return h('span', { title: `${label}: ${x.inflight} in flight, ${x.queued} queued${x.queuedBackground ? ` (+${x.queuedBackground} background)` : ''}, ${x.total} since start, ${x.errors} errors (max ${x.concurrency} concurrent)${x.backoffUntil ? ` — backing off after ${x.timeouts2m} timeouts` : ''}` },
+        h('b', {}, label), ' ', h('span', { class: x.queued || x.backoffUntil ? 'busy' : '' }, `${x.last5m}${x.backoffUntil ? ' · easing off' : ''}`));
     };
     loadEl.replaceChildren(h('span', { title: 'Requests to production-side systems in the last 5 minutes' }, 'Upstream, 5 min:'),
       lane('trino', 'Trino'), lane('admin', 'Admin API'), lane('temporal', 'Temporal'),
@@ -525,6 +596,7 @@ function bindTopbar() {
     document.documentElement.dataset.theme = theme;
     set({ theme });
   });
+  $('#textSize').addEventListener('click', () => openTextSize($('#textSize')));
   $('#help').addEventListener('click', () => ($('#helpDialog').hidden = false));
   $('#helpDialog').addEventListener('click', () => ($('#helpDialog').hidden = true));
   // Hovering a card for a moment warms its detail, so opening it is instant.
@@ -553,7 +625,7 @@ function syncTopbar() {
 
 // ---------- keyboard ----------
 document.addEventListener('keydown', (e) => {
-  const typing = e.target.matches('input, select, textarea');
+  const typing = Boolean(e.target.matches?.('input, select, textarea'));
   if (e.key === 'Escape') {
     if (!$('#helpDialog').hidden) return ($('#helpDialog').hidden = true);
     if (typing) return e.target.blur();
@@ -564,6 +636,11 @@ document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
     e.preventDefault();
     return openSkillPicker($('#skillBtn'));
+  }
+  // ⌥+ / ⌥− / ⌥0: text size (by physical key; ⌥ changes the typed character on a Mac).
+  if (e.altKey && !e.metaKey && !e.ctrlKey && ['Equal', 'Minus', 'Digit0', 'NumpadAdd', 'NumpadSubtract', 'Numpad0'].includes(e.code)) {
+    e.preventDefault();
+    return stepText(/Equal|Add/.test(e.code) ? 1 : /Minus|Subtract/.test(e.code) ? -1 : 0);
   }
   if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
   const p = inspectedPlayer();
@@ -603,6 +680,9 @@ document.addEventListener('keydown', (e) => {
 });
 
 function downloadSelected() {
+  // With the run open, D is its Download button (the best version, e.g. the Exact composition).
+  const main = state.open && document.querySelector('#inspect .dl-main');
+  if (main) return main.click();
   const r = allRuns.find((x) => x.id === state.selected);
   if (!r) return;
   if (!isVideoRun(r)) return downloadOutput(r, primaryOutput(r), state.mode === 'user' ? null : state.skill) || toast('This run has no output to download');

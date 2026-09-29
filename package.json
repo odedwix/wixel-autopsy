@@ -13,7 +13,7 @@
     "@temporalio/client": "^1.13.2"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "description": "Autopsy \u2014 browse and dissect any Wixel agent skill's runs, insights and Genix graph runs"
 }

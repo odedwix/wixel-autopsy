@@ -1,7 +1,8 @@
+import { noteNetworkFailure, noteSession } from './connectivity.js';
 import { config } from './config.js';
 import { cached } from './cache.js';
 import { limited } from './limits.js';
-import { currentSignal } from './context.js';
+import { currentSignal, currentPriority } from './context.js';
 
 // Wixel Agent admin API. Reachable from the Wix network without a cookie.
 
@@ -16,6 +17,8 @@ export async function getJson(url, { timeoutMs = 60000, retries = 2, body } = {}
       return JSON.parse(text);
     } catch (err) {
       lastErr = err;
+      // No HTTP answer at all (DNS, refused, reset): maybe off the VPN — re-check connectivity now.
+      if (!err.status && err.name !== 'AbortError') noteNetworkFailure();
       // 4xx won't get better on retry, and neither will a Trino timeout or SQL error.
       if (err.status && (err.status < 500 || /timed out|USER_ERROR/.test(err.message))) break;
       await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
@@ -29,7 +32,7 @@ export async function getJson(url, { timeoutMs = 60000, retries = 2, body } = {}
 export async function sql(query, { maxRows = 5000, signal = currentSignal() } = {}) {
   const rows = [];
   for (let offset = 0; offset < maxRows; offset += 500) {
-    const res = await limited('trino', () => getJson(`${config.adminBase}/analytics/session-entries`, { timeoutMs: 90000, body: { mode: 'sql', sql: query, limit: 500, offset } }), { signal });
+    const res = await limited('trino', () => getJson(`${config.adminBase}/analytics/session-entries`, { timeoutMs: 90000, body: { mode: 'sql', sql: query, limit: 500, offset } }), { signal, priority: currentPriority() });
     if (res.error) throw new Error(`SQL: ${res.error}`);
     rows.push(...res.rows);
     if (res.rows.length < 500) break;
@@ -58,6 +61,7 @@ export async function fetchSessionBundle(sessionId) {
     paged(`${base}/session-events`, 'sessionEvents'),
     limited('admin', () => getJson(`${base}/project-assets`)).catch((err) => ({ error: String(err.message || err) })),
   ]);
+  if (meta?.id) noteSession(meta.id);
   return { sessionId, fetchedAt: new Date().toISOString(), meta, entries, events, assets };
 }
 
