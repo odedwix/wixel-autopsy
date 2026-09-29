@@ -85,10 +85,12 @@ export function renderTimeline(root, d, { onSeekScene } = {}) {
     const steps = d.steps.filter((s) => {
       if (opts.only === 'failed') return s.status === 'failed';
       if (opts.only === 'gen') return ['video', 'image', 'tts', 'audio'].includes(s.category);
-      return !(opts.hidePlumbing && PLUMBING.has(s.tool) && s.status !== 'failed');
+      if (opts.only === 'assets') return s.category === 'assets';
+      // Saving the result into the project is never plumbing, even though it's read / write.
+      return !(opts.hidePlumbing && PLUMBING.has(s.tool) && s.category !== 'assets' && s.status !== 'failed');
     });
     const model = (d.modelCalls || []).filter((m) => m.startedAt && m.at);
-    const spans = [...d.steps.map((s) => [s.startedAt, s.endedAt || s.startedAt + (s.durationMs || 0)]), ...model.map((m) => [m.startedAt, m.at]), ...(d.userMessages || []).map((m) => [m.at, m.at + 1])];
+    const spans = [...d.steps.map((s) => [s.startedAt, s.endedAt || s.startedAt + (s.durationMs || 0)]), ...model.map((m) => [m.startedAt, m.at]), ...(d.userMessages || []).map((m) => [m.at, m.at + 1]), ...(d.assetUpdates || []).map((u) => [u.at, u.at + 1])];
     const sc = timeScale(spans, width);
     const t0 = sc.start;
 
@@ -98,18 +100,24 @@ export function renderTimeline(root, d, { onSeekScene } = {}) {
     const endMs = (sc.segs.at(-1)?.b ?? t0) - t0;
     axis.append(h('span', { class: 'tick end', title: 'Time from the first step to the last' }, dur(endMs)));
     for (const b of sc.breaks) axis.append(h('span', { class: 'brk', style: { left: `${b.x}px`, width: `${GAP_PX}px` }, title: `${dur(b.idle)} idle` }, '⋯'));
+    const build = d.assetBuild?.final;
 
     const overlay = h('div', { class: 'tl-overlay', style: { left: `${LABEL_W}px`, width: `${width}px` } },
       ...ticks.filter((t) => t.x > 0).map((t) => h('div', { class: 'tl-grid', style: { left: `${t.x}px` } })),
       ...sc.breaks.map((b) => h('div', { class: 'tl-gap', style: { left: `${b.x}px`, width: `${GAP_PX}px` }, title: `${dur(b.idle)} idle` })),
-      ...(d.userMessages || []).map((m, i) => tip(h('div', { class: 'tl-user', style: { left: `${sc.toX(m.at)}px` } }), `User message ${i + 1} at +${dur(m.at - t0)}\n${String(m.text).slice(0, 200)}`)));
+      ...(d.userMessages || []).map((m, i) => tip(h('div', { class: 'tl-user', style: { left: `${sc.toX(m.at)}px` } }), `User message ${i + 1} at +${dur(m.at - t0)}\n${String(m.text).slice(0, 200)}`)),
+      // The final build (composing + saving the result) as a band, and when the editor confirmed it.
+      build ? tip(h('div', { class: 'tl-build', style: { left: `${sc.toX(build.startAt)}px`, width: `${Math.max(3, sc.toX(build.endAt) - sc.toX(build.startAt))}px` } }),
+        `Building the result: ${dur(build.ms)} (+${dur(build.startAt - t0)} → +${dur(build.endAt - t0)})\n${build.saves} saves after the last generation`) : null,
+      ...(d.assetUpdates || []).map((u) => tip(h('div', { class: 'tl-saved', style: { left: `${sc.toX(u.at)}px` } }),
+        `Editor saved ${u.assets.length} asset${u.assets.length === 1 ? '' : 's'} at +${dur(u.at - t0)}\n${u.assets.map((a) => `${a.type}: ${a.name}`).slice(0, 8).join('\n')}`)));
 
     const rows = [];
     // Agent thinking: model calls on one row.
     rows.push(h('div', { class: 'tl-row' },
       h('div', { class: 'tl-label' }, h('span', { class: 'cat', style: { background: 'var(--text-3)' } }), h('span', { class: 'n' }, 'Agent thinking'), h('span', { class: 'd' }, dur(model.reduce((a, m) => a + (m.latencyMs || 0), 0)))),
-      h('div', { class: 'tl-track', style: { width: `${width}px` } }, model.map((m) => tip(h('div', { class: `tl-bar think${m.status && m.status !== 'SUCCESS' ? ' fail' : ''}`, style: { left: `${sc.toX(m.startedAt)}px`, width: `${Math.max(2, sc.toX(m.at) - sc.toX(m.startedAt))}px` } }),
-        `${m.model} · ${m.purpose || 'model call'}\n+${dur(m.startedAt - t0)} · ${dur(m.latencyMs)}\n${m.inputTokens.toLocaleString()} in (${m.cachedInputTokens.toLocaleString()} cached) · ${m.outputTokens.toLocaleString()} out`)))));
+      h('div', { class: 'tl-track', style: { width: `${width}px` } }, model.map((m) => tip(h('div', { class: `tl-bar think${m.composes ? ' compose' : ''}${m.status && m.status !== 'SUCCESS' ? ' fail' : ''}`, style: { left: `${sc.toX(m.startedAt)}px`, width: `${Math.max(2, sc.toX(m.at) - sc.toX(m.startedAt))}px` } }),
+        `${m.model} · ${m.purpose || 'model call'}${m.composes ? ` · composing ${m.composes} asset save${m.composes > 1 ? 's' : ''}` : ''}\n+${dur(m.startedAt - t0)} · ${dur(m.latencyMs)}\n${m.inputTokens.toLocaleString()} in (${m.cachedInputTokens.toLocaleString()} cached) · ${m.outputTokens.toLocaleString()} out`)))));
 
     for (const s of steps) {
       const end = s.endedAt || (s.durationMs ? s.startedAt + s.durationMs : s.startedAt);
@@ -130,7 +138,7 @@ export function renderTimeline(root, d, { onSeekScene } = {}) {
     }
 
     const filters = h('div', { class: 'tl-filters' },
-      ...[['all', 'All steps'], ['gen', 'Generation'], ['failed', `Failed (${d.steps.filter((s) => s.status === 'failed').length})`]].map(([k, l]) =>
+      ...[['all', 'All steps'], ['gen', 'Generation'], d.assetBuild ? ['assets', `Saving assets (${d.steps.filter((s) => s.category === 'assets').length})`] : null, ['failed', `Failed (${d.steps.filter((s) => s.status === 'failed').length})`]].filter(Boolean).map(([k, l]) =>
         h('button', { class: `seg-btn${opts.only === k ? ' on' : ''}`, onclick: () => { opts.only = k; draw(); } }, l)),
       h('label', { class: 'tl-check' }, h('input', { type: 'checkbox', checked: opts.hidePlumbing, onchange: (e) => { opts.hidePlumbing = e.target.checked; draw(); } }), 'Hide agent plumbing (read / write / list)'),
       h('span', { class: 'tl-sum' }, `${d.steps.length} steps · ${dur(d.timing?.wallMs)} wall · idle gaps compressed`));
@@ -139,9 +147,10 @@ export function renderTimeline(root, d, { onSeekScene } = {}) {
       h('span', {}, h('i', { style: { background: 'var(--text-3)' } }), 'Agent thinking'),
       ...Object.entries(CAT_LABEL).filter(([c]) => d.steps.some((s) => s.category === c)).map(([c, l]) => h('span', {}, h('i', { style: { background: CAT_COLOR[c] } }), l)),
       h('span', {}, h('i', { style: { background: 'var(--viz-crit)' } }), 'Failed'),
-      h('span', {}, h('i', { class: 'user-mark' }), 'User message'));
+      h('span', {}, h('i', { class: 'user-mark' }), 'User message'),
+      d.assetBuild ? [h('span', {}, h('i', { style: { background: CAT_COLOR.assets } }), 'Composing assets (thinking)'), h('span', {}, h('i', { class: 'build-mark' }), 'Building the result'), h('span', {}, h('i', { class: 'saved-mark' }), 'Editor saved')] : null);
 
-    root.replaceChildren(filters, h('div', { class: 'tl' }, axis, h('div', { class: 'tl-body' }, overlay, ...rows)), legend);
+    root.replaceChildren(...[filters, buildSummary(d, t0), h('div', { class: 'tl' }, axis, h('div', { class: 'tl-body' }, overlay, ...rows)), legend].filter(Boolean));
   };
 
   draw();
@@ -152,6 +161,24 @@ export function renderTimeline(root, d, { onSeekScene } = {}) {
     lastW = root.clientWidth;
     draw();
   }).observe(root);
+}
+
+// "Building the result: 1m 20s after the last generation — model composing 1m 49s (10k tokens) ·
+// 9 saves 11s · checks 5s · editor saved +16m 50s". Failed saves are called out.
+function buildSummary(d, t0) {
+  const b = d.assetBuild;
+  if (!b) return null;
+  const f = b.final;
+  return h('div', { class: `tl-build-sum${b.failed ? ' bad' : ''}` },
+    h('span', { class: 'k' }, 'Building the result'),
+    f ? h('b', {}, dur(f.ms)) : null,
+    f ? h('span', {}, `after the last generation (+${dur(f.startAt - t0)} → +${dur(f.endAt - t0)})`) : null,
+    h('span', { class: 'sep' }, '·'),
+    h('span', { title: 'Model calls that wrote the asset edits (the JSON for each scene / page)' }, `model composing ${dur(b.composeMs)} (${Math.round(b.composeTokens / 100) / 10}k tokens)`),
+    h('span', { class: 'sep' }, '·'),
+    h('span', { title: b.assets.join('\n') }, `${b.saves} save${b.saves === 1 ? '' : 's'} ${dur(b.saveMs)} · checks ${dur(b.checkMs)}`),
+    b.lastUpdateAt ? [h('span', { class: 'sep' }, '·'), h('span', { title: 'When the editor reported the assets (TURN_UPDATED_ASSETS)' }, `editor saved +${dur(b.lastUpdateAt - t0)}`)] : null,
+    b.failed ? [h('span', { class: 'sep' }, '·'), h('span', { class: 'err' }, `${b.failed} failed`)] : null);
 }
 
 // Loaded graph-run traces survive redraws (filter changes, resizes).
@@ -169,6 +196,7 @@ function stepDetail(s, t0) {
     h('div', { class: 'kv' },
       h('dt', {}, 'Step'), h('dd', {}, `${s.tool}${s.method ? ` · ${s.method}` : ''}${s.model ? ` · ${s.model}` : ''}`),
       h('dt', {}, 'Timing'), h('dd', {}, `starts +${dur(s.startedAt - t0)} · takes ${dur(s.durationMs)}`),
+      s.assetName ? [h('dt', {}, 'Asset'), h('dd', {}, `${s.assetName}${s.assetOps?.length ? ` · ${s.assetOps.join(', ')}` : ''} · ${(JSON.stringify(s.args || {}).length / 1024).toFixed(1)} KB`)] : null,
       s.graphId ? [h('dt', {}, 'Genix graph'), h('dd', { class: 'mono' }, s.graphId)] : null,
       s.jobId ? [h('dt', {}, 'Job'), h('dd', { class: 'mono', style: { cursor: 'copy' }, onclick: () => copy(s.jobId) }, s.jobId)] : null,
       s.resultValue && !s.resultUrl ? [h('dt', {}, 'Result'), h('dd', { class: 'mono' }, s.resultValue)] : null),

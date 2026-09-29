@@ -1,6 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { config } from './config.js';
+import { inBackground } from './context.js';
+import { laneBusy } from './limits.js';
 
 // Disk cache: one JSON file per key. `ttlMs: Infinity` for immutable data (finished runs).
 const inflight = new Map();
@@ -44,7 +46,8 @@ export async function writeCache(ns, key, value, ttlMs) {
 // Read-through cache that also dedupes concurrent requests for the same key.
 // `produce` returns { value, ttlMs }. With `staleWhileRevalidate`, an expired entry is returned
 // at once and refreshed in the background, so a page load never waits on a slow query it has
-// already seen once.
+// already seen once. Those refreshes run at background priority (after anything on screen) and
+// are skipped while Trino is busy or backing off; the next view of that data tries again.
 export async function cached(ns, key, maxAgeMs, produce, { staleWhileRevalidate = false } = {}) {
   const hit = await readCache(ns, key, maxAgeMs);
   if (hit !== undefined) return hit;
@@ -52,7 +55,7 @@ export async function cached(ns, key, maxAgeMs, produce, { staleWhileRevalidate 
   if (staleWhileRevalidate) {
     const stale = await readStale(ns, key);
     if (stale !== undefined) {
-      if (!inflight.has(id)) refresh(ns, key, id, produce).catch((err) => console.error(`refresh ${id}: ${err.message}`));
+      if (!inflight.has(id) && !laneBusy('trino')) inBackground(() => refresh(ns, key, id, produce)).catch((err) => console.error(`refresh ${id}: ${err.message}`));
       return stale;
     }
   }

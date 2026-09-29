@@ -43,10 +43,12 @@
     </div>
     <input id="size" type="range" min="120" max="360" step="10" title="Card size (+ / −)" aria-label="Card size" />
     <button id="sound" class="icon-btn" title="Sound on hover (S)"><svg class="i"><use href="#i-volume" /></svg></button>
+    <button id="textSize" class="icon-btn text-size" title="Text size (⌥+ / ⌥− / ⌥0)">Aa</button>
     <button id="theme" class="icon-btn" title="Theme"><svg class="i"><use href="#i-contrast" /></svg></button>
     <button id="help" class="icon-btn" title="Keyboard shortcuts (?)"><svg class="i"><use href="#i-keyboard" /></svg></button>
   </header>
   <div class="loadbar" id="loadbar"><i></i></div>
+  <div class="net-banner" id="netBanner" role="alert" hidden></div>
 
   <div class="layout">
     <aside class="filters" id="filters" aria-label="Filters"></aside>
@@ -89,7 +91,8 @@
         <dt>A</dt><dd>Card shape</dd>
         <dt>+ / −</dt><dd>Card size</dd>
         <dt>O</dt><dd>Open in Wixel admin</dd>
-        <dt>D</dt><dd>Download video</dd>
+        <dt>D</dt><dd>Download — opens the menu (full ad regular / exact, other outputs)</dd>
+        <dt>⌥+ ⌥− ⌥0</dt><dd>Text size bigger / smaller / reset</dd>
       </dl>
     </div>
   </div>

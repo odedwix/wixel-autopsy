@@ -2,12 +2,14 @@ import { h, icon, ago, dur, dateTime, tc, getJson, copy } from './util.js';
 import { state, set, famParam } from './state.js';
 import { renderTimeline } from './timeline.js';
 import { renderScenes, renderBrand, renderAssets, renderRaw } from './deep.js';
-import { shareRun } from './share.js';
-import { caps, HINT } from './caps.js';
-import { toast } from './ui.js';
+import { shareRun, publicOutputUrl } from './share.js';
+import { printReport, downloadReport, section as rpSection } from './report.js';
+import { CAT_COLOR, CAT_LABEL } from './insights.js';
+import { caps, capsReady, HINT } from './caps.js';
+import { toast, popover, closePopover } from './ui.js';
 import { MOOD, worstMood, failedRun, hasAd, primaryOutput, typeLabel } from './filters.js';
 import { isVideoRun } from './grid.js';
-import { mediaOf, isReady, prioritize, onMedia, videoUrl, spriteUrl, placeSprite, downloadRun, downloadOutput } from './media.js';
+import { mediaOf, isReady, prioritize, onMedia, videoUrl, spriteUrl, posterUrl, placeSprite, downloadRun, downloadOutput } from './media.js';
 import { showUser } from './skillpicker.js';
 
 const ADMIN = 'https://wix-bo.com/wixel-agent/admin/#/sessions/';
@@ -71,13 +73,17 @@ function scopeBanner(d) {
 }
 
 let panel;
+let autoReported = false;
 let current = null; // { run, player }
 
 export function initInspect(el, { close }) {
   panel = el;
   panel._close = close;
   onMedia((ids) => {
-    if (current && ids.includes(current.run.id)) mountPlayer(current.run);
+    if (!current || !ids.includes(current.run.id)) return;
+    mountPlayer(current.run);
+    // The download choices depend on the media (exact render vs review copy).
+    panel.querySelector('.insp-head')?.replaceWith(header(current.run, current.detail || null));
   });
 }
 
@@ -86,10 +92,11 @@ export function openInspect(run) {
   panel.hidden = false;
   if (current?.run.id === run.id) {
     // Opened early from a link with only an id; now the list row (signals, render links) is here.
-    if (current.run._stub && !run._stub) {
+    if ((current.run._stub || current.run._detailOnly) && !run._stub) {
       current.run = run;
       panel.querySelector('.insp-head')?.replaceWith(header(run, current.detail || null));
       mountPlayer(run);
+      maybeAutoReport();
     }
     return;
   }
@@ -99,13 +106,25 @@ export function openInspect(run) {
   panel.replaceChildren(header(run, null), h('div', { class: 'insp-body' }, h('div', { class: 'player', id: 'playerMount' }), tabBar(), h('div', { id: 'detailMount' }, h('div', { class: 'loading-line' }, 'Loading run…'))));
   mountPlayer(run);
   prioritize(run.id);
-  prefetchDetail(run.id).then((d) => {
+  // Capabilities may still be loading when a run opens from a link.
+  capsReady.then(() => current?.run.id === run.id && isVideoRun(current.run) && caps.exact && refreshExact(current.run));
+  prefetchDetail(run.id).then(async (d) => {
     if (current?.run.id !== run.id) return;
     current.detail = d;
+    // Opened from a link and not in the list (another window, sampled out): the proxy's row if it
+    // has one, else the run as its detail describes it — so Download, Share and reports work.
+    if (current.run._stub && !d.error) {
+      const row = await getJson(`/api/run/${run.id}`).catch(() => null);
+      if (current?.run.id !== run.id) return;
+      if (current.run._stub) current.run = row || { ...reportRun(current.run, d), _stub: false, _detailOnly: true };
+      mountPlayer(current.run);
+      capsReady.then(() => current && isVideoRun(current.run) && caps.exact && refreshExact(current.run));
+    }
     panel.querySelector('.insp-head').replaceWith(header(run, d));
     renderTab();
     current.player?.setScenes(d.outputs?.scenes || []);
     current.player?.setDetail?.(d);
+    maybeAutoReport();
   });
 }
 
@@ -164,6 +183,242 @@ export function closeInspect() {
 export const inspectedPlayer = () => current?.player || null;
 export const inspectedRun = () => current?.run || null;
 
+// ?report=run on a run link builds its PDF report once both the list row and the detail are in
+// (scripted / headless export).
+// The list may never contain the run (another skill's view, an old link): once it has loaded, the
+// report is built from the run's own detail instead.
+let listDone = false;
+export function listLoaded() {
+  listDone = true;
+  maybeAutoReport();
+}
+async function maybeAutoReport() {
+  if (autoReported || new URLSearchParams(location.search).get('report') !== 'run') return;
+  if (!current || !current.detail) return;
+  autoReported = true;
+  // The list row (downloads, publishes, user type, cost) straight from the proxy if it has it;
+  // otherwise the report is built from the run's detail.
+  if (current.run._stub) {
+    const row = await getJson(`/api/run/${current.run.id}`).catch(() => null);
+    if (row && current) current.run = row;
+  }
+  buildRunReport(current.run);
+}
+
+// The run as the report shows it: the list row, or (not in the list) what its detail says.
+function reportRun(r, d) {
+  if (!r._stub && (r.outputs || r.title || r.adName)) return r;
+  const outs = (d.assetTree || []).map((a) => ({ id: a.id, type: a.type, name: a.name, thumb: a.thumbnailUrl }));
+  return {
+    ...r,
+    videoAssetId: r.videoAssetId || d.outputs?.rootAssetId || null,
+    title: d.title || d.outputs?.name || String(d.prompt || '').replace(/<HIDDEN>[\s\S]*/i, '').trim().slice(0, 70) || null,
+    adName: d.outputs?.name || outs[0]?.name || null,
+    outputs: outs,
+    outputType: outs[0]?.type || null,
+    createdAt: d.createdAt,
+    wallMs: d.timing?.wallMs,
+    generations: d.generations,
+    agent: d.agentName,
+    source: d.source,
+    userType: d.user?.isWixEmail ? 'employee' : r.userType,
+    sentiments: (d.sentiments || []).map((x) => x.label),
+  };
+}
+
+// Name, user, run time and date — in the report's title and its file name.
+function reportNames(r, d) {
+  const name = r.adName?.replace(/\s*[-—]\s*Root$/i, '') || r.title || 'Untitled run';
+  const email = d.user?.email || null;
+  const runTime = dur(d.timing?.wallMs ?? r.wallMs);
+  const at = new Date(r.createdAt || d.createdAt || Date.now());
+  const date = `${at.toISOString().slice(0, 10)} ${String(at.getHours()).padStart(2, '0')}.${String(at.getMinutes()).padStart(2, '0')}`;
+  const skill = state.mode === 'user' ? null : state.skill;
+  return {
+    name,
+    meta: [email, runTime, dateTime(at.getTime())].filter(Boolean).join(' · '),
+    file: [name.slice(0, 70), email, runTime.replace(/\s+/g, ''), date, skill, r.id.slice(0, 8)].filter(Boolean).join(' · '),
+  };
+}
+
+async function exportRunReport(r) {
+  const full = current?.detail && !current.detail.error ? current.detail : await prefetchDetail(r.id);
+  if (!full || full.error) return toast(`Can't build the report: ${full?.error || 'run not loaded'}`);
+  const run = reportRun(r, full);
+  await downloadReport({ kind: 'run', fileName: reportNames(run, full).file, inPage: () => buildRunReport(run) });
+}
+
+// ---------- run report (PDF) ----------
+// Everything about one run on paper: the facts, outputs, request, errors, the timeline, every step
+// (with links to its output and graph run), scenes, brand and assets, in the dark UI's colours.
+const PLUMB = new Set(['read', 'list', 'skill', 'write', 'send_feedback', 'task_status', 'poll_process_job']);
+async function buildRunReport(r0) {
+  const full = current?.detail && !current.detail.error ? current.detail : await prefetchDetail(r0.id);
+  if (!full || full.error) return toast(`Can't build the report: ${full?.error || 'run not loaded'}`);
+  const r = reportRun(r0, full);
+  const names = reportNames(r, full);
+  const d = counted(full);
+  const p = primaryOutput(r);
+  const m = mediaOf(r.id);
+  const out = publicOutputUrl(r);
+  const name = names.name;
+  const ut = r.userType === 'employee' ? 'Employee' : r.userType === 'wixel-team' ? 'Wixel team' : r.userType === 'real' ? 'Real user' : '';
+  const t0 = d.timing?.firstAt || r.createdAt;
+  const skill = state.mode === 'user' ? (r.allSkills || []).join(', ') : state.skill;
+  const temporal = caps.temporalUi ? (wid) => `${caps.temporalUi.replace(/\/workflows\/?$/, '')}/workflows?query=${encodeURIComponent(`WorkflowId STARTS_WITH "${wid}"`)}` : null;
+  const fact = (v, k, bad) => h('div', { class: `rp-fact${bad ? ' bad' : ''}` }, h('div', { class: 'v' }, v), h('div', { class: 'k' }, k));
+  await printReport({
+    title: name,
+    titleMeta: names.meta,
+    subtitle: [skill, ut, r.agent ? `${r.agent}${r.source ? ` / ${r.source}` : ''}` : null].filter(Boolean).join(' · '),
+    fileName: names.file,
+    links: [
+      { href: ADMIN + r.id, label: 'Wixel admin ↗' },
+      out ? { href: out.url, label: `${out.label} ↗` } : null,
+      r.publishedUrl && r.publishedUrl !== out?.url ? { href: r.publishedUrl, label: 'Published page ↗' } : null,
+      { href: `${location.origin}/${location.hash}`, label: 'Open in Autopsy (local app)' },
+    ],
+    build: (body) => {
+      const errs = (d.errors || []).length;
+      body.append(...[
+        h('div', { class: 'rp-facts' },
+          fact(hasAd(r) ? `${(r.outputs || []).length || 1} × ${typeLabel(p?.type || r.outputType || 'output')}` : failedRun(r) ? 'No output' : 'Nothing made', 'Result', !hasAd(r)),
+          fact(r.userDownloads || r.agentDownloads ? 'Yes' : 'No', 'Downloaded'),
+          fact(r.publishedUrl ? 'Yes' : 'No', 'Published'),
+          fact(worstMood(r) ? MOOD[worstMood(r)]?.label || worstMood(r) : '–', 'Worst mood', ['frustrated', 'confused'].includes(worstMood(r))),
+          fact(String(errs), 'Errors', errs > 0),
+          fact(String(d.generations ?? r.generations ?? 0), 'Generations'),
+          fact(dur(d.timing?.wallMs), 'Wall time'),
+          d.assetBuild?.final ? fact(dur(d.assetBuild.final.ms), 'Building the result') : null,
+          r.costUsd != null ? fact(`$${r.costUsd.toFixed(2)}`, 'Cost') : null,
+          fact(`${Math.round((d.cost?.inputTokens || 0) / 1000)}k / ${Math.round((d.cost?.outputTokens || 0) / 1000)}k`, 'Tokens in / out')),
+        heroOf(r, m),
+        scopeBanner(full) ? h('p', { class: 'rp-sub' }, scopeBanner(full).querySelector('span')?.textContent) : null,
+      ].filter(Boolean));
+      body.append(rpSection('Overview', details(r, d)));
+      const tl = h('div', { class: 'section dz' });
+      body.append(rpSection('Timeline', tl));
+      renderTimeline(tl, d);
+      body.append(rpSection(`Steps (${d.steps.length})`, stepsTable(d, t0, temporal)));
+      if (d.outputs?.scenes?.length) {
+        const sc = h('div', { class: 'section dz' });
+        body.append(rpSection('Scenes', sc));
+        renderScenes(sc, d, { seek: () => {} });
+      }
+      const br = h('div', { class: 'section dz' });
+      body.append(rpSection('Brand', br));
+      renderBrand(br, d);
+      const as = h('div', { class: 'section dz' });
+      body.append(rpSection('Assets', as));
+      renderAssets(as, d);
+    },
+  }).catch((err) => toast(`Couldn't build the report: ${err.message}`));
+}
+
+function heroOf(r, m) {
+  const imgs = [];
+  if (isVideoRun(r) && isReady(m)) imgs.push(posterUrl(r.id));
+  for (const o of r.outputs || []) if (o.thumb && o.type !== 'video') imgs.push(o.thumb);
+  if (!imgs.length && r.thumbnail) imgs.push(r.thumbnail);
+  return imgs.length ? h('div', { class: 'rp-hero' }, imgs.slice(0, 6).map((src) => h('img', { src, alt: '' }))) : null;
+}
+
+function stepsTable(d, t0, temporal) {
+  const rows = d.steps.filter((s) => !PLUMB.has(s.tool) || s.category === 'assets' || s.status === 'failed');
+  return h('table', { class: 'rp-steps' },
+    h('thead', {}, h('tr', {}, ...['Step', 'Kind', 'Starts', 'Takes', 'Status', 'Model', 'Links'].map((x) => h('th', {}, x)))),
+    h('tbody', {}, rows.map((s) => h('tr', { class: s.status === 'failed' ? 'fail' : '' },
+      h('td', {}, s.label, s.error ? h('div', { class: 'rp-err' }, String(s.error).slice(0, 240)) : null),
+      h('td', { class: 'kind' }, h('span', { class: 'cat', style: { background: CAT_COLOR[s.category] || 'var(--text-3)' } }), CAT_LABEL[s.category] || s.category),
+      h('td', { class: 'num' }, `+${dur(s.startedAt - t0)}`),
+      h('td', { class: 'num' }, dur(s.durationMs)),
+      h('td', {}, s.status),
+      h('td', {}, s.model || ''),
+      h('td', { class: 'lnk' }, ...[
+        s.resultUrl && /^https?:/.test(s.resultUrl) ? h('a', { href: s.resultUrl, target: '_blank', rel: 'noopener' }, 'output ↗') : null,
+        s.workflowId && temporal ? h('a', { href: temporal(s.workflowId), target: '_blank', rel: 'noopener' }, 'graph ↗') : null,
+      ].filter(Boolean))))));
+}
+
+// ---------- downloads ----------
+// The Exact composition as an mp4 (runs with no render): rendered once by the proxy from the product
+// player, frame by frame (server/exact.js), then cached. Status per run, refreshed while rendering.
+const exactState = new Map();
+async function refreshExact(run) {
+  const s = await getJson(`/api/exact/${run.id}`).catch(() => null);
+  if (s) exactState.set(run.id, s);
+  if (current?.run.id === run.id) panel.querySelector('.insp-head')?.replaceWith(header(current.run, current.detail || null));
+  return s;
+}
+async function downloadExact(run) {
+  let s = exactState.get(run.id);
+  if (s?.state !== 'ready') s = await getJson(`/api/exact/${run.id}?start=1`).catch((e) => ({ state: 'failed', error: e.message }));
+  while (['queued', 'loading', 'rendering', 'encoding'].includes(s?.state)) {
+    toast(s.state === 'rendering' ? `Rendering the exact composition… ${s.done} / ${s.total} frames` : s.state === 'encoding' ? 'Encoding the mp4…' : 'Loading the product player…', { ms: 5000 });
+    await new Promise((r) => setTimeout(r, 1500));
+    s = await getJson(`/api/exact/${run.id}`).catch(() => s);
+  }
+  exactState.set(run.id, s);
+  if (s?.state !== 'ready') return toast(`Couldn't render the exact composition: ${s?.error || 'unknown error'}`, { ms: 8000 });
+  toast('Exact composition ready — downloading', { ms: 3000 });
+  downloadRun(run, fileSkill(), 'exact');
+  if (current?.run.id === run.id) panel.querySelector('.insp-head')?.replaceWith(header(current.run, current.detail || null));
+}
+
+// One Download button: the main part saves the best file (the exact render when there is one);
+// the arrow lists every version and every other output of the run.
+function downloadChoices(r) {
+  const run = current?.run || r;
+  const m = mediaOf(run.id);
+  const out = [];
+  if (isVideoRun(run)) {
+    const ex = exactState.get(run.id);
+    const rendering = ['queued', 'loading', 'rendering', 'encoding'].includes(ex?.state);
+    const notReady = () => toast('The video is still being prepared — try again in a moment');
+    if (m?.kind === 'render') {
+      // The user's render is the exact ad already.
+      out.push({ label: 'Full ad — exact', sub: 'The file the user got: full quality, with text, captions and music', go: () => downloadRun(run, fileSkill()) || notReady() });
+      out.push({ label: 'Full ad — small copy', sub: '540p copy of the same video (smaller file)', go: () => downloadRun(run, fileSkill(), 'review') || notReady() });
+    } else {
+      out.push({
+        label: 'Full ad — regular',
+        sub: !isReady(m) ? 'Still being prepared…' : m.kind === 'assembled' ? 'The scenes joined with voice and music — no text overlays or captions' : 'The last generated clip (the run has no finished ad)',
+        go: () => downloadRun(run, fileSkill(), 'review') || notReady(),
+      });
+      if (hasAd(run) && caps.exact) {
+        out.push({
+          label: 'Full ad — exact',
+          sub: ex?.state === 'ready' ? 'As the product plays it: text overlays, captions and music' : rendering ? `Rendering… ${ex.done || 0} / ${ex.total || '?'} frames` : 'As the product plays it: text overlays, captions and music — renders in ~2 min the first time',
+          go: () => downloadExact(run),
+        });
+      }
+    }
+  }
+  const others = (run.outputs || []).filter((o) => o.type !== 'video');
+  for (const o of others) {
+    out.push({ group: 'Other outputs', label: `${typeLabel(o.type)}${o.name ? ` · ${o.name}` : ''}`, sub: ['slides', 'doc', 'story'].includes(o.type) ? 'PDF of its pages (or the user’s own export when reachable)' : 'Original image, or the design as the user saw it', go: () => downloadOutput(run, o, fileSkill()) });
+  }
+  return out;
+}
+
+// Download: one choice downloads right away; more than one (regular and exact full ad, other
+// outputs) opens a menu listing them all.
+function downloadButton(r) {
+  const choices = downloadChoices(r);
+  if (!choices.length) return null;
+  if (choices.length === 1) return h('button', { class: 'btn dl-main', title: `${choices[0].label}: ${choices[0].sub} (D)`, onclick: () => choices[0].go() }, icon('download'), 'Download');
+  const btn = h('button', { class: 'btn dl-main', title: 'Choose what to download (D)', onclick: () => {
+    let group = null;
+    const rows = [];
+    for (const c of downloadChoices(r)) {
+      if (c.group && c.group !== group) rows.push(h('div', { class: 'sh-h' }, (group = c.group)));
+      rows.push(h('button', { class: 'sh-row', onclick: () => { closePopover(); c.go(); } }, icon('download'), h('span', {}, h('b', {}, c.label), h('small', {}, c.sub))));
+    }
+    popover(btn, h('div', { class: 'sh-pop' }, h('div', { class: 'sh-h' }, 'Download'), ...rows), { align: 'right', width: 360 });
+  } }, icon('download'), 'Download', icon('down', 'sm'));
+  return btn;
+}
+
 // ---------- header ----------
 const fileSkill = () => (state.mode === 'user' ? null : state.skill);
 function header(r, d) {
@@ -182,10 +437,8 @@ function header(r, d) {
         r.agent ? [h('span', { class: 'sep' }, '·'), h('span', {}, `${r.agent}${r.source ? ` / ${r.source}` : ''}`)] : null,
       ),
     ),
-    isVideoRun(r)
-      ? h('button', { class: 'btn share-btn', title: 'Download the video (D) — the exact render when there is one', onclick: () => downloadRun(current?.run || r, fileSkill()) || toast('The video is still being prepared — try again in a moment') }, icon('download'), 'Download')
-      : primaryOutput(r) ? h('button', { class: 'btn share-btn', title: `Download the ${typeLabel(primaryOutput(r).type).toLowerCase()} (D) — the user's own export when reachable, else the original image or a PDF of its pages`, onclick: () => downloadOutput(current?.run || r, current?.player?.currentOutput?.() || primaryOutput(r), fileSkill()) }, icon('download'), 'Download') : null,
-    h('button', { class: 'btn share-btn', title: 'Share this run', onclick: (e) => shareRun(e.currentTarget, current?.run || r, current?.detail || d) }, icon('external'), 'Share'),
+    downloadButton(r),
+    h('button', { class: 'btn share-btn', title: 'Share this run', onclick: (e) => shareRun(e.currentTarget, current?.run || r, current?.detail || d, { exportPdf: () => exportRunReport(current?.run || r) }) }, icon('external'), 'Share'),
     h('button', { class: 'icon-btn', title: 'Wide panel (W)', onclick: () => toggleWide() }, icon('expand')),
     h('a', { class: 'icon-btn', href: ADMIN + r.id, target: '_blank', rel: 'noopener', title: 'Open in Wixel admin (O)' }, icon('external')),
     h('button', { class: 'icon-btn', title: 'Close (Esc)', onclick: () => panel._close() }, icon('x')),
@@ -245,7 +498,7 @@ class ReviewPlayer {
     const src = meta.kind === 'render' ? 'Exact render' : meta.kind === 'assembled' ? 'Assembled — no text/captions' : 'Single clip';
     this.modeBtn = h('button', { class: 'mode', title: 'Switch to the exact live player (E)', onclick: () => toggleLive() }, icon('sparkle', 'sm'), 'Exact');
     const controls = h('div', { class: 'controls' }, this.playBtn, this.time, h('span', { style: { flex: 1 } }), this.rateBtn, this.muteBtn,
-      h('button', { title: `Download ${meta.kind === 'render' ? 'the exact render' : 'this video'} (D)`, onclick: () => downloadRun(run, state.skill) }, icon('download')), hasAd(run) ? this.modeBtn : null,
+      h('button', { title: 'Download — regular or exact (D)', onclick: () => panel.querySelector('.insp-head .dl-main')?.click() }, icon('download')), hasAd(run) ? this.modeBtn : null,
       h('button', { title: 'Fullscreen', onclick: () => stage.requestFullscreen?.() }, icon('expand')));
     const note = h('div', { class: 'src-note' }, h('span', { class: 'dot', style: { background: meta.kind === 'render' ? 'var(--ok)' : meta.kind === 'assembled' ? 'var(--info)' : 'var(--warn)' } }),
       h('span', {}, `${meta.label} · ${meta.duration.toFixed(1)}s · ${src === 'Exact render' ? 'what the user got' : 'press E for the exact composition'}`));
@@ -556,12 +809,13 @@ function errorsSection(d) {
 
 // A scene without a snapshot shows the picture its clip was made from (the image-to-video input),
 // or failing that a frame of the clip itself.
+// The clip first: the editor's snapshot of a video scene is a blank white frame.
 function sceneThumb(s, d) {
+  if (s.clipUrl) return h('video', { class: 'im', src: `${s.clipUrl}#t=0.5`, muted: true, preload: 'metadata', playsinline: true });
   if (s.thumbnailUrl) return h('div', { class: 'im', style: { backgroundImage: `url(${s.thumbnailUrl})` } });
   const byId = new Map((d.steps || []).map((x) => [x.id, x]));
   const img = (s.lineage || []).map((id) => byId.get(id)).flatMap((x) => x?.mediaOut || []).find((m) => m.kind === 'image');
   if (img) return h('div', { class: 'im', style: { backgroundImage: `url(${img.url})` } });
-  if (s.clipUrl) return h('video', { class: 'im', src: `${s.clipUrl}#t=0.5`, muted: true, preload: 'metadata', playsinline: true });
   return h('div', { class: 'im' });
 }
 
@@ -582,7 +836,6 @@ function ids(r, d) {
     h('div', { class: 'links', style: { marginTop: '10px' } },
       h('a', { class: 'btn', href: ADMIN + r.id, target: '_blank', rel: 'noopener' }, icon('external'), 'Wixel admin'),
       r.publishedUrl ? h('a', { class: 'btn', href: r.publishedUrl, target: '_blank', rel: 'noopener' }, icon('globe'), 'Published page') : null,
-      isReady(mediaOf(r.id)) ? h('button', { class: 'btn', onclick: () => downloadRun(r, state.skill) }, icon('download'), mediaOf(r.id).kind === 'render' ? 'Exact render mp4' : 'Review copy mp4') : null,
     ));
 }
 

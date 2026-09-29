@@ -28,6 +28,8 @@ const defaults = {
   families: {},
   // Run view: also show turns that belong to other skills.
   showOther: false,
+  // Text size: the whole UI scaled (CSS zoom), 0.9–1.6.
+  textScale: 1,
 };
 
 // Links carry a user as its id only (no email in URLs) and a skill's helper choice as `fam`.
@@ -67,8 +69,8 @@ export function set(patch, { silent = false } = {}) {
 }
 
 function save() {
-  const { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab, inspectTab, inspectWide, shapeAuto, recentSkills, mode, user, recentUsers, families, showOther } = state;
-  const persisted = { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab, inspectTab, inspectWide, shapeAuto, recentSkills, mode, user, recentUsers, families, showOther };
+  const { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab, inspectTab, inspectWide, shapeAuto, recentSkills, mode, user, recentUsers, families, showOther, textScale } = state;
+  const persisted = { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab, inspectTab, inspectWide, shapeAuto, recentSkills, mode, user, recentUsers, families, showOther, textScale };
   try {
     localStorage.setItem(KEY, JSON.stringify(persisted));
   } catch {}

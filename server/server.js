@@ -9,7 +9,10 @@ import { getGenerationTrace, getJobTrace } from './temporal.js';
 import { listRuns, listSkills, getIndexedRun, runsIndex, runsForDay, familyFor, resolveFamily, listUserRuns } from './runs.js';
 import { rememberUser, resolveUser } from './users.js';
 import { assetSource, pagesPdf, imageAsJpeg } from './asset-download.js';
-import { mediaStatus, mediaFile, queueDepth, downloadSource } from './media.js';
+import { renderPdf, chromePath } from './pdf.js';
+import { startExact, exactStatus, exactFile } from './exact.js';
+import { checkConnectivity, connectivity, startConnectivityChecks } from './connectivity.js';
+import { mediaStatus, mediaFile, queueDepth, downloadSource, clipFrame } from './media.js';
 import { Readable } from 'node:stream';
 import { createReadStream } from 'node:fs';
 import { playerInput, bundleList, playerScript } from './player.js';
@@ -21,7 +24,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 
 const WEB = path.join(config.root, 'web');
-const QUIET = /^\/api\/(load|media-batch|media-queue|health)$/;
+const QUIET = /^\/api\/(load|media-batch|media-queue|health|exact\/[\w-]{36})$/;
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png' };
 
 function send(req, res, status, body, type = 'application/json; charset=utf-8') {
@@ -40,6 +43,8 @@ function capabilities() {
     temporalKey: Boolean(config.temporal.apiKey),
     ffmpeg: spawnSync('ffmpeg', ['-version']).status === 0 && spawnSync('ffprobe', ['-version']).status === 0,
     player: existsSync(path.join(config.cacheDir, 'vendor', 'iframe-bootstrap.js')),
+    pdf: Boolean(chromePath()), // reports download straight to a PDF (else the print dialog)
+    exact: Boolean(chromePath()) && existsSync(path.join(config.cacheDir, 'vendor', 'capture-bootstrap.js')), // Exact composition → mp4
   };
   return caps;
 }
@@ -52,7 +57,9 @@ function required(q, key) {
 
 const routes = [
   // What this install can do; the UI switches optional features off (with a hint) when missing.
-  [/^\/api\/health$/, async () => ({ ok: true, ...capabilities(), adminUi: config.adminUi, temporalUi: config.temporal.uiBase, cache: cacheReport() })],
+  [/^\/api\/health$/, async () => ({ ok: true, ...capabilities(), adminUi: config.adminUi, temporalUi: config.temporal.uiBase, cache: cacheReport(), net: await checkConnectivity() })],
+  // Can we reach bo.wix.com (Wix network / VPN)? `?fresh=1` re-checks now.
+  [/^\/api\/connectivity$/, async (_m, q) => checkConnectivity({ fresh: q.get('fresh') === '1' })],
   [/^\/api\/skills$/, async (_m, q) => listSkills({ days: Number(q.get('days') || 30) })],
   [/^\/api\/runs$/, async (_m, q) => {
     const skill = q.get('skill');
@@ -67,6 +74,10 @@ const routes = [
     const skill = required(q, 'skill');
     return runsForDay({ skill, family: await resolveFamily(skill, q.get('fam')), day, sessions: Number(q.get('n') || 0) });
   }],
+  // The Exact composition as an mp4 (runs with no render): status, `?start=1` renders it.
+  [/^\/api\/exact\/([\w-]{36})$/, async ([, id], q) => (q.get('start') === '1' ? startExact(getIndexedRun(id) || { id }) : exactStatus(id))],
+  // One run's list row, if this proxy has served it (reports opened from a link).
+  [/^\/api\/run\/([\w-]{36})$/, async ([, id]) => getIndexedRun(id) || Promise.reject(Object.assign(new Error('run not indexed'), { status: 404 }))],
   // A skill's family (the helpers counted with it) and why each is in it.
   [/^\/api\/family$/, async (_m, q) => familyFor(required(q, 'skill'))],
   // User mode: every session one user ran in the window, any skill.
@@ -96,7 +107,7 @@ const routes = [
     return out;
   }],
   [/^\/api\/media-queue$/, async () => queueDepth()],
-  [/^\/api\/load$/, async () => ({ ...loadReport(), media: queueDepth(), cache: cacheReport() })],
+  [/^\/api\/load$/, async () => ({ ...loadReport(), media: queueDepth(), cache: cacheReport(), net: connectivity() })],
   // Failed generations: tool result has only a jobId; `at` is the tool call's start (ms).
   [/^\/api\/trace-job\/([\w-]{36})$/, async ([, jobId], q) => getJobTrace(jobId, Number(q.get('at')))],
 ];
@@ -131,8 +142,10 @@ async function serveMedia(req, res, id, name) {
 
 // Save-to-disk: the exact render streamed through (a cross-origin link can't force a download),
 // else the review copy, with a readable filename.
-async function serveDownload(req, res, id, name) {
-  const src = await downloadSource(id);
+async function serveDownload(req, res, id, name, which) {
+  const src = which === 'exact'
+    ? ((await exactStatus(id)).state === 'ready' ? { kind: 'exact', file: exactFile(id) } : null)
+    : await downloadSource(id, which);
   if (!src) return send(req, res, 404, { error: 'video not ready yet' });
   const base = String(name || id).replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120) || id;
   const headers = { 'content-type': 'video/mp4', 'content-disposition': `attachment; filename="${base}.mp4"`, 'cache-control': 'no-store' };
@@ -179,8 +192,50 @@ async function serveAssetDownload(req, res, runId, assetId, name) {
   }
 }
 
+// A report as a PDF download (no print dialog): headless Chrome renders this app's own report view
+// for the given view (#v=… hash). `kind`: run | insights; `name`: the file name.
+async function serveReportPdf(req, res, q) {
+  const kind = q.get('kind');
+  const view = q.get('view') || '';
+  if (!['run', 'insights'].includes(kind) || !view.startsWith('#v=') || view.length > 12000) return send(req, res, 400, { error: 'bad report request' });
+  try {
+    const { buf } = await renderPdf(`http://127.0.0.1:${config.port}/?report=${kind}${view}`);
+    const name = `${String(q.get('name') || `autopsy ${kind} report`).replace(/[\/:*?"<>|\r\n]+/g, '-').slice(0, 180)}.pdf`;
+    const ascii = name.replace(/[^\x20-\x7e]/g, '_').replace(/"/g, "'");
+    res.writeHead(200, { 'content-type': 'application/pdf', 'content-length': buf.length, 'cache-control': 'no-store', 'content-disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}` });
+    res.end(buf);
+  } catch (err) {
+    console.error(`report pdf failed: ${err.message}`);
+    send(req, res, err.status || 500, { error: String(err.message || err) });
+  }
+}
+
+// A still from a clip (for printed reports): ffmpeg reads 0.5s in from the CDN; cached per URL.
+async function serveFrame(req, res, src) {
+  try {
+    const buf = await clipFrame(src);
+    res.writeHead(200, { 'content-type': 'image/jpeg', 'content-length': buf.length, 'cache-control': 'public, max-age=86400' });
+    res.end(buf);
+  } catch (err) {
+    send(req, res, err.status || 502, { error: String(err.message || err) });
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
+  // The platform font stylesheets the players load first (vendored by build-player.sh).
+  if (url.pathname === '/player/fonts.json') {
+    return fs.readFile(path.join(config.cacheDir, 'vendor', 'fonts.json')).then(
+      (buf) => send(req, res, 200, buf, 'application/json; charset=utf-8'),
+      () => send(req, res, 200, '[]', 'application/json; charset=utf-8'),
+    );
+  }
+  if (url.pathname === '/player/capture-bootstrap.js') {
+    return fs.readFile(path.join(config.cacheDir, 'vendor', 'capture-bootstrap.js')).then(
+      (buf) => send(req, res, 200, buf, 'text/javascript; charset=utf-8'),
+      () => send(req, res, 503, { error: 'Capture bundle not built. Run npm run build:player.' }),
+    );
+  }
   if (url.pathname === '/player/iframe-bootstrap.js') {
     return playerScript().then(
       (buf) => send(req, res, 200, buf, 'text/javascript; charset=utf-8'),
@@ -190,7 +245,9 @@ const server = http.createServer(async (req, res) => {
   const mm = url.pathname.match(/^\/media\/([\w-]{36})\/([\w.]+)$/);
   if (mm) return serveMedia(req, res, mm[1], mm[2]);
   const dm = url.pathname.match(/^\/download\/([\w-]{36})$/);
-  if (dm) return serveDownload(req, res, dm[1], url.searchParams.get('name'));
+  if (dm) return serveDownload(req, res, dm[1], url.searchParams.get('name'), url.searchParams.get('src'));
+  if (url.pathname === '/api/frame') return serveFrame(req, res, url.searchParams.get('url'));
+  if (url.pathname === '/api/report.pdf') return serveReportPdf(req, res, url.searchParams);
   const am = url.pathname.match(/^\/download-asset\/([\w-]{36})\/([\w-]{36})$/);
   if (am) return serveAssetDownload(req, res, am[1], am[2], url.searchParams.get('name'));
   const t0 = Date.now();
@@ -231,6 +288,7 @@ try {
 server.listen(config.port, '127.0.0.1', () => {
   claim();
   startSweeping();
+  startConnectivityChecks();
   const url = `http://localhost:${config.port}`;
   console.log(`autopsy on ${url} (pid ${process.pid})`);
   if (process.argv.includes('--open')) spawn('open', [url], { stdio: 'ignore', detached: true }).unref();

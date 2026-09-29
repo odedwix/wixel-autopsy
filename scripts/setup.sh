@@ -14,7 +14,7 @@ echo
 # 1. Node
 if command -v node >/dev/null; then
   NODE_MAJOR=$(node -p 'process.versions.node.split(".")[0]')
-  if [ "$NODE_MAJOR" -ge 20 ]; then ok "Node $(node -v)"; else bad "Node $(node -v) — need 20+ (brew install node@22)"; FAIL=1; fi
+  if [ "$NODE_MAJOR" -ge 22 ]; then ok "Node $(node -v)"; else bad "Node $(node -v) — need 22+ (brew install node@22)"; FAIL=1; fi
 else
   bad "Node not found — brew install node@22"; FAIL=1
 fi
@@ -40,6 +40,7 @@ if command -v ffmpeg >/dev/null && command -v ffprobe >/dev/null; then ok "ffmpe
 if node -e "import('./server/config.js').then(m=>process.exit(m.config.temporal.apiKey?0:1))"; then ok "Temporal key — Genix graph runs"; else warn "No Temporal key — graph runs off. Add TEMPORAL_API_KEY to .env (ask the Wixel/Genix team; it's a prod secret)"; fi
 sh scripts/build-player.sh >/dev/null 2>&1
 if [ -f .cache/vendor/iframe-bootstrap.js ]; then ok "Product player — exact live composition (E)"; else warn "Product player off — needs a wixel-video-client checkout (set WIXEL_VIDEO_CLIENT in .env), then npm run build:player"; fi
+if [ -d "/Applications/Google Chrome.app" ] || command -v google-chrome >/dev/null || [ -n "$CHROME_PATH" ]; then ok "Google Chrome — PDFs save straight to Downloads; Exact composition downloads"; else warn "Chrome not found — PDFs use the print dialog, no Exact downloads (set CHROME_PATH if it's elsewhere)"; fi
 
 # 6. Desktop launcher (macOS)
 if [ "$(uname)" = "Darwin" ] && command -v osacompile >/dev/null; then

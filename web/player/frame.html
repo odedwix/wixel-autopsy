@@ -14,10 +14,26 @@
   <!-- The product's standalone player (React 18 + Remotion + federation), vendored by `npm run build:player`. -->
   <script src="/player/iframe-bootstrap.js"></script>
   <script>
+
+    // The product's platform font CSS (Wix, Madefor, Google, Helvetica @font-face rules), which its
+    // own hosts load before any text renders — without it text falls back to system fonts.
+    function loadPlatformFonts() {
+      return fetch('/player/fonts.json').then(function (r) { return r.json(); }).catch(function () { return []; }).then(function (urls) {
+        return Promise.all(urls.map(function (href) {
+          return new Promise(function (resolve) {
+            var l = document.createElement('link');
+            l.rel = 'stylesheet';
+            l.href = href;
+            l.onload = l.onerror = resolve;
+            document.head.appendChild(l);
+          });
+        }));
+      });
+    }
     (function () {
       var root = document.getElementById('root');
       if (!window.WixelPlayerFrame) { root.innerHTML = '<div class="loading">Live player not built — run npm run build:player</div>'; return; }
-      window.WixelPlayerFrame.mount(root);
+      loadPlatformFonts().then(function () { window.WixelPlayerFrame.mount(root); });
     })();
   </script>
 </body>

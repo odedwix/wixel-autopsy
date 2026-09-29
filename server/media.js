@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -231,15 +232,35 @@ export function mediaFile(id, name) {
 // What a download should hand over: the original full-quality render when the run has one
 // (the review copy is a 540p transcode of it), otherwise our review copy.
 const RENDER_HOSTS = /(^|\.)(wixmp\.com|wixstatic\.com|wixel\.com|wix\.com)$/i;
-export async function downloadSource(id) {
+// `which: 'review'` forces the review copy.
+export async function downloadSource(id, which) {
   const meta = await readMeta(id);
   if (!meta || meta.state !== 'ready') return null;
-  if (meta.kind === 'render' && meta.sourceUrl) {
+  if (which !== 'review' && meta.kind === 'render' && meta.sourceUrl) {
     try {
       if (RENDER_HOSTS.test(new URL(meta.sourceUrl).hostname)) return { kind: 'render', url: meta.sourceUrl };
     } catch {}
   }
   return { kind: meta.kind, file: mediaFile(id, 'review.mp4') };
+}
+
+// One still frame of a clip, 480px wide, for printed reports. Wix CDNs only; cached by URL.
+export async function clipFrame(src) {
+  let u;
+  try {
+    u = new URL(src);
+  } catch {
+    throw Object.assign(new Error('bad url'), { status: 400 });
+  }
+  if (u.protocol !== 'https:' || !RENDER_HOSTS.test(u.hostname)) throw Object.assign(new Error('not a Wix media URL'), { status: 400 });
+  const key = crypto.createHash('sha1').update(src).digest('hex').slice(0, 20);
+  const dir = path.join(config.cacheDir, 'media', '_frames');
+  const file = path.join(dir, `${key}.jpg`);
+  const hit = await fs.readFile(file).catch(() => null);
+  if (hit) return hit;
+  await fs.mkdir(dir, { recursive: true });
+  await run('ffmpeg', ['-y', '-v', 'error', '-ss', '0.5', '-i', src, '-frames:v', '1', '-vf', 'scale=480:-2', '-q:v', '4', file]);
+  return fs.readFile(file);
 }
 
 export const queueDepth = () => ({ active, pending: pending.length });
