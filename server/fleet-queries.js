@@ -408,7 +408,20 @@ FROM y WHERE rk <= 480 - fixed
 ORDER BY owner, aud, kind, turns DESC, k`;
 }
 
-// ---- Q0: internal accounts active on the day ----
+// ---- Q0: the accounts active on the day (one row: a comma list) ----
+// Classified locally with the per-account cache (runs.js resolveUserTypes): accounts repeat from
+// day to day, so after the first days only new ones are looked up.
+export function dayAccountsQuery({ day }) {
+  checkWindow(day, [0, 24]);
+  return `
+SELECT array_join(array_agg(DISTINCT coalesce(_logged_account_id, _target_account_id)), ',') AS accounts
+FROM ${ENTRIES}
+WHERE created_date >= ${t0(day, 0)} AND created_date < ${t0(day, 24)} AND entry_type = 'USER_MESSAGE'
+  AND coalesce(_logged_account_id, _target_account_id) IS NOT NULL`;
+}
+
+// (Previous approach, kept for reference: one ~20 s anti-join per day — times out under load.)
+// ---- internal accounts active on the day ----
 // The vizion rule (an account missing from prod.wt_accounts.base is an employee) plus the Wixel
 // team list, for the accounts that wrote a message that day. One ~20s query; only the internal
 // ones come back (a few dozen).

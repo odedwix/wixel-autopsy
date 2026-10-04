@@ -104,24 +104,27 @@ async function projectSignals(projectIds, day) {
 // ---- account → user type ----
 // The vizion report's rule: an account missing from prod.wt_accounts.base is a Wix employee;
 // the slides/Wixel team list wins over that. The base lookup is a ~20s scan, so results are
-// cached per account forever and only new accounts are looked up (≤1400 ids per query: 64KB SQL cap).
+// cached per account forever and only new accounts are looked up (500 ids per query: well under the
+// 64KB SQL cap, and fast enough to stay under the endpoint's 30s when Trino is busy).
 let accountTypes;
 let teamSet;
-async function resolveUserTypes(accountIds) {
+export async function resolveUserTypes(accountIds) {
   accountTypes ??= (await readCache('meta', 'account-types', Infinity)) || {};
   teamSet ??= new Set(await cached('meta', 'wixel-team', DAY, async () => ({
     value: (await sql('SELECT DISTINCT account_id FROM sandbox.www.slides_employees_team')).map((r) => r.account_id),
     ttlMs: DAY,
   })));
   const missing = [...new Set(accountIds.filter((id) => id && !(id in accountTypes)))];
-  for (let i = 0; i < missing.length; i += 1400) {
-    const ids = missing.slice(i, i + 1400);
-    const [row] = await sql(`SELECT array_join(array_agg(t.id), ',') AS missing FROM UNNEST(ARRAY[${ids.map(lit).join(',')}]) AS t(id)
-      LEFT JOIN prod.wt_accounts.base b ON b.account_id = t.id WHERE b.account_id IS NULL`);
+  // Each batch is saved as soon as it's resolved, and retried once on a timeout, so a busy
+  // cluster costs at most the batch it was on (the next call picks up from there).
+  for (let i = 0; i < missing.length; i += 500) {
+    const ids = missing.slice(i, i + 500);
+    const [row] = await retryOnce(() => sql(`SELECT array_join(array_agg(t.id), ',') AS missing FROM UNNEST(ARRAY[${ids.map(lit).join(',')}]) AS t(id)
+      LEFT JOIN prod.wt_accounts.base b ON b.account_id = t.id WHERE b.account_id IS NULL`));
     const employees = new Set((row?.missing || '').split(',').filter(Boolean));
     for (const id of ids) accountTypes[id] = employees.has(id) ? 'employee' : 'real';
+    await writeCache('meta', 'account-types', accountTypes, Infinity);
   }
-  if (missing.length) await writeCache('meta', 'account-types', accountTypes, Infinity);
   return (id) => (!id ? 'unknown' : teamSet.has(id) ? 'wixel-team' : accountTypes[id] || 'unknown');
 }
 
