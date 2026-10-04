@@ -1,12 +1,12 @@
 # Autopsy Fleet — what we know
 
-Generated 2026-10-04 08:35 UTC from the Fleet day rollups (`.fleet/days`). Last 7 days: 2026-09-27 → 2026-10-03 (7 days built); last 30 days: 21 days built. Real users only. Codex: origin/HEAD @ 5010e885 (2026-10-01).
+Generated 2026-10-04 09:13 UTC from the Fleet day rollups (`.fleet/days`). Last 7 days: 2026-09-27 → 2026-10-03 (7 days built); last 30 days: 30 days built. Real users only. Codex: origin/HEAD @ 5010e885 (2026-10-01).
 
 Counts, durations, recoveries, tokens and outcomes are measured from the agent's own entries. "Time lost" = each failed call's time plus one recovery per run of consecutive failures (until the next successful attempt started, else the turn's end). Savings and recommended timeouts are estimates. Definitions: README → Fleet.
 
 ## The week in numbers
-- 66,643 sessions, 120,499 turns, 728,369 tool calls
-- 4.3% of tool calls fail (out of credits excluded); 433 h a week lost to failures
+- 66,634 sessions, 120,488 turns, 728,347 tool calls
+- 4.3% of tool calls fail (out of credits excluded); 432 h a week lost to failures
 - 131 hidden timeouts (the tool returned while its job was still running)
 - 9.7% of turns frustrated; 5.0 model iterations per turn; 119k input tokens per iteration
 - Outputs kept (downloaded): 38% of sessions that produced one; 13% generated but wrote nothing
@@ -28,7 +28,13 @@ Counts, durations, recoveries, tokens and outcomes are measured from the agent's
 - 2026-09-23: **New codex version** · new codex version 4ad17396-b (35% of turns)
 - 2026-09-22: **New codex version** · new codex version c19aefcf-9 (43% of turns)
 - 2026-09-20: **Failing tool calls** 2.2% → 4.2%
+- 2026-09-17: **Hidden timeouts / 1k turns** 1.5 → 11.9 · new codex version c4ba5703-e (39% of turns)
 - 2026-09-16: **New codex version** · new codex version e29fe0aa-d (39% of turns)
+- 2026-09-15: **New codex version** · new codex version e52b68b2-9 (35% of turns)
+- 2026-09-14: **New codex version** · new codex version fc316c66-f (41% of turns)
+- 2026-09-12: **New codex version** · new codex version e63ad3d9-d (23% of turns), 87715cbe-a (24% of turns)
+- 2026-09-11: **New codex version** · new codex version 974ecd70-a (45% of turns)
+- 2026-09-10: **Hidden timeouts / 1k turns** 34.3 → 4.0
 
 ## Do these first (hours a week given back)
 1. wixel-ads spends 7.9 file operations per turn, re-reading the same file 0.7× a turn — **39 h/week** · Agent design (estimate)
@@ -93,8 +99,8 @@ Skills: single-page-design (300), no skill (223), image-qr (86), stories-creatio
   - Seen: The failing calls pass cloud-storage links: storage.googleapis.com (2). These are usually temporary or signed URLs (e.g. a scraped page's screenshot) that expire or need credentials by the time the provider fetches them.
   - Change: In image-qr's instructions, don't hand `analyze_image` a cloud-storage link from an earlier step: re-host it on Wix first (the upload / convert step), or call `analyze_image` right after the step that produced it.
 - **stories-creation** (82, 9%) — `skills/stories/stories-creation.md` lines 170, 173
-  - Seen: The failing calls pass cloud-storage links: storage.googleapis.com (1). These are usually temporary or signed URLs (e.g. a scraped page's screenshot) that expire or need credentials by the time the provider fetches them.
-  - Change: In stories-creation's instructions, don't hand `analyze_image` a cloud-storage link from an earlier step: re-host it on Wix first (the upload / convert step), or call `analyze_image` right after the step that produced it.
+  - Seen: Most failing URLs are on Wix media hosts, so the link itself is wrong or expired: a URL copied with a transformation suffix, a temporary link, or one retyped instead of copied.
+  - Change: Tell the agent to pass media URLs exactly as a previous tool returned them (no editing, no /v1/ transform suffixes), and to re-fetch a fresh URL instead of reusing one from earlier in a long session.
 
 ### Error loading Codex resource "resources/video/video-data-model.md": UNKNOWN: document 'resources/video/video-data-model.md' not found in current versi
 `read` · Missing file or skill · easy fix · owner: Skill author (codex) · 1,051/week in 827 sessions · 8.1 h/week lost · Every day · rising
@@ -141,16 +147,16 @@ Skills: image-generation-and-image-edit (439), single-page-design (39), export-h
 Skills: single-page-design (487), image-generation-and-image-edit (89), brand-kit (37), stories-creation (26), logo-edit (18), image-qr (8)
 - **single-page-design** (487, 72%) — `skills/image/single-page-design.md` lines 14, 16, 67, 93
   - Seen: The failing calls pass cloud-storage links: storage.googleapis.com (2). These are usually temporary or signed URLs (e.g. a scraped page's screenshot) that expire or need credentials by the time the provider fetches them.
-  - Seen: Most failing URLs are on Wix media hosts, so the link itself is wrong or expired: a URL copied with a transformation suffix, a temporary link, or one retyped instead of copied.
   - Change: In single-page-design's instructions, don't hand `edit_image` a cloud-storage link from an earlier step: re-host it on Wix first (the upload / convert step), or call `edit_image` right after the step that produced it.
-  - Change: Tell the agent to pass media URLs exactly as a previous tool returned them (no editing, no /v1/ transform suffixes), and to re-fetch a fresh URL instead of reusing one from earlier in a long session.
 - **image-generation-and-image-edit** (89, 13%) — `skills/image/image.md` lines 8, 13, 14, 20
   - Seen: The failing calls pass cloud-storage links: storage.googleapis.com (1). These are usually temporary or signed URLs (e.g. a scraped page's screenshot) that expire or need credentials by the time the provider fetches them.
   - Seen: The failing calls pass images straight from other websites: images-wixmp-14a6a70d3f0e6e1e6f56bf30wixmp.com (1). Sites often block hotlinking, so the model provider can't fetch them.
   - Change: In image-generation-and-image-edit's instructions, don't hand `edit_image` a cloud-storage link from an earlier step: re-host it on Wix first (the upload / convert step), or call `edit_image` right after the step that produced it.
   - Change: In image-generation-and-image-edit's instructions, before calling `edit_image` with a site image, re-host it on Wix (the upload / convert step the skill already uses for site assets) and pass the wixstatic URL.
 - **brand-kit** (37, 5%) — `skills/brand/brand-kit.md` lines 10
+  - Seen: The failing calls pass cloud-storage links: storage.googleapis.com (1). These are usually temporary or signed URLs (e.g. a scraped page's screenshot) that expire or need credentials by the time the provider fetches them.
   - Seen: Most failing URLs are on Wix media hosts, so the link itself is wrong or expired: a URL copied with a transformation suffix, a temporary link, or one retyped instead of copied.
+  - Change: In brand-kit's instructions, don't hand `edit_image` a cloud-storage link from an earlier step: re-host it on Wix first (the upload / convert step), or call `edit_image` right after the step that produced it.
   - Change: Tell the agent to pass media URLs exactly as a previous tool returned them (no editing, no /v1/ transform suffixes), and to re-fetch a fresh URL instead of reusing one from earlier in a long session.
 
 ### Error loading Codex resource "resources/video/video-generation.md": UNKNOWN: document 'resources/video/video-generation.md' not found in current versi
@@ -184,7 +190,7 @@ Skills: site-content (110), wix-explorer (26)
 - The agent asks for a file or skill that isn't there. Fix the path in the instructions, or publish the file where the agent reads it.
 
 ### Error writing file: Invalid JSON: Expected ',' or '}' after property value in JSON at position N (line N column N) The problem is at >>>HERE>>> below 
-`write` · Agent misuse of a tool · easy fix · owner: Skill author (instructions) · 508/week in 303 sessions · 6.9 h/week lost · Every day · rising
+`write` · Agent misuse of a tool · easy fix · owner: Skill author (instructions) · 506/week in 302 sessions · 6.9 h/week lost · Every day · rising
 Skills: doc (202), wixel-ads (87), image-generation-and-image-edit (61), stories-creation (47), video-creation (30), slides-creation (24)
 - The agent called a tool wrongly. Spell out the correct call in the skill (with an example), and have the tool validate or auto-correct the common slip.
 
@@ -245,19 +251,19 @@ Skills: doc (202), wixel-ads (87), image-generation-and-image-edit (61), stories
 | stories-creation | 1,419 | 4.9% | 21 h | 9.2% | 37% | 11.4 | INVALID_ARGUMENT: Error invoking endpoint: [N] → (provider returned an |
 | image-qr | 1,362 | 2.9% | 3.4 h | 6.9% | 70% | 4.8 | Failed to analyze image: description: INVALID_ARGUMENT: INVALID_ARGUME |
 | brand-kit | 967 | 2.6% | 31 h | 10.5% | 16% | 20.3 | INVALID_ARGUMENT: Error invoking endpoint: [N] → (provider returned an |
-| doc | 911 | 8.3% | 6.7 h | 11.3% | 58% | 4.0 | Error writing file: Invalid JSON: Expected ',' or '}' after property v |
+| doc | 910 | 8.3% | 6.7 h | 11.3% | 58% | 4.0 | Error writing file: Invalid JSON: Expected ',' or '}' after property v |
 | site-content | 734 | 7.6% | 2.1 h | 2.1% | 32% | 2.9 | Error: Skill "site-content" not found. Check available_skills in the t |
 | slides-edit | 543 | 1.8% | 5.2 h | 11.3% | 34% | 7.8 | Tool returned while its job was still IN_PROGRESS (hidden timeout) |
 | video-regen | 428 | 8.6% | 6.5 h | 23.7% | 38% | 6.8 | Error loading Codex resource "resources/video/video-capability-catalog |
 | business-card | 417 | 1.3% | 2.7 h | 11.2% | 33% | 11.5 | Error writing file: path or name is required when applying edits. |
 | image-enhance | 378 | 5.1% | 1.6 h | 29.7% | 44% | 3.4 | INVALID_ARGUMENT: Error invoking endpoint: [N] → providerBadRequest: B |
-| brand-new | 326 | 2.9% | 45 min | 8.0% | 23% | 5.3 | Sequence rejected before any step ran: unknown tool "functions.edit_im |
+| brand-new | 325 | 2.9% | 45 min | 8.0% | 23% | 5.3 | Sequence rejected before any step ran: unknown tool "functions.edit_im |
 | image-remove-background | 325 | 2.8% | 1.6 h | 30.9% | 46% | 5.5 | Failed to invoke RPC: 'telemetry.conversationId' value must be a valid |
 | image-upscale | 306 | 4.6% | 48 min | 51.2% | 82% | 3.2 | INVALID_ARGUMENT: Error invoking endpoint: [N] → providerBadRequest: B |
 | publish-social-post | 296 | 1.6% | 24 min | 6.1% | 25% | 5.7 | Failed to analyze image: description: INVALID_ARGUMENT: INVALID_ARGUME |
 | wix-apis | 202 | 1.2% | 3 min | 11.2% | 38% | 2.4 | Error invoking endpoint: [N] → (provider returned an empty error) |
 | logo-variations | 201 | 1.1% | 22 min | 8.6% | 40% | 6.3 | Error writing file: Schema validation failed: themeId: Invalid UUID |
 | icons | 171 | 1.3% | 34 min | 3.1% | 11% | 8.1 | Sequence rejected before any step ran: unknown tool "functions.generat |
-| pdf-processor | 159 | 2.7% | 48 min | 14.3% | 54% | 6.1 | Error writing file: Invalid JSON: Expected double-quoted property name |
+| pdf-processor | 158 | 2.5% | 47 min | 14.4% | 54% | 6.1 | Error writing file: Invalid JSON: Expected double-quoted property name |
 | image-collage | 119 | 2.8% | 28 min | 15.0% | 38% | 4.3 | fal.ai The provided image URL is not accessible or has expired. Please |
 | brand-edit | 96 | 2.8% | 12 min | 7.5% | 28% | 4.5 | Failed to invoke RPC: Upstream exception |

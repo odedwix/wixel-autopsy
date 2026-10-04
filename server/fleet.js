@@ -15,8 +15,8 @@ import { cached } from './cache.js';
 import { inBackground } from './context.js';
 import { backoffRemaining } from './limits.js';
 import { redact } from './redact.js';
-import { skillPairs, familyFor } from './runs.js';
-import { FLEET_QUERY_VERSION, usageQuery, timingQuery, failuresQuery, chainsQuery, outcomesQuery, internalAccountsQuery } from './fleet-queries.js';
+import { skillPairs, familyFor, resolveUserTypes } from './runs.js';
+import { FLEET_QUERY_VERSION, usageQuery, timingQuery, failuresQuery, chainsQuery, outcomesQuery, dayAccountsQuery } from './fleet-queries.js';
 
 const DAY = 86400000;
 const utcDay = (t) => new Date(t).toISOString().slice(0, 10);
@@ -143,21 +143,32 @@ async function sliced(make, keyFields, hours = [0, 24]) {
   }
 }
 
-// Internal accounts active on a day (employees, Wixel team). Falls back to accounts Autopsy has
-// already classified when the ~20s lookup fails, and says so in the day file.
+// Internal accounts active on a day (employees, Wixel team): the day's accounts from one cheap
+// query, classified with the shared per-account cache (only accounts never seen before are looked
+// up, in batches saved as they land). If some can't be classified now, the day says so and isn't
+// final; what's resolved so far is kept for the next try.
 async function internalFor(day) {
-  return cached('fleet-internal', day, isFinal(day) ? Infinity : REFRESH_MS, async () => {
+  return cached('fleet-internal', `v2__${day}`, isFinal(day) ? Infinity : REFRESH_MS, async () => {
+    const [row] = await sql(dayAccountsQuery({ day }), { maxRows: 500 });
+    const accounts = String(row?.accounts || '').split(',').filter(Boolean);
+    let typeOf;
+    let error = null;
     try {
-      const rows = await sql(internalAccountsQuery({ day }), { maxRows: 500 });
-      return { value: { accounts: rows.map((r) => r.acct), kinds: Object.fromEntries(rows.map((r) => [r.acct, r.kind])), total: Number(rows[0]?.accounts || 0), source: 'lookup' }, ttlMs: isFinal(day) ? Infinity : REFRESH_MS };
+      typeOf = await resolveUserTypes(accounts);
     } catch (err) {
-      let known = {};
-      try {
-        known = JSON.parse(await fs.readFile(path.join(config.cacheDir, 'meta', 'account-types.json'), 'utf8')).value || {};
-      } catch {}
-      const accounts = Object.entries(known).filter(([, t]) => t === 'employee').map(([a]) => a);
-      return { value: { accounts, kinds: {}, total: null, source: 'cached', error: String(err.message).slice(0, 200) }, ttlMs: 10 * 60000 };
+      error = String(err.message || err).slice(0, 200);
+      typeOf = await resolveUserTypes([]); // what the cache knows
     }
+    const kinds = {};
+    let unknown = 0;
+    for (const a of accounts) {
+      const t = typeOf(a);
+      if (t === 'employee' || t === 'wixel-team') kinds[a] = t;
+      else if (t === 'unknown') unknown++;
+    }
+    const value = { accounts: Object.keys(kinds), kinds, total: accounts.length, unknown, source: unknown ? 'partial' : 'lookup', error };
+    // A partial result is never reused: the next build looks up the rest (resolved ones are cached).
+    return { value, ttlMs: unknown ? 0 : isFinal(day) ? Infinity : REFRESH_MS };
   });
 }
 
@@ -219,7 +230,7 @@ export function buildDay(day, { force = false } = {}) {
     out.buildMs = (patch ? have.buildMs || 0 : 0) + (Date.now() - t0);
     // A day with a failed query (or whose internal-accounts lookup fell back to a cached list) isn't
     // stored as final: the next request tries again.
-    if (internal.source !== 'lookup') out.errors.internal = `internal-accounts lookup failed (${internal.error || 'unknown'}); used the cached employee list`;
+    if (internal.source !== 'lookup') out.errors.internal = `${internal.unknown} of ${internal.total} accounts not classified yet (${internal.error || 'lookup pending'}); counted as real users for now`;
     else delete out.errors.internal;
     out.final = final && !Object.keys(out.errors).length;
     await writeJsonAtomic(dayFile(day), out);
