@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { sql, getJson } from './admin.js';
 import { config } from './config.js';
 import { limited } from './limits.js';
+import { fromSnapshot } from './context.js';
 import { cached, readCache, writeCache } from './cache.js';
 import { snapIndex, snapDay, snapFamily, snapResolveFamily, snapSkills, snapSkillPairs, snapUserRuns } from './snapshot.js';
 import { RUNS_QUERY_VERSION, STEPS_QUERY_VERSION, runsDayQuery, eventsDayQuery, stepsDayQuery, skillsQuery, runsIndexQuery, lastSeenQuery, skillPairsQuery } from './queries.js';
@@ -373,7 +374,7 @@ function indexRuns(runs) {
 // Which days in the window have runs (so empty days are never queried), plus when the skill
 // last ran when the window is empty.
 export function runsIndex({ skill, days = 7 }) {
-  if (config.snapshot) return snapIndex({ skill, days });
+  if (fromSnapshot(config)) return snapIndex({ skill, days });
   const n = Math.max(1, Math.min(90, Number(days) || 7));
   return cached('runs-index', `v2__${skill}__${n}__${utcDay(Date.now())}`, 3 * 60000, async () => {
     const rows = await retryOnce(() => sql(runsIndexQuery({ skill, windowDays: n })));
@@ -436,7 +437,7 @@ async function scopedDay(scope, day, sampleRate = 1) {
 // `sessions` is the day's count from the index; above the target the day is sampled.
 // `family`: the skills counted with it (null = whole sessions).
 export async function runsForDay({ skill, family, day, sessions = 0 }) {
-  if (config.snapshot) return indexRuns(await snapDay({ skill, day }));
+  if (fromSnapshot(config)) return indexRuns(await snapDay({ skill, day }));
   const sample = sampleFor(sessions);
   return scopedDay({ skill, family, sample }, day, sample ? sample.length / 16 : 1);
 }
@@ -464,12 +465,12 @@ export async function listRuns({ skill, family, days = 7 }) {
 // Pinned for 30 days per skill so cached days (keyed by the family) stay valid.
 const FAMILY_VERSION = 8;
 export function skillPairs() {
-  if (config.snapshot) return snapSkillPairs();
+  if (fromSnapshot(config)) return snapSkillPairs();
   return cached('meta', `skill-pairs-v${FAMILY_VERSION}`, DAY, async () => ({ value: await retryOnce(() => sql(skillPairsQuery(), { maxRows: 5000 })), ttlMs: DAY }));
 }
 
 export function familyFor(skill) {
-  if (config.snapshot) return snapFamily(skill);
+  if (fromSnapshot(config)) return snapFamily(skill);
   return cached('meta', `family-v${FAMILY_VERSION}__${skill}`, 30 * DAY, async () => {
     const pairs = await skillPairs();
     const of = new Map();
@@ -510,7 +511,7 @@ export function familyFor(skill) {
 
 // "default" (or nothing) → the computed family; "all" → whole sessions; else a comma list.
 export async function resolveFamily(skill, fam) {
-  if (config.snapshot) return snapResolveFamily(skill, fam);
+  if (fromSnapshot(config)) return snapResolveFamily(skill, fam);
   if (fam === 'all') return null;
   if (fam && fam !== 'default') return [...new Set(fam.split(',').map((x) => x.trim()).filter((x) => /^[\w.:-]{1,80}$/.test(x)))];
   return (await familyFor(skill)).family;
@@ -537,7 +538,7 @@ export async function userSessions(userId, days) {
 }
 
 export async function listUserRuns({ userId, days = 30 }) {
-  if (config.snapshot) {
+  if (fromSnapshot(config)) {
     // The user's session list is one light admin API call; their rows come from the daily build.
     const n = Math.max(1, Math.min(90, Number(days) || 30));
     const res = await snapUserRuns({ userId, days: n, sessions: await userSessions(userId, n + 2) });
@@ -562,6 +563,6 @@ export async function listUserRuns({ userId, days = 30 }) {
 }
 
 export function listSkills({ days = 30 } = {}) {
-  if (config.snapshot) return snapSkills();
+  if (fromSnapshot(config)) return snapSkills();
   return cached('meta', `skills-v2_${days}`, 6 * 3600000, async () => ({ value: await sql(skillsQuery({ windowDays: days })), ttlMs: 6 * 3600000 }));
 }

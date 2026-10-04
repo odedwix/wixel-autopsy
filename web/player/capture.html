@@ -9,13 +9,13 @@
   <!-- Driven by server/exact.js in headless Chrome: mounts the product player for one run and
        exposes a frame-by-frame handle (AutopsyCapture, built by npm run build:player). -->
   <div id="root"></div>
-  <script src="/player/capture-bootstrap.js"></script>
+  <script src="capture-bootstrap.js"></script>
   <script>
 
     // The product's platform font CSS (Wix, Madefor, Google, Helvetica @font-face rules), which its
     // own hosts load before any text renders — without it text falls back to system fonts.
     function loadPlatformFonts() {
-      return fetch('/player/fonts.json').then(function (r) { return r.json(); }).catch(function () { return []; }).then(function (urls) {
+      return fetch('fonts.json').then(function (r) { return r.json(); }).catch(function () { return []; }).then(function (urls) {
         return Promise.all(urls.map(function (href) {
           return new Promise(function (resolve) {
             var l = document.createElement('link');
@@ -32,7 +32,7 @@
       try {
         await loadPlatformFonts();
         if (!window.AutopsyCapture) throw new Error('capture bundle not built — run npm run build:player');
-        var input = await fetch('/api/player-input/' + q.get('run') + (q.get('root') ? '?root=' + q.get('root') : '')).then(function (r) {
+        var input = await fetch('../api/player-input/' + q.get('run') + (q.get('root') ? '?root=' + q.get('root') : '')).then(function (r) {
           if (!r.ok) throw new Error('player input ' + r.status);
           return r.json();
         });

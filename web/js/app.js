@@ -110,7 +110,7 @@ onChange((patch) => {
 async function loadSkills() {
   renderSkillButton($('#skillBtn'));
   try {
-    setSkills(await getJson('/api/skills?days=30'));
+    setSkills(await getJson('api/skills?days=30'));
     renderSkillButton($('#skillBtn'));
   } catch {}
 }
@@ -150,7 +150,7 @@ async function loadRuns() {
   }
   if (state.mode === 'user') return loadUserRuns(token, signal);
   try {
-    const index = await getJson(`/api/runs-index?skill=${encodeURIComponent(state.skill)}&days=${requestDays()}`, { signal });
+    const index = await getJson(`api/runs-index?skill=${encodeURIComponent(state.skill)}&days=${requestDays()}`, { signal });
     if (token !== loadToken) return;
     lastSeen = index.lastSeen;
     loading.total = index.dayList.length;
@@ -162,7 +162,7 @@ async function loadRuns() {
       while (queue.length) {
         const { day, sessions } = queue.shift();
         try {
-          const runs = await getJson(`/api/runs-day?skill=${encodeURIComponent(state.skill)}&day=${day}&n=${sessions}&fam=${encodeURIComponent(famParam())}`, { signal });
+          const runs = await getJson(`api/runs-day?skill=${encodeURIComponent(state.skill)}&day=${day}&n=${sessions}&fam=${encodeURIComponent(famParam())}`, { signal });
           if (token !== loadToken) return;
           for (const r of runs) if (!seen.has(r.id) && seen.add(r.id)) allRuns.push(r);
           // The run opened from a link shows its full row as soon as its day lands.
@@ -216,7 +216,7 @@ function autoReport() {
 // User mode: one request; the server lists the user's sessions and loads their days.
 async function loadUserRuns(token, signal) {
   try {
-    const res = await getJson(`/api/user-runs?user=${encodeURIComponent(state.user.id)}&days=${requestDays()}`, { signal });
+    const res = await getJson(`api/user-runs?user=${encodeURIComponent(state.user.id)}&days=${requestDays()}`, { signal });
     if (token !== loadToken) return;
     allRuns = res.runs;
     missing = res.missingDays || [];
@@ -492,7 +492,7 @@ function renderNet(net) {
   el.className = `net-banner ${net.status}`;
   const btn = h('button', { class: 'btn', onclick: async () => {
     btn.textContent = 'Checking…';
-    renderNet(await getJson('/api/connectivity?fresh=1').catch(() => net));
+    renderNet(await getJson('api/connectivity?fresh=1').catch(() => net));
   } }, 'Check again');
   el.replaceChildren(icon('alert', 'sm'), h('span', {}, h('b', {}, net.status === 'degraded' ? 'Admin API errors' : 'Not connected to Wix'), ' — ', net.message || ''), h('span', { class: 'when' }, `checked ${ago(net.checkedAt)}`), btn);
 }
@@ -501,7 +501,7 @@ function renderNet(net) {
 // Every upstream call goes through the proxy's limiters; show what they did recently.
 async function pollLoad() {
   try {
-    const l = await getJson('/api/load');
+    const l = await getJson('api/load');
     lastLoad = l;
     renderNet(l.net);
     const lane = (name, label) => {

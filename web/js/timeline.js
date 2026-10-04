@@ -218,7 +218,7 @@ function stepDetail(s, t0) {
 async function loadTrace(s, el) {
   el.replaceChildren(h('div', { class: 'loading-line' }, 'Reading the graph run from Temporal…'));
   try {
-    const tr = s.workflowId ? await getJson(`/api/trace/${s.workflowId}`) : await getJson(`/api/trace-job/${s.jobId}?at=${s.startedAt}`);
+    const tr = s.workflowId ? await getJson(`api/trace/${s.workflowId}`) : await getJson(`api/trace-job/${s.jobId}?at=${s.startedAt}`);
     traces.set(s.id, tr);
     showTrace(tr, el);
   } catch (err) {

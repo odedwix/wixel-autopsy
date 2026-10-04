@@ -12,7 +12,7 @@ const their = (skill) => (skill.endsWith('s') ? `${skill}'` : `${skill}'s`);
 
 const families = new Map(); // skill → /api/family result
 export async function familyInfo(skill) {
-  if (!families.has(skill)) families.set(skill, await getJson(`/api/family?skill=${encodeURIComponent(skill)}`));
+  if (!families.has(skill)) families.set(skill, await getJson(`api/family?skill=${encodeURIComponent(skill)}`));
   return families.get(skill);
 }
 

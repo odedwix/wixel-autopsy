@@ -249,7 +249,7 @@ function fillThumb(c, r) {
   const m = video ? mediaOf(r.id) : null;
   const keepVideo = hover.card === c ? hover.video : null;
   thumb.replaceChildren();
-  const poster = isReady(m) ? `/media/${r.id}/poster.jpg` : p?.thumb || r.thumbnail;
+  const poster = isReady(m) ? `media/${r.id}/poster.jpg` : p?.thumb || r.thumbnail;
   if (poster) thumb.append(h('img', { class: 'poster', src: poster, loading: 'lazy', decoding: 'async', alt: '' }));
   else if (failedRun(r)) {
     thumb.append(h('div', { class: 'empty err' }, icon('alert'), h('b', {}, 'Tried, no output'), r.firstError ? h('div', { class: 'msg' }, r.firstError) : null));

@@ -11,6 +11,19 @@ function fileFor(ns, key) {
   return path.join(config.cacheDir, ns, `${key.replace(/[^a-zA-Z0-9._-]/g, '_')}.json`);
 }
 
+// A hosted copy keeps some namespaces in its shared store instead (its instances share no disk):
+// the slow lookups, like which accounts are employees, families, and the email index.
+let shared = null;
+export function useSharedCache(store, namespaces) {
+  shared = { store, namespaces: new Set(namespaces) };
+}
+const sharedKey = (ns, key) => (shared?.namespaces.has(ns) ? `cache/${ns}/${key.replace(/[^a-zA-Z0-9._-]/g, '_')}.json` : null);
+async function readRaw(ns, key) {
+  const sk = sharedKey(ns, key);
+  if (sk) return (await shared.store.get(sk).catch(() => null))?.value;
+  return JSON.parse(await fs.readFile(fileFor(ns, key), 'utf8'));
+}
+
 // A hit bumps the file's mtime so the size-cap sweep (cache-gc.js) treats it as recently used.
 // Freshness uses savedAt inside the file, not mtime, so this doesn't extend any TTL.
 const touched = new Map();
@@ -25,11 +38,10 @@ function touch(f) {
 // while younger than both its own ttl and the caller's maxAgeMs.
 export async function readCache(ns, key, maxAgeMs) {
   try {
-    const f = fileFor(ns, key);
-    const raw = JSON.parse(await fs.readFile(f, 'utf8'));
+    const raw = await readRaw(ns, key);
     const age = Date.now() - raw.savedAt;
     if (raw.ttlMs === null || (age < raw.ttlMs && age < maxAgeMs)) {
-      touch(f);
+      if (!sharedKey(ns, key)) touch(fileFor(ns, key));
       return raw.value;
     }
   } catch {}
@@ -37,10 +49,13 @@ export async function readCache(ns, key, maxAgeMs) {
 }
 
 export async function writeCache(ns, key, value, ttlMs) {
+  // JSON has no Infinity; store null to mean "forever".
+  const raw = { savedAt: Date.now(), ttlMs: ttlMs === Infinity ? null : ttlMs, value };
+  const sk = sharedKey(ns, key);
+  if (sk) return shared.store.put(sk, raw);
   const f = fileFor(ns, key);
   await fs.mkdir(path.dirname(f), { recursive: true });
-  // JSON has no Infinity; store null to mean "forever".
-  await fs.writeFile(f, JSON.stringify({ savedAt: Date.now(), ttlMs: ttlMs === Infinity ? null : ttlMs, value }));
+  await fs.writeFile(f, JSON.stringify(raw));
 }
 
 // Read-through cache that also dedupes concurrent requests for the same key.
@@ -66,7 +81,7 @@ export async function cached(ns, key, maxAgeMs, produce, { staleWhileRevalidate 
 
 async function readStale(ns, key) {
   try {
-    return JSON.parse(await fs.readFile(fileFor(ns, key), 'utf8')).value;
+    return (await readRaw(ns, key)).value;
   } catch {
     return undefined;
   }

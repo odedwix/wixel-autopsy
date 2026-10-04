@@ -87,7 +87,7 @@ async function readMemo(file) {
   memo.set(file, { at: Date.now(), version: got.version, size: got.size, value: got.value });
   memoBytes += got.size;
   while (memoBytes > MEMO_BYTES && memo.size > 1) forget(memo.keys().next().value);
-  return value;
+  return got.value;
 }
 
 export async function manifest() {

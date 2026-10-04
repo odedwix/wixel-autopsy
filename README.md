@@ -71,6 +71,7 @@ npm run shared                  # the reader: AUTOPSY_SNAPSHOT=1, serves .data/ 
 - **What it can't do:** recount a skill with other helpers or whole sessions (the Counting editor is read-only), show today, or run the local-only extras (Claude drafts). In user mode, a session that ran several skills shows once, under its first skill. Sessions skipped by a busy day's sample are missing.
 - **Settings:** `DATA_DIR` (default `.data/`, never committed: it holds end users' prompts), `HOST` (default `127.0.0.1`), `PORT`, `CACHE_DIR`, `SNAPSHOT_MEMORY_MB` (parsed files kept in memory, default 400). Fleet reads `FLEET_DIR` read-only. For a hosted copy, point it at the producer's folder too.
 - **Hosting.** Any copy with `HOST` other than 127.0.0.1 must sit behind the back office's staff sign-in. It shows what the Wixel admin page shows, including end users' emails and prompts.
+- **In the cloud.** [`serverless/`](serverless/README.md) runs this copy as a Wix Serverless app: back-office sign-in, the build in cloudStore, and the nightly build as a chain of Time Capsule tasks. It runs on the local dev server today; deploying needs a `wix-private` Falcon monorepo and Dev Portal setup.
 
 ## Any skill, any output
 
@@ -254,7 +255,8 @@ Both keep the dark UI's colours on A4 landscape, with type about 25% larger than
 | `server/server.js` | HTTP server: API routes, static files, media with Range support, single-instance takeover |
 | `server/queries.js` | All Trino SQL: skills, runs index, per-day runs / events / steps (hour windows + sampling, turn scoping), skill co-load pairs |
 | `server/runs.js` | Day loading, caching, sampling, per-run outputs and signals, employee detection, skill families, user runs |
-| `server/snapshot.js` · `scripts/build-data.js` · `scripts/data-nightly.sh` | The daily build: its file layout and reader (`AUTOPSY_SNAPSHOT=1`), the producer (`npm run build:data`), and its nightly schedule |
+| `server/snapshot.js` · `server/build.js` · `server/store.js` · `scripts/build-data.js` · `scripts/data-nightly.sh` | The daily build: its layout and reader (`AUTOPSY_SNAPSHOT=1`), its steps (shared with the cloud tasks), its storage (a folder or a key-value store), the producer (`npm run build:data`), and its nightly schedule |
+| `server/app.js` · `serverless/` | Every route the server answers (shared by `server/server.js` and the cloud copy); the Wix Serverless app |
 | `server/pdf.js` · `server/exact.js` · `server/connectivity.js` | Headless Chrome sessions (PDF reports); Exact composition → mp4; the Wix network / VPN check |
 | `web/js/report.js` · `web/player/capture.html` · `scripts/player/capture-entry.tsx` | Printable reports; the frame-by-frame player page and its bundle entry (built by `build:player`) |
 | `server/users.js` · `server/asset-download.js` | Email → user index for user mode; downloads for non-video outputs (export, original image, or a PDF of the page previews) |

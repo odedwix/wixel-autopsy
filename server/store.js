@@ -55,10 +55,15 @@ export function folderStore(dir) {
   };
 }
 
-// `kv`: get / set / batchGet / batchSet / batchDelete / getAndUpdate over items { key, … }.
+// `kv`: get / set / batchGet / batchSet / batchDelete / getAndUpdate over items { key, … } — or a
+// function returning one (Wix Serverless allows cloudStore reads only from the current request's
+// context, so a hosted copy passes the request's store each time).
 // Item keys: `h:<key>` head { version, size, chunks }, `c:<key>:<version>:<i>` chunk { data } (base64
 // of the gzipped JSON), `d:<prefix>` directory { keys } (the store has no listing of its own).
-export function kvStore(kv, { chunkBytes = 256 * 1024 } = {}) {
+export function kvStore(kvOrFn, { chunkBytes = 256 * 1024 } = {}) {
+  const at = typeof kvOrFn === 'function' ? kvOrFn : () => kvOrFn;
+  // Every call below goes through `kv`, resolved when it's used.
+  const kv = new Proxy({}, { get: (_t, name) => (...args) => at()[name](...args) });
   const head = (key) => kv.get(`h:${key}`);
   const chunkKeys = (key, h) => Array.from({ length: h.chunks }, (_, i) => `c:${key}:${h.version}:${i}`);
   const dirOf = (key) => key.slice(0, key.lastIndexOf('/'));

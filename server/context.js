@@ -9,4 +9,9 @@ export const currentSignal = () => requestContext.getStore()?.signal;
 export const currentPriority = () => requestContext.getStore()?.priority || 'interactive';
 // The daily build wants current data, never a stale cached copy (see cache.js `cached`).
 export const wantFresh = () => Boolean(requestContext.getStore()?.fresh);
+// Inside the daily build's own work (build.js produce()): queries go to Trino even in a copy that
+// otherwise only reads the build.
+export const producing = () => Boolean(requestContext.getStore()?.produce);
+// Read from the daily build instead of querying (AUTOPSY_SNAPSHOT, outside the build's own work).
+export const fromSnapshot = (config) => config.snapshot && !producing();
 export const inBackground = (fn) => requestContext.run({ signal: undefined, priority: 'background' }, fn);

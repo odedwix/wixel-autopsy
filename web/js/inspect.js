@@ -19,7 +19,7 @@ const detailCache = new Map();
 export function prefetchDetail(id) {
   const q = state.mode === 'user' ? '' : `?skill=${encodeURIComponent(state.skill)}&fam=${encodeURIComponent(famParam())}`;
   const key = `${id}${q}`;
-  if (!detailCache.has(key)) detailCache.set(key, getJson(`/api/session/${id}${q}`).catch((e) => ({ error: e.message })));
+  if (!detailCache.has(key)) detailCache.set(key, getJson(`api/session/${id}${q}`).catch((e) => ({ error: e.message })));
   return detailCache.get(key);
 }
 
@@ -114,7 +114,7 @@ export function openInspect(run) {
     // Opened from a link and not in the list (another window, sampled out): the proxy's row if it
     // has one, else the run as its detail describes it — so Download, Share and reports work.
     if (current.run._stub && !d.error) {
-      const row = await getJson(`/api/run/${run.id}`).catch(() => null);
+      const row = await getJson(`api/run/${run.id}`).catch(() => null);
       if (current?.run.id !== run.id) return;
       if (current.run._stub) current.run = row || { ...reportRun(current.run, d), _stub: false, _detailOnly: true };
       mountPlayer(current.run);
@@ -199,7 +199,7 @@ async function maybeAutoReport() {
   // The list row (downloads, publishes, user type, cost) straight from the proxy if it has it;
   // otherwise the report is built from the run's detail.
   if (current.run._stub) {
-    const row = await getJson(`/api/run/${current.run.id}`).catch(() => null);
+    const row = await getJson(`api/run/${current.run.id}`).catch(() => null);
     if (row && current) current.run = row;
   }
   buildRunReport(current.run);
@@ -276,7 +276,7 @@ async function buildRunReport(r0) {
       { href: ADMIN + r.id, label: 'Wixel admin ↗' },
       out ? { href: out.url, label: `${out.label} ↗` } : null,
       r.publishedUrl && r.publishedUrl !== out?.url ? { href: r.publishedUrl, label: 'Published page ↗' } : null,
-      { href: `${location.origin}/${location.hash}`, label: 'Open in Autopsy (local app)' },
+      { href: `${new URL('.', location.href).href}${location.hash}`, label: 'Open in Autopsy (local app)' },
     ],
     build: (body) => {
       const errs = (d.errors || []).length;
@@ -345,18 +345,18 @@ function stepsTable(d, t0, temporal) {
 // player, frame by frame (server/exact.js), then cached. Status per run, refreshed while rendering.
 const exactState = new Map();
 async function refreshExact(run) {
-  const s = await getJson(`/api/exact/${run.id}`).catch(() => null);
+  const s = await getJson(`api/exact/${run.id}`).catch(() => null);
   if (s) exactState.set(run.id, s);
   if (current?.run.id === run.id) panel.querySelector('.insp-head')?.replaceWith(header(current.run, current.detail || null));
   return s;
 }
 async function downloadExact(run) {
   let s = exactState.get(run.id);
-  if (s?.state !== 'ready') s = await getJson(`/api/exact/${run.id}?start=1`).catch((e) => ({ state: 'failed', error: e.message }));
+  if (s?.state !== 'ready') s = await getJson(`api/exact/${run.id}?start=1`).catch((e) => ({ state: 'failed', error: e.message }));
   while (['queued', 'loading', 'rendering', 'encoding'].includes(s?.state)) {
     toast(s.state === 'rendering' ? `Rendering the exact composition… ${s.done} / ${s.total} frames` : s.state === 'encoding' ? 'Encoding the mp4…' : 'Loading the product player…', { ms: 5000 });
     await new Promise((r) => setTimeout(r, 1500));
-    s = await getJson(`/api/exact/${run.id}`).catch(() => s);
+    s = await getJson(`api/exact/${run.id}`).catch(() => s);
   }
   exactState.set(run.id, s);
   if (s?.state !== 'ready') return toast(`Couldn't render the exact composition: ${s?.error || 'unknown error'}`, { ms: 8000 });
@@ -699,7 +699,7 @@ class OutputViewer {
 // The product's own Remotion player in an iframe: exact text, captions, music.
 class LivePlayer {
   constructor(mount, run) {
-    this.frame = h('iframe', { src: '/player/frame.html', allow: 'autoplay; fullscreen' });
+    this.frame = h('iframe', { src: 'player/frame.html', allow: 'autoplay; fullscreen' });
     this.status = h('span', {}, 'Loading the product player…');
     const back = h('button', { class: 'mode on', title: 'Back to the review copy (E)', onclick: () => toggleLive() }, icon('sparkle', 'sm'), 'Exact');
     mount.replaceChildren(
@@ -708,7 +708,7 @@ class LivePlayer {
       h('div', { class: 'src-note' }, h('span', { class: 'dot', style: { background: 'var(--ok)' } }), this.status),
     );
     const root = run.videoAssetId || (run.outputType === 'video' ? run.adAssetId : null);
-    this.input = getJson(`/api/player-input/${run.id}${root ? `?root=${root}` : ''}`);
+    this.input = getJson(`api/player-input/${run.id}${root ? `?root=${root}` : ''}`);
     this.onMsg = async (e) => {
       if (e.source !== this.frame.contentWindow) return;
       const t = e.data?.type;

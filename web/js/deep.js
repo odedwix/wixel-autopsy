@@ -189,7 +189,7 @@ export function renderRaw(root, d) {
   root.replaceChildren(
     h('div', { class: 'links', style: { marginBottom: '10px' } },
       h('button', { class: 'btn', onclick: () => copy(JSON.stringify(d, null, 2)) }, icon('copy'), 'Copy record'),
-      h('a', { class: 'btn', href: `/api/session/${d.id}?raw=1`, target: '_blank', rel: 'noopener' }, icon('external'), 'Raw admin bundle')),
+      h('a', { class: 'btn', href: `api/session/${d.id}?raw=1`, target: '_blank', rel: 'noopener' }, icon('external'), 'Raw admin bundle')),
     ...keys.map((k) => h('details', { class: 'dz-raw' }, h('summary', {}, k, h('span', { class: 'desc' }, ` ${Array.isArray(d[k]) ? `[${d[k].length}]` : typeof d[k]}`)),
       h('pre', { class: 'tl-pre' }, JSON.stringify(d[k], null, 2).slice(0, 20000)))));
 }

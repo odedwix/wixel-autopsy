@@ -8,3 +8,6 @@ dist/
 .fleet/**/*.tmp
 # The daily build (npm run build:data): end users' prompts and ids — never committed.
 .data/
+# Yarn state for the serverless package (its lockfile is committed)
+serverless/.yarn/
+serverless/target/
