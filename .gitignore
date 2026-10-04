@@ -4,3 +4,5 @@ node_modules/
 .env.*
 !.env.example
 dist/
+# Fleet knowledge is committed (day rollups, decisions, saved suggestions); only temp files aren't.
+.fleet/**/*.tmp
