@@ -16,14 +16,13 @@
 // or a failure only queries what's missing. The manifest is updated after every skill: a stopped
 // run still publishes what it finished.
 // Fleet's day files are built at the end (FLEET_DIR, default .fleet/) unless --no-fleet.
-import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { config } from '../server/config.js';
 import { requestContext } from '../server/context.js';
 import { backoffRemaining, setConcurrency } from '../server/limits.js';
 import { listSkills, familyFor, runsIndex, runsForDay, sampleFor, skillPairs } from '../server/runs.js';
-import { DATA_VERSION, famId, files, readJson, writeJsonAtomic, utcDay } from '../server/snapshot.js';
+import { DATA_VERSION, famId, files, readJson, writeJsonAtomic, listKeys, deleteKey, utcDay, storeKind } from '../server/snapshot.js';
 
 if (config.snapshot) {
   console.error('build:data queries Trino; unset AUTOPSY_SNAPSHOT for the producer');
@@ -107,9 +106,9 @@ async function buildSkill(skill) {
   const lastSeen = dayList.length ? null : index.lastSeen;
   await writeJsonAtomic(files.skillIndex(skill), { skill, family: fam, dayList, lastSeen, missingDays, from, through, builtAt: Date.now() });
   // Days that fell out of the window.
-  for (const name of await fs.readdir(files.skillDir(skill)).catch(() => [])) {
-    const m = name.match(/^(\d{4}-\d{2}-\d{2})\.json$/);
-    if (m && m[1] < from) await fs.rm(path.join(files.skillDir(skill), name), { force: true });
+  for (const key of await listKeys(files.skillDir(skill)).catch(() => [])) {
+    const m = key.match(/\/(\d{4}-\d{2}-\d{2})\.json$/);
+    if (m && m[1] < from) await deleteKey(key);
   }
   const runs = dayList.reduce((a, d) => a + d.runs, 0);
   console.log(`  ${skill}: ${dayList.length} day(s), ${runs} runs — ${built} built in ${secs(ts)}${missingDays.length ? `; FAILED ${missingDays.map((d) => d.day).join(', ')} (${missingDays[0].error})` : ''}`);
@@ -129,14 +128,14 @@ async function buildSessions(skills) {
     }
     await writeJsonAtomic(files.sessions(day), sessions);
   }
-  for (const name of await fs.readdir(path.join(config.dataDir, 'sessions')).catch(() => [])) {
-    const m = name.match(/^(\d{4}-\d{2}-\d{2})\.json$/);
-    if (m && m[1] < from) await fs.rm(path.join(config.dataDir, 'sessions', name), { force: true });
+  for (const key of await listKeys(files.sessionsDir()).catch(() => [])) {
+    const m = key.match(/\/(\d{4}-\d{2}-\d{2})\.json$/);
+    if (m && m[1] < from) await deleteKey(key);
   }
 }
 
 async function main() {
-  console.log(`build:data: ${from} → ${through} (${days} day(s)) into ${config.dataDir}`);
+  console.log(`build:data: ${from} → ${through} (${days} day(s)) into the ${storeKind()}`);
   const all = await listSkills({ days: 30 });
   const skills = all.filter((s) => (only.length ? only.includes(s.skill) : Number(s.sessions) >= minSessions));
   console.log(`  ${skills.length} skill(s)${only.length ? '' : ` with ≥${minSessions} sessions in 30 days`}`);

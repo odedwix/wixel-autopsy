@@ -8,14 +8,20 @@
 //   DATA_DIR/sessions/<day>.json        { sessionId: [skill, …] } (user mode)
 //   DATA_DIR/meta/skill-pairs.json      skills loaded in the same turn (Fleet's co-loads)
 //
-// Days end at `through` (the last complete UTC day). Files are written atomically (temp + rename),
-// and the manifest last, so a reader never sees half a build.
+// Days end at `through` (the last complete UTC day). Values are written atomically and the manifest
+// last, so a reader never sees half a build. They live in a store (store.js): DATA_DIR by default, or
+// a key-value store a hosted copy sets with useStore().
 
-import fs from 'node:fs/promises';
-import path from 'node:path';
 import crypto from 'node:crypto';
 import { config } from './config.js';
 import { RUNS_QUERY_VERSION, STEPS_QUERY_VERSION } from './queries.js';
+import { folderStore } from './store.js';
+
+let store = folderStore(config.dataDir);
+export const useStore = (s) => {
+  store = s;
+};
+export const storeKind = () => store.kind;
 
 const DAY = 86400000;
 export const utcDay = (t) => new Date(t).toISOString().slice(0, 10);
@@ -23,39 +29,31 @@ export const utcDay = (t) => new Date(t).toISOString().slice(0, 10);
 export const DATA_VERSION = `r${RUNS_QUERY_VERSION}s${STEPS_QUERY_VERSION}`;
 export const famId = (family) => (Array.isArray(family) ? crypto.createHash('sha1').update([...family].sort().join(',')).digest('hex').slice(0, 10) : 'all');
 
+// Store keys.
 const safe = (s) => String(s).replace(/[^\w.-]/g, '_');
 export const files = {
-  manifest: () => path.join(config.dataDir, 'manifest.json'),
-  skillIndex: (skill) => path.join(config.dataDir, 'skills', safe(skill), 'index.json'),
-  skillDay: (skill, day) => path.join(config.dataDir, 'skills', safe(skill), `${day}.json`),
-  skillDir: (skill) => path.join(config.dataDir, 'skills', safe(skill)),
-  sessions: (day) => path.join(config.dataDir, 'sessions', `${day}.json`),
-  meta: (name) => path.join(config.dataDir, 'meta', `${name}.json`),
+  manifest: () => 'manifest.json',
+  skillIndex: (skill) => `skills/${safe(skill)}/index.json`,
+  skillDay: (skill, day) => `skills/${safe(skill)}/${day}.json`,
+  skillDir: (skill) => `skills/${safe(skill)}`,
+  sessions: (day) => `sessions/${day}.json`,
+  sessionsDir: () => 'sessions',
+  meta: (name) => `meta/${name}.json`,
 };
 
-export async function writeJsonAtomic(file, value) {
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  await fs.writeFile(tmp, JSON.stringify(value));
-  await fs.rename(tmp, file);
-}
-
-export async function readJson(file) {
-  try {
-    return JSON.parse(await fs.readFile(file, 'utf8'));
-  } catch {
-    return null;
-  }
-}
+export const writeJsonAtomic = (key, value) => store.put(key, value);
+export const readJson = async (key) => (await store.get(key).catch(() => null))?.value ?? null;
+export const listKeys = (prefix) => store.list(prefix);
+export const deleteKey = (key) => store.del(key);
 
 const notBuilt = (what) => Object.assign(new Error(`${what} isn't in the daily build`), { status: 404 });
 
 // ---- reading (AUTOPSY_SNAPSHOT=1) ----
-// Parsed files are kept while unchanged on disk: a new build replaces them, and the next read
-// (at most CHECK_MS later) picks the new one up. Capped by file size (a busy skill's day is ~5MB),
+// Parsed values are kept while unchanged in the store: a new build replaces them, and the next read
+// (at most CHECK_MS later) picks the new one up. Capped by size (a busy skill's day is ~5MB),
 // least recently used out first.
 const CHECK_MS = 30000;
-const memo = new Map(); // file → { at, mtimeMs, size, value }
+const memo = new Map(); // key → { at, version, size, value }
 const MEMO_BYTES = Number(process.env.SNAPSHOT_MEMORY_MB || 400) * 1e6;
 let memoBytes = 0;
 
@@ -74,26 +72,27 @@ async function readMemo(file) {
     memo.set(file, hit);
   }
   if (hit && Date.now() - hit.at < CHECK_MS) return hit.value;
-  const stat = await fs.stat(file).catch(() => null);
+  const stat = await store.stat(file).catch(() => null);
   if (!stat) {
     forget(file);
     return null;
   }
-  if (hit && hit.mtimeMs === stat.mtimeMs) {
+  if (hit && hit.version === stat.version) {
     hit.at = Date.now();
     return hit.value;
   }
-  const value = await readJson(file);
+  const got = await store.get(file).catch(() => null);
   forget(file);
-  memo.set(file, { at: Date.now(), mtimeMs: stat.mtimeMs, size: stat.size, value });
-  memoBytes += stat.size;
+  if (!got) return null;
+  memo.set(file, { at: Date.now(), version: got.version, size: got.size, value: got.value });
+  memoBytes += got.size;
   while (memoBytes > MEMO_BYTES && memo.size > 1) forget(memo.keys().next().value);
   return value;
 }
 
 export async function manifest() {
   const m = await readMemo(files.manifest());
-  if (!m) throw Object.assign(new Error(`No daily build yet in ${config.dataDir} — run npm run build:data`), { status: 503 });
+  if (!m) throw Object.assign(new Error(`No daily build yet in the ${store.kind} — run npm run build:data`), { status: 503 });
   return m;
 }
 
