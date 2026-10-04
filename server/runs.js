@@ -361,7 +361,7 @@ export const getIndexedRun = (id) => runIndex.get(id) || null;
 // last ran when the window is empty.
 export function runsIndex({ skill, days = 7 }) {
   const n = Math.max(1, Math.min(90, Number(days) || 7));
-  return cached('runs-index', `${skill}__${n}__${utcDay(Date.now())}`, 3 * 60000, async () => {
+  return cached('runs-index', `v2__${skill}__${n}__${utcDay(Date.now())}`, 3 * 60000, async () => {
     const rows = await retryOnce(() => sql(runsIndexQuery({ skill, windowDays: n })));
     const dayList = rows.map((r) => ({ day: r.day, sessions: Number(r.sessions) }));
     let lastSeen = null;
@@ -449,9 +449,9 @@ export async function listRuns({ skill, family, days = 7 }) {
 // family. Co-loading can't tell which of two mutual partners is in charge (wixel-ads and
 // video-creation each list the other), so families are shown and editable in the UI.
 // Pinned for 30 days per skill so cached days (keyed by the family) stay valid.
-const FAMILY_VERSION = 7;
+const FAMILY_VERSION = 8;
 function skillPairs() {
-  return cached('meta', 'skill-pairs', DAY, async () => ({ value: await retryOnce(() => sql(skillPairsQuery(), { maxRows: 5000 })), ttlMs: DAY }));
+  return cached('meta', `skill-pairs-v${FAMILY_VERSION}`, DAY, async () => ({ value: await retryOnce(() => sql(skillPairsQuery(), { maxRows: 5000 })), ttlMs: DAY }));
 }
 
 export function familyFor(skill) {
@@ -539,5 +539,5 @@ export async function listUserRuns({ userId, days = 30 }) {
 }
 
 export function listSkills({ days = 30 } = {}) {
-  return cached('meta', `skills_${days}`, 6 * 3600000, async () => ({ value: await sql(skillsQuery({ windowDays: days })), ttlMs: 6 * 3600000 }));
+  return cached('meta', `skills-v2_${days}`, 6 * 3600000, async () => ({ value: await sql(skillsQuery({ windowDays: days })), ttlMs: 6 * 3600000 }));
 }
