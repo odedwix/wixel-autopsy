@@ -674,7 +674,7 @@ class OutputViewer {
       o.publishedUrl ? h('a', { href: o.publishedUrl, target: '_blank', rel: 'noopener' }, 'Published ↗') : null,
       o.id ? h('button', { class: 'link-btn', title: o.type === 'video' ? 'Download this video' : pages.length ? `PDF of its ${pages.length} pages (or the user's own export when reachable)` : 'The original image (or the design as the user saw it)', onclick: () => downloadOutput(this.run, o, fileSkill()) }, icon('download', 'sm'), pages.length ? 'Download PDF' : 'Download') : null,
       src ? h('a', { href: src, target: '_blank', rel: 'noopener' }, 'Open image ↗') : null);
-    this.mount.replaceChildren(stage, strip, pageStrip, info);
+    this.mount.replaceChildren(...[stage, strip, pageStrip, info].filter(Boolean));
   }
 
   currentOutput() {

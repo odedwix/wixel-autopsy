@@ -53,6 +53,24 @@ npm run proxy        # same, without opening the browser
 npm run pull         # warm the cache with a 50-run sample and print a coverage report
 ```
 
+## Shared copy: built once a day, read by everyone
+
+Run locally, every copy of Autopsy queries Trino itself. Ten people means ten times the load. The shared copy instead works from a **daily build**: one producer queries Trino once a day, and the server only reads the result, so any number of people can use it at once.
+
+```bash
+npm run build:data              # the producer: every skill, the last 30 complete UTC days → .data/ (then Fleet's days)
+npm run build:data:nightly      # run it every morning at 05:30 (macOS LaunchAgent; replaces fleet:nightly)
+npm run shared                  # the reader: AUTOPSY_SNAPSHOT=1, serves .data/ and never queries Trino
+```
+
+- **What's in the build.** Every skill with ≥10 sessions in 30 days (`--min-sessions`), going back `--days` (default 30, max 90). Each skill-day file holds the finished grid rows, counted with the skill's computed helpers. Busy days are sampled exactly as they are locally.
+- **Freshness.** Data runs up to yesterday (UTC). Time windows end at the build's last day: **1d** is that day, then 3d / 7d / … up to what was built. The status bar says "daily build through Oct 3".
+- **Cost.** About 20 s of queries per skill-day, two days at a time. A day is final 3 days after it ends and is never queried again, so a nightly run builds yesterday and refreshes the two days before it. The first build of 30 days takes a few hours; run it off-hours.
+- **What the reader still fetches on demand**, once for everyone (shared cache): a run's detail (admin API), graph runs (Temporal), review videos (ffmpeg), and a user's session list for user mode (admin API). None of these touch Trino.
+- **What it can't do:** recount a skill with other helpers or whole sessions (the Counting editor is read-only), show today, or run the local-only extras (Claude drafts). In user mode, a session that ran several skills shows once, under its first skill. Sessions skipped by a busy day's sample are missing.
+- **Settings:** `DATA_DIR` (default `.data/`, never committed: it holds end users' prompts), `HOST` (default `127.0.0.1`), `PORT`, `CACHE_DIR`, `SNAPSHOT_MEMORY_MB` (parsed files kept in memory, default 400). Fleet reads `FLEET_DIR` read-only. For a hosted copy, point it at the producer's folder too.
+- **Hosting.** Any copy with `HOST` other than 127.0.0.1 must sit behind the back office's staff sign-in. It shows what the Wixel admin page shows, including end users' emails and prompts.
+
 ## Any skill, any output
 
 Not every skill makes video. A run's **outputs** are the top-level assets its counted turns wrote (see below), taken from the `TURN_UPDATED_ASSETS` session events (asset id, type, name, snapshot) and joined to `v1_asset_crud` for thumbnails and publishes and to `users_193` for downloads.
@@ -235,6 +253,7 @@ Both keep the dark UI's colours on A4 landscape, with type about 25% larger than
 | `server/server.js` | HTTP server: API routes, static files, media with Range support, single-instance takeover |
 | `server/queries.js` | All Trino SQL: skills, runs index, per-day runs / events / steps (hour windows + sampling, turn scoping), skill co-load pairs |
 | `server/runs.js` | Day loading, caching, sampling, per-run outputs and signals, employee detection, skill families, user runs |
+| `server/snapshot.js` · `scripts/build-data.js` · `scripts/data-nightly.sh` | The daily build: its file layout and reader (`AUTOPSY_SNAPSHOT=1`), the producer (`npm run build:data`), and its nightly schedule |
 | `server/pdf.js` · `server/exact.js` · `server/connectivity.js` | Headless Chrome sessions (PDF reports); Exact composition → mp4; the Wix network / VPN check |
 | `web/js/report.js` · `web/player/capture.html` · `scripts/player/capture-entry.tsx` | Printable reports; the frame-by-frame player page and its bundle entry (built by `build:player`) |
 | `server/users.js` · `server/asset-download.js` | Email → user index for user mode; downloads for non-video outputs (export, original image, or a PDF of the page previews) |
@@ -270,6 +289,8 @@ Every upstream call goes through `server/limits.js`: a concurrency cap and minim
 
 ## API
 
+With `AUTOPSY_SNAPSHOT=1`, every route marked Trino below reads the daily build instead (see [Shared copy](#shared-copy-built-once-a-day-read-by-everyone)).
+
 | Route | What | Source |
 |---|---|---|
 | `GET /api/skills?days=30` | skills with ≥5 sessions | Trino |
@@ -301,7 +322,7 @@ Every upstream call goes through `server/limits.js`: a concurrency cap and minim
 | `POST /api/fleet/skillfix/:issue/claude?skill=` · `GET` | ask the local `claude` CLI for that change (stored in FLEET_DIR/suggestions) | local |
 | `GET/POST /api/fleet/state` | issue statuses, dismissed / accepted ideas, pinned skills (shared via FLEET_DIR) | local |
 | `POST /api/fleet/draft/:issue` · `GET` | draft the fix with the local `claude` CLI (read-only, in the codex checkout) | local |
-| `GET /api/health` | what this install can do (Temporal key, ffmpeg, player), plus cache use | local |
+| `GET /api/health` | what this install can do (Temporal key, ffmpeg, player), plus cache use; `snapshot` = the daily build's last day when this copy reads one | local |
 | `GET /api/load` | upstream calls in the last 5 minutes, the media queue, and cache use | local |
 
 ## Where the data comes from, and the limits

@@ -7,4 +7,6 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 export const requestContext = new AsyncLocalStorage();
 export const currentSignal = () => requestContext.getStore()?.signal;
 export const currentPriority = () => requestContext.getStore()?.priority || 'interactive';
+// The daily build wants current data, never a stale cached copy (see cache.js `cached`).
+export const wantFresh = () => Boolean(requestContext.getStore()?.fresh);
 export const inBackground = (fn) => requestContext.run({ signal: undefined, priority: 'background' }, fn);

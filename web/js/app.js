@@ -9,7 +9,7 @@ import { setSkills, renderSkillButton, openSkillPicker, rememberSkill } from './
 import { renderScopeButton, openFamilyEditor } from './family.js';
 import { toast, popover, closePopover } from './ui.js';
 import { shareInsights, exportPdf as exportInsightsPdf } from './share.js';
-import { capsReady } from './caps.js';
+import { caps, capsReady } from './caps.js';
 
 let allRuns = [];
 let view = [];
@@ -32,10 +32,17 @@ let userInfo = null; // user mode: { id, email } and session count from the serv
 
 // Time windows are rolling (the last 1h / 24h / … from now), not UTC calendar days.
 const WINDOWS = { '1h': 1 / 24, '24h': 1, '3d': 3, '7d': 7, '14d': 14, '30d': 30, '90d': 90 };
-const windowLabel = () => Object.entries(WINDOWS).find(([, v]) => Math.abs(v - state.days) < 1e-9)?.[0] || `${state.days}d`;
-const inWindow = (r) => r.createdAt >= Date.now() - state.days * 86400000;
+// The shared copy reads the daily build: windows are whole UTC days ending at its last day
+// (1d = that day), and only as long as the build goes back.
+const shared = () => (caps.snapshot && !caps.snapshot.missing ? caps.snapshot : null);
+const winName = (k) => (shared() && k === '24h' ? '1d' : k);
+const windows = () => Object.entries(WINDOWS).filter(([, v]) => !shared() || (v >= 1 && v <= shared().days));
+const windowLabel = () => winName(Object.entries(WINDOWS).find(([, v]) => Math.abs(v - state.days) < 1e-9)?.[0] || `${state.days}d`);
+const windowEnd = () => (shared() ? Date.parse(`${shared().through}T00:00:00Z`) + 86400000 : Date.now());
+const inWindow = (r) => r.createdAt >= windowEnd() - state.days * 86400000 && r.createdAt < windowEnd();
 // UTC day slices needed to cover the rolling window.
-const requestDays = () => Math.min(90, Math.ceil(state.days) + 1);
+const requestDays = () => (shared() ? Math.min(shared().days, Math.ceil(state.days)) : Math.min(90, Math.ceil(state.days) + 1));
+const fmtDay = (day) => new Date(`${day}T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' });
 const expanded = new Set();
 
 // ---------- text size ----------
@@ -133,6 +140,14 @@ async function loadRuns() {
   if (state.open && state.selected) openInspect({ id: state.selected, _stub: true });
   // A run's PDF report (rendered by the proxy's headless Chrome) needs that run only.
   if (new URLSearchParams(location.search).get('report') === 'run') return endProgress();
+  await capsReady;
+  if (token !== loadToken) return;
+  // A window the daily build doesn't have (1h, or longer than it goes back) → the nearest it has.
+  if (shared() && !windows().some(([, v]) => Math.abs(v - state.days) < 1e-9)) {
+    const fit = windows().find(([, v]) => v >= state.days) || windows().at(-1);
+    set({ days: fit[1] }, { silent: true });
+    syncTopbar();
+  }
   if (state.mode === 'user') return loadUserRuns(token, signal);
   try {
     const index = await getJson(`/api/runs-index?skill=${encodeURIComponent(state.skill)}&days=${requestDays()}`, { signal });
@@ -229,7 +244,10 @@ async function loadUserRuns(token, signal) {
 }
 
 // What the view is about, for status lines and share labels.
-const subject = () => (state.mode === 'user' ? `${state.user?.email || `user ${state.user?.id?.slice(0, 8)}`} · all skills` : state.skill);
+// (A function declaration: boot code calls it before this line runs.)
+function subject() {
+  return state.mode === 'user' ? `${state.user?.email || `user ${state.user?.id?.slice(0, 8)}`} · all skills` : state.skill;
+}
 
 // ---------- loading feedback ----------
 function showProgress() {
@@ -346,7 +364,8 @@ function refreshStatus(busy = '') {
   const progress = loading ? (loading.total == null ? ' · finding days…' : ` · loading day ${Math.min(loading.done + 1, loading.total)} of ${loading.total}…`) : '';
   const sampled = allRuns.some((r) => r.sampleRate < 1) && loadedSessions ? ` · busy days sampled: showing ${fmtInt(allRuns.length)} of ~${fmtInt(loadedSessions)} sessions (${Math.round((allRuns.length / loadedSessions) * 100)}%)` : '';
   const failed = missing.length ? ` · ⚠ ${missing.length} day(s) failed to load (${missing.map((m) => m.day).join(', ')}) — reload to retry` : '';
-  status(`${fmtInt(view.length)} of ${fmtInt(scope.length)} runs · ${subject()} · last ${windowLabel()}${progress}${busy}${sampled}${failed}${scopeNote()}`);
+  const built = shared() ? ` · daily build through ${fmtDay(shared().through)}` : '';
+  status(`${fmtInt(view.length)} of ${fmtInt(scope.length)} runs · ${subject()} · last ${windowLabel()}${built}${progress}${busy}${sampled}${failed}${scopeNote()}`);
 }
 
 // How much of these sessions was other skills' work (left out, see the Counting button).
@@ -381,19 +400,20 @@ function emptyState() {
   // Loaded runs exist but none inside a short window (e.g. 1h): suggest the next window up.
   const newest = allRuns.reduce((m, r) => Math.max(m, r.createdAt || 0), 0);
   const at = lastSeen?.at || newest || null;
-  const ageDays = at ? (Date.now() - at) / 86400000 : null;
-  const fit = ageDays != null ? Object.entries(WINDOWS).find(([, d]) => d > ageDays) : null;
+  const ageDays = at ? (windowEnd() - at) / 86400000 : null;
+  const fit = ageDays != null ? windows().find(([, d]) => d > ageDays) : null;
+  const longest = windows().at(-1);
   if (state.mode === 'user') {
     return h('div', { class: 'empty-state' }, h('h2', {}, `No sessions by ${subject().replace(' · all skills', '')} in the last ${windowLabel()}`),
       h('p', {}, userInfo ? 'Try a longer time window.' : ''),
-      state.days < 90 ? h('button', { class: 'btn', onclick: () => set({ days: 90 }) }, 'Show the last 90d') : null);
+      state.days < longest[1] ? h('button', { class: 'btn', onclick: () => set({ days: longest[1] }) }, `Show the last ${winName(longest[0])}`) : null);
   }
   return h('div', { class: 'empty-state' },
     h('h2', {}, `No ${state.skill} runs in the last ${windowLabel()}`),
     h('p', {}, at
       ? `It last ran ${ago(at)} (${new Date(at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })})${lastSeen?.sessions90d != null ? ` · ${fmtInt(lastSeen.sessions90d)} sessions in the last 90 days` : ''}.`
-      : 'It hasn’t run in the last 90 days.'),
-    fit && fit[1] !== state.days ? h('button', { class: 'btn', onclick: () => set({ days: fit[1] }) }, `Show the last ${fit[0]}`) : null);
+      : `It hasn’t run in the last ${shared() ? `${shared().days} days of the daily build` : '90 days'}.`),
+    fit && fit[1] !== state.days ? h('button', { class: 'btn', onclick: () => set({ days: fit[1] }) }, `Show the last ${winName(fit[0])}`) : null);
 }
 
 function status(text) {
@@ -607,10 +627,17 @@ function bindTopbar() {
     if (c) hoverTimer = setTimeout(() => prefetchDetail(c.dataset.id), 600);
   });
   syncTopbar();
+  capsReady.then(syncTopbar);
 }
 
 function syncTopbar() {
-  for (const b of $('#days').children) b.setAttribute('aria-checked', String(Math.abs(WINDOWS[b.dataset.win] - state.days) < 1e-9));
+  const have = new Set(windows().map(([k]) => k));
+  for (const b of $('#days').children) {
+    b.setAttribute('aria-checked', String(Math.abs(WINDOWS[b.dataset.win] - state.days) < 1e-9));
+    b.hidden = !have.has(b.dataset.win);
+    b.textContent = winName(b.dataset.win);
+  }
+  if (shared()) $('#days').title = `Built once a day: whole UTC days up to ${fmtDay(shared().through)}`;
   for (const b of $('#aspect').children) b.setAttribute('aria-checked', String(b.dataset.aspect === state.aspect));
   $('#size').value = state.size;
   $('#sort').value = state.sort;

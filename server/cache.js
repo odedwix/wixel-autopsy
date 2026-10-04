@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { config } from './config.js';
-import { inBackground } from './context.js';
+import { inBackground, wantFresh } from './context.js';
 import { laneBusy } from './limits.js';
 
 // Disk cache: one JSON file per key. `ttlMs: Infinity` for immutable data (finished runs).
@@ -52,7 +52,7 @@ export async function cached(ns, key, maxAgeMs, produce, { staleWhileRevalidate 
   const hit = await readCache(ns, key, maxAgeMs);
   if (hit !== undefined) return hit;
   const id = `${ns}/${key}`;
-  if (staleWhileRevalidate) {
+  if (staleWhileRevalidate && !wantFresh()) {
     const stale = await readStale(ns, key);
     if (stale !== undefined) {
       if (!inflight.has(id) && !laneBusy('trino')) inBackground(() => refresh(ns, key, id, produce)).catch((err) => console.error(`refresh ${id}: ${err.message}`));

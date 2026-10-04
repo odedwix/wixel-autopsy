@@ -80,6 +80,7 @@ async function load() {
     if (seq !== loadSeq) return;
     view = v;
     window.__fleet = v;
+    if (v.backfill?.readOnly && fs.today) return setFs({ today: false, days: 1 });
   } catch (err) {
     if (seq !== loadSeq) return;
     toast(`Couldn't load the Fleet: ${err.message}`, { ms: 6000 });
@@ -154,6 +155,9 @@ const audLabel = () => ({ real: 'real users', all: 'everyone', internal: 'employ
 
 function draw() {
   for (const b of $('#period').querySelectorAll('button')) b.setAttribute('aria-checked', String(fs.today ? b.dataset.p === 'today' : b.dataset.p === String(fs.days)));
+  // A read-only copy only has the complete days another machine built: no "today so far".
+  const today = $('#period').querySelector('[data-p="today"]');
+  if (today) today.hidden = Boolean(view?.backfill?.readOnly);
   for (const b of $('#aud').querySelectorAll('button')) b.setAttribute('aria-checked', String(b.dataset.a === fs.aud));
   for (const b of $('#tabs').querySelectorAll('button')) b.setAttribute('aria-selected', String(b.dataset.tab === fs.tab));
   $('#major').checked = fs.major;

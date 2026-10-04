@@ -26,6 +26,7 @@ import { buildBrief, updateState, readState, startDraft, draftStatus, claudeAvai
 import { codexSummary } from './codex.js';
 import { skillFix, askClaude, skillClaudeStatus } from './fleet-skillfix.js';
 import { existsSync } from 'node:fs';
+import { snapshotInfo } from './snapshot.js';
 
 const WEB = path.join(config.root, 'web');
 const QUIET = /^\/api\/(load|media-batch|media-queue|health|exact\/[\w-]{36}|fleet\/status|fleet\/draft\/\w+|fleet\/skillfix\/\w+(\/claude)?)$/;
@@ -61,10 +62,17 @@ function fleetParams(q) {
 
 // JSON bodies only, and only from this app's own pages: a cross-site form post (text/plain, no
 // preflight) must not be able to edit the shared Fleet state or start Claude runs.
+const sameOrigin = (origin, req) => {
+  try {
+    return new URL(origin).host === req.headers.host;
+  } catch {
+    return false;
+  }
+};
 async function readBody(req) {
   const origin = req.headers.origin;
   if (!/^application\/json\b/i.test(req.headers['content-type'] || '')) throw Object.assign(new Error('JSON body required'), { status: 415 });
-  if (origin && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) throw Object.assign(new Error('cross-site request refused'), { status: 403 });
+  if (origin && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) && !sameOrigin(origin, req)) throw Object.assign(new Error('cross-site request refused'), { status: 403 });
   const chunks = [];
   let size = 0;
   for await (const chunk of req) {
@@ -88,7 +96,8 @@ function required(q, key) {
 
 const routes = [
   // What this install can do; the UI switches optional features off (with a hint) when missing.
-  [/^\/api\/health$/, async () => ({ ok: true, ...capabilities(), adminUi: config.adminUi, temporalUi: config.temporal.uiBase, cache: cacheReport(), net: await checkConnectivity() })],
+  // `snapshot`: this copy reads the daily build (time windows end at its last day), else null.
+  [/^\/api\/health$/, async () => ({ ok: true, ...capabilities(), snapshot: await snapshotInfo(), adminUi: config.adminUi, temporalUi: config.temporal.uiBase, cache: cacheReport(), net: await checkConnectivity() })],
   // Can we reach bo.wix.com (Wix network / VPN)? `?fresh=1` re-checks now.
   [/^\/api\/connectivity$/, async (_m, q) => checkConnectivity({ fresh: q.get('fresh') === '1' })],
   [/^\/api\/skills$/, async (_m, q) => listSkills({ days: Number(q.get('days') || 30) })],
@@ -121,7 +130,9 @@ const routes = [
     const rec = normalizeSession(bundle);
     // With a skill: which turns count for it (the rest are other skills' work).
     const skill = q.get('skill');
-    if (skill) rec.scope = turnOwnership(rec, skill, await resolveFamily(skill, q.get('fam')));
+    // A skill missing from the daily build: show the whole session rather than fail.
+    const family = skill ? await resolveFamily(skill, q.get('fam')).catch((err) => (config.snapshot ? undefined : Promise.reject(err))) : undefined;
+    if (skill && family !== undefined) rec.scope = turnOwnership(rec, skill, family);
     return rec;
   }],
   [/^\/api\/trace\/([\w-]{36})$/, async ([, wid], q) => getGenerationTrace(wid, { fresh: q.get('fresh') === '1' })],
@@ -353,7 +364,8 @@ const server = http.createServer(async (req, res) => {
   serveStatic(req, res, url.pathname);
 });
 
-// Local only: this proxy holds a production Temporal key.
+// Local by default: this proxy holds a production Temporal key. HOST opens it up for a hosted copy,
+// which must sit behind the back office's staff sign-in (it shows end users' emails and prompts).
 // Starting the app replaces any copy already running, then (with --open) opens the browser.
 try {
   await takeOver(config.port);
@@ -361,11 +373,11 @@ try {
   console.error(err.message);
   process.exit(1);
 }
-server.listen(config.port, '127.0.0.1', () => {
+server.listen(config.port, config.host, () => {
   claim();
   startSweeping();
   startConnectivityChecks();
   const url = `http://localhost:${config.port}`;
-  console.log(`autopsy on ${url} (pid ${process.pid})`);
+  console.log(`autopsy on ${url} (pid ${process.pid})${config.host !== '127.0.0.1' ? `, listening on ${config.host}` : ''}${config.snapshot ? ` — reading the daily build in ${config.dataDir}` : ''}`);
   if (process.argv.includes('--open')) spawn('open', [url], { stdio: 'ignore', detached: true }).unref();
 });
