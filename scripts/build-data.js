@@ -7,17 +7,21 @@
 //   npm run build:data -- --skills wixel-ads,doc --no-fleet
 //   npm run build:data -- --min-sessions 50     # skip skills with fewer sessions in 30 days (default 10)
 //   npm run build:data -- --force               # rebuild days that are already final
+//   npm run build:data -- --trino 1             # Trino queries at once (default 2; the cluster is shared)
 //
 // Each skill-day is a handful of Trino queries, one or two days at a time. A day is final 3 days
 // after it ends (its sessions are read up to 2 days past the skill load); final days are never
-// re-queried, so a nightly run only builds yesterday and refreshes the two days before it.
+// re-queried, so a nightly run only builds yesterday and refreshes the two days before it. A day not
+// final yet is kept if it was built in the last 12 hours (--fresh-hours), so a rerun after a stop
+// or a failure only queries what's missing. The manifest is updated after every skill: a stopped
+// run still publishes what it finished.
 // Fleet's day files are built at the end (FLEET_DIR, default .fleet/) unless --no-fleet.
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { config } from '../server/config.js';
 import { requestContext } from '../server/context.js';
-import { backoffRemaining } from '../server/limits.js';
+import { backoffRemaining, setConcurrency } from '../server/limits.js';
 import { listSkills, familyFor, runsIndex, runsForDay, sampleFor, skillPairs } from '../server/runs.js';
 import { DATA_VERSION, famId, files, readJson, writeJsonAtomic, utcDay } from '../server/snapshot.js';
 
@@ -37,6 +41,10 @@ const days = Math.max(1, Math.min(90, Number(opt('days', 30))));
 const minSessions = Number(opt('min-sessions', 10));
 const only = opt('skills', '').split(',').map((s) => s.trim()).filter(Boolean);
 const parallelDays = Math.max(1, Number(opt('parallel', 2)));
+const freshMs = Number(opt('fresh-hours', 12)) * 3600000;
+// One producer on a shared cluster: fewer queries at once than the interactive app (it ran into
+// QUERY_QUEUE_FULL at 4).
+setConcurrency('trino', Math.max(1, Number(opt('trino', 2))));
 
 const through = utcDay(Date.now() - DAY);
 const end = Date.parse(`${through}T00:00:00Z`);
@@ -75,7 +83,8 @@ async function buildSkill(skill) {
   await mapLimit(want, parallelDays, async ({ day, sessions }) => {
     const file = files.skillDay(skill, day);
     const have = await readJson(file);
-    if (!force && have?.final && have.version === DATA_VERSION && have.famId === id) {
+    const current = have?.version === DATA_VERSION && have.famId === id;
+    if (!force && current && (have.final || Date.now() - have.builtAt < freshMs)) {
       dayList.push({ day, sessions: have.sessions, runs: have.runs.length });
       return;
     }
@@ -133,6 +142,15 @@ async function main() {
   console.log(`  ${skills.length} skill(s)${only.length ? '' : ` with ≥${minSessions} sessions in 30 days`}`);
   const done = [];
   let failed = 0;
+  const prev = (await readJson(files.manifest()))?.skills || [];
+  // The skills listed for readers: this run's, plus the previous build's not reached yet. A finished
+  // full run drops skills that no longer make the cut; a partial one (--skills) keeps the rest.
+  const publish = async ({ finished }) => {
+    const keep = prev.filter((p) => !done.some((d) => d.skill === p.skill) && (only.length || !finished));
+    const listed = [...done, ...keep].sort((a, b) => Number(b.sessions) - Number(a.sessions));
+    if (finished) await buildSessions(listed.map((x) => x.skill));
+    await writeJsonAtomic(files.manifest(), { version: DATA_VERSION, through, from, days, builtAt: Date.now(), buildMs: Date.now() - t0, complete: finished, skills: listed.map(({ skill, sessions, last_at }) => ({ skill, sessions, last_at })) });
+  };
   for (const s of skills) {
     try {
       const r = await buildSkill(s.skill);
@@ -144,15 +162,11 @@ async function main() {
       // Keep serving yesterday's build of it, if there is one.
       if (await readJson(files.skillIndex(s.skill))) done.push(s);
     }
+    await publish({ finished: false });
   }
   // Co-loads for Fleet's opportunities (the shared copy can't query them).
   await writeJsonAtomic(files.meta('skill-pairs'), await skillPairs().catch(() => []));
-  // A partial run (--skills) keeps the other skills already in the build.
-  const prev = (await readJson(files.manifest()))?.skills || [];
-  const listed = only.length ? [...done, ...prev.filter((p) => !done.some((d) => d.skill === p.skill))] : done;
-  listed.sort((a, b) => Number(b.sessions) - Number(a.sessions));
-  await buildSessions(listed.map((s) => s.skill));
-  await writeJsonAtomic(files.manifest(), { version: DATA_VERSION, through, from, days, builtAt: Date.now(), buildMs: Date.now() - t0, skills: listed.map(({ skill, sessions, last_at }) => ({ skill, sessions, last_at })) });
+  await publish({ finished: true });
   console.log(`build:data: ${done.length} skill(s) in ${secs(t0)}${failed ? `, ${failed} with failed days (kept the previous copy where there was one)` : ''}`);
 }
 

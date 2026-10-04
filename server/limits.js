@@ -101,6 +101,11 @@ export async function limited(name, fn, { signal, priority = 'interactive' } = {
   }
 }
 
+// The daily build runs alone on a shared cluster and asks for fewer slots than the app.
+export function setConcurrency(name, n) {
+  lanes[name].concurrency = n;
+}
+
 // Busy = on-screen work is queued or we're backing off; background refreshes wait for calm.
 export function laneBusy(name) {
   const lane = lanes[name];
