@@ -104,10 +104,11 @@ function digest(v7, v30, fixes, codex, state) {
   L.push('');
   L.push('## Where the agent works harder than it needs to (estimates)');
   for (const o of v7.opportunities.slice(0, 12)) L.push(`- ${o.title}${o.savings.hPerWeek ? ` — ~${H(o.savings.hPerWeek)}/week` : ''}${o.savings.tokensPerWeek ? `, ~${N(o.savings.tokensPerWeek / 1e6)}M input tokens/week` : ''}${o.guard ? ` (caution: ${o.guard})` : ''}`);
-  if (v7.intents?.some((x) => x.flags.length)) {
+  const asks = (v7.intents || []).filter((y) => y.flags.length && y.intent !== '(unknown)');
+  if (asks.length) {
     L.push('');
     L.push('## Asks that end badly');
-    for (const x of v7.intents.filter((y) => y.flags.length).slice(0, 10)) L.push(`- "${x.intent}" — ${N(x.perWeek)}/week, kept ${P(x.keptRate)}, upset ${P(x.upsetRate)} (${x.flags.join(', ')}); served by ${x.owners.map(([o, n]) => `${skillName(o)} (${N(n)})`).join(', ')}`);
+    for (const x of asks.slice(0, 10)) L.push(`- "${x.intent}" — ${N(x.perWeek)}/week, kept ${P(x.keptRate)}, upset ${P(x.upsetRate)} (${x.flags.join(', ')}); served by ${x.owners.map(([o, n]) => `${skillName(o)} (${N(n)})`).join(', ')}`);
   }
   L.push('');
   L.push('## Major skills (last 7 days)');
