@@ -11,6 +11,20 @@ function parseJson(s) {
   }
 }
 
+// Skills the platform preloaded into a message (since 2026-09-30; metadata.preloadedSkillBodies:
+// "<preloaded_skill>\nThe \"<name>\" skill is already loaded…"). The agent never calls the skill tool
+// for them, so each counts as a load at that message, except a utility preloaded next to a product
+// skill (export-handler + single-page-design): the product is the work. Same rule as queries.js.
+const UTILITY = new Set(['export-handler']);
+export function preloadedSkills(metadata) {
+  const bodies = metadata?.preloadedSkillBodies;
+  if (!bodies) return { all: [], loads: [] };
+  const text = Array.isArray(bodies) ? bodies.join('\n') : String(bodies);
+  const all = [...new Set([...text.matchAll(/The \\?"([\w.:-]+)\\?" skill is already loaded/g)].map((m) => m[1]))];
+  const products = all.filter((x) => !UTILITY.has(x));
+  return { all, loads: products.length ? products : all };
+}
+
 // ---- step categories ----
 // Category drives colour and the per-category timing breakdown. RPC methods first, then tools.
 const METHOD_CATEGORY = [
@@ -108,7 +122,9 @@ export function normalizeSession(bundle) {
     switch (e.entryType) {
       case 'USER_MESSAGE': {
         const m = e.userMessage || {};
-        userMessages.push({ at, turnId: e.turnId, text: m.text || '', kind: m.kind || null, attachments: m.attachments || [], stageContext: m.messageContext?.stageContext || null });
+        const pre = preloadedSkills(e.metadata);
+        userMessages.push({ at, turnId: e.turnId, text: m.text || '', kind: m.kind || null, attachments: m.attachments || [], stageContext: m.messageContext?.stageContext || null, preloadedSkills: pre.all });
+        for (const name of pre.loads) skills.push({ name, at, turnId: e.turnId, preloaded: true });
         break;
       }
       case 'TURN_BOUNDARY': {
@@ -166,7 +182,7 @@ export function normalizeSession(bundle) {
       case 'TOOL_CALL': {
         const tc = e.toolCall || {};
         const args = tc.arguments || {};
-        if (tc.toolName === 'skill' && args.name) skills.push({ name: args.name, at });
+        if (tc.toolName === 'skill' && args.name) skills.push({ name: args.name, at, turnId: e.turnId });
         const method = tc.toolName === 'invoke_rpc' ? args.method || null : null;
         const step = {
           id: tc.toolCallId,
@@ -486,15 +502,18 @@ export function normalizeSession(bundle) {
 }
 
 // Which turns of a session count for `skill`: the same rule as the day queries (queries.js
-// ownCtes). A turn loading the skill claims the session; later turns stay with it until one loads
-// a skill outside `family`. `family: null` counts every turn. Turn order is by start time.
+// ownCtes). A turn loading the skill (skill tool or preload) claims the session; later turns stay
+// with it until one loads a skill outside `family`. `family: null` counts every turn. Turn order
+// is by start time.
 export function turnOwnership(rec, skill, family) {
   const loads = new Map();
   const firstAt = new Map();
-  for (const s of rec.steps || []) {
-    if (!firstAt.has(s.turnId) || s.startedAt < firstAt.get(s.turnId)) firstAt.set(s.turnId, s.startedAt);
-    if (s.tool === 'skill' && s.args?.name) loads.set(s.turnId, [...(loads.get(s.turnId) || []), s.args.name]);
-  }
+  const seen = (turnId, at) => {
+    if (turnId && at != null && !(firstAt.get(turnId) <= at)) firstAt.set(turnId, at);
+  };
+  for (const s of rec.steps || []) seen(s.turnId, s.startedAt);
+  for (const m of rec.userMessages || []) seen(m.turnId, m.at);
+  for (const l of rec.skills || []) if (l.turnId) loads.set(l.turnId, [...(loads.get(l.turnId) || []), l.name]);
   for (const t of rec.turns || []) if (t.startedAt) firstAt.set(t.turnId, Math.min(t.startedAt, firstAt.get(t.turnId) ?? Infinity));
   const order = [...firstAt.keys()].filter(Boolean).sort((a, b) => firstAt.get(a) - firstAt.get(b));
   const fam = new Set(family || []);

@@ -70,6 +70,7 @@ work, such as a logo made after an ad or a slideshow after "try a slideshow inst
 selected skill **turn by turn**:
 
 - The turn that loads the skill claims the session. Turns before it never count.
+- **Loading a skill** happens in one of two ways. The agent calls the skill tool, or (since 2026-09-30) the platform **preloads** the skill into the session's first message (`metadata.preloadedSkillBodies`). After a preload the agent never calls the tool, so the preload counts as a load at that message. When export-handler is preloaded next to a product skill (for example single-page-design), only the product skill counts as loaded. Before this rule, the views missed about 60% of sessions from 09-30 on.
 - Later turns stay with it until one loads a skill outside its **family**. That turn and the ones after it are other skills' work and are left out of runs, outputs, timing, errors and insights.
 - **Family = the skill's helpers.** These are worked out from how often skills load in the same turn:
   - partners loaded in ≥3% of its turns;

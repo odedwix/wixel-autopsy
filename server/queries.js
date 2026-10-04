@@ -9,13 +9,53 @@ const TEAM = 'sandbox.www.slides_employees_team';
 const lit = (s) => `'${String(s).replace(/'/g, "''")}'`;
 const days = (n) => Math.max(1, Math.min(90, Math.floor(Number(n) || 7)));
 
+// ---- skill loads ----
+// A skill reaches a session two ways: the agent calls the skill tool, or (since 2026-09-30) the
+// platform preloads it into the session's first USER_MESSAGE (metadata.preloadedSkillBodies, a JSON
+// array of "<preloaded_skill>\nThe \"<name>\" skill is already loaded…" strings) and the agent never
+// calls the tool for it. A preload counts as a load at that message. A utility preloaded next to a
+// product skill (export-handler + single-page-design) isn't a load: the product skill is the work.
+// `x` is a table alias prefix ('x.' or '').
+const UTILITY = ['export-handler'];
+const preloadBodies = (x) => `element_at(${x}metadata, 'preloadedSkillBodies')`;
+const preloadAll = (x) => `regexp_extract_all(${preloadBodies(x)}, 'The \\\\"([\\w.:-]+)\\\\" skill is already loaded', 1)`;
+const utilities = `ARRAY[${UTILITY.map(lit).join(', ')}]`;
+const preloadLoads = (x) => `IF(cardinality(array_except(${preloadAll(x)}, ${utilities})) > 0, array_except(${preloadAll(x)}, ${utilities}), ${preloadAll(x)})`;
+const isToolLoad = (x) => `${x}entry_type = 'TOOL_CALL' AND ${x}tool_call.tool_name = 'skill'`;
+const isPreload = (x) => `${x}entry_type = 'USER_MESSAGE' AND ${preloadBodies(x)} IS NOT NULL`;
+// Entries that may load a skill (the cheap pre-filter for scans that only want loads).
+const isLoad = (x = '') => `((${isToolLoad(x)}) OR (${isPreload(x)}))`;
+// The skills an entry loads (array), or NULL when it loads none.
+const loadsOf = (x = '') => `CASE WHEN ${isToolLoad(x)} AND element_at(${x}tool_call.arguments, 'name') IS NOT NULL THEN ARRAY[element_at(${x}tool_call.arguments, 'name')]
+         WHEN ${isPreload(x)} THEN ${preloadLoads(x)} END`;
+// Preloads began on 2026-09-30. Reading messages' metadata is what makes these scans slow, so the
+// preload half never looks earlier than this (a 90-day scan would time out otherwise).
+const PRELOADS_FROM = `TIMESTAMP '2026-09-29 00:00:00'`;
+// Every load of `skill` in a time range (`range(col)` → the created_date condition), as rows of
+// (session_id, created_date). Two scans in a UNION ALL: tool calls, and preloads (the LIKE keeps
+// the regexp to the few messages that can match). One OR'd scan was ~2x slower.
+const skillLoads = (skill, range) => `(
+    SELECT session_id, created_date FROM ${ENTRIES}
+    WHERE ${isToolLoad('')} AND element_at(tool_call.arguments, 'name') = ${lit(skill)}
+      AND ${range('created_date')}
+    UNION ALL
+    SELECT session_id, created_date FROM ${ENTRIES}
+    WHERE ${isPreload('')} AND ${preloadBodies('')} LIKE ${lit(`%"${skill}\\" skill is already loaded%`)} AND contains(${preloadLoads('')}, ${lit(skill)})
+      AND created_date >= ${PRELOADS_FROM} AND ${range('created_date')}
+  )`;
+
 // Skills and how many sessions loaded each, for the skill picker.
 export function skillsQuery({ windowDays = 30 } = {}) {
+  const since = `created_date >= current_timestamp - INTERVAL '${days(windowDays)}' DAY`;
   return `
-SELECT element_at(tool_call.arguments, 'name') AS skill, count(DISTINCT session_id) AS sessions, max(created_date) AS last_at
-FROM ${ENTRIES}
-WHERE entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'skill'
-  AND created_date >= current_timestamp - INTERVAL '${days(windowDays)}' DAY
+SELECT skill, count(DISTINCT session_id) AS sessions, max(created_date) AS last_at
+FROM (
+  SELECT session_id, created_date, element_at(tool_call.arguments, 'name') AS skill FROM ${ENTRIES}
+  WHERE ${isToolLoad('')} AND ${since}
+  UNION ALL
+  SELECT session_id, created_date, skill FROM ${ENTRIES} CROSS JOIN UNNEST(${preloadLoads('')}) AS l(skill)
+  WHERE ${isPreload('')} AND created_date >= ${PRELOADS_FROM} AND ${since}
+) l
 GROUP BY 1 HAVING count(DISTINCT session_id) >= 5
 ORDER BY 2 DESC`;
 }
@@ -58,11 +98,8 @@ function pickedCte(sc, day, hours) {
   if (sc.ids) return `picked AS (SELECT sid, CAST(NULL AS timestamp(3)) AS skill_at FROM UNNEST(ARRAY[${sc.ids.map(lit).join(',')}]) AS t(sid))`;
   return `picked AS (
   SELECT session_id AS sid, min(created_date) AS skill_at
-  FROM ${ENTRIES}
-  WHERE entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'skill'
-    AND element_at(tool_call.arguments, 'name') = ${lit(sc.skill)}
-    AND created_date >= TIMESTAMP '${day} 00:00:00' - INTERVAL '1' DAY
-    AND created_date < TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[1]}' HOUR
+  FROM ${skillLoads(sc.skill, (c) => `${c} >= TIMESTAMP '${day} 00:00:00' - INTERVAL '1' DAY
+      AND ${c} < TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[1]}' HOUR`)} l
   GROUP BY 1
   HAVING min(created_date) >= TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[0]}' HOUR
      AND min(created_date) < TIMESTAMP '${day} 00:00:00' + INTERVAL '${hours[1]}' HOUR${sampleClause(sc.sample)}
@@ -77,15 +114,18 @@ const windowOf = (col, day) => `${col} >= TIMESTAMP '${day} 00:00:00' - INTERVAL
 function ownCtes(sc, day) {
   if (!turnScoped(sc)) return '';
   const keep = skillNames([sc.skill, ...sc.family]).map(lit).join(', ');
-  const load = `x.entry_type = 'TOOL_CALL' AND x.tool_call.tool_name = 'skill'`;
   return `,
-tl AS (
-  SELECT x.session_id, x.turn_id, min(x.sequence) AS seq,
-    coalesce(bool_or(${load} AND element_at(x.tool_call.arguments, 'name') = ${lit(sc.skill)}), false) AS claims,
-    coalesce(bool_or(${load} AND element_at(x.tool_call.arguments, 'name') NOT IN (${keep})), false) AS other
+tl0 AS (
+  SELECT x.session_id, x.turn_id, x.sequence, ${loadsOf('x.')} AS lds
   FROM ${ENTRIES} x JOIN picked ON picked.sid = x.session_id
   WHERE ${windowOf('x.created_date', day)}
-    AND (x.entry_type = 'TURN_BOUNDARY' OR (${load}))
+    AND (x.entry_type = 'TURN_BOUNDARY' OR ${isLoad('x.')})
+),
+tl AS (
+  SELECT session_id, turn_id, min(sequence) AS seq,
+    coalesce(bool_or(contains(lds, ${lit(sc.skill)})), false) AS claims,
+    coalesce(bool_or(cardinality(filter(lds, s -> s NOT IN (${keep}))) > 0), false) AS other
+  FROM tl0
   GROUP BY 1, 2
 ),
 own AS (
@@ -107,8 +147,8 @@ function ownedRows(sc) {
   return `t AS (
   SELECT e0.*,
     min(sequence) OVER (PARTITION BY session_id, turn_id) AS tseq,
-    coalesce(bool_or(loads = ${lit(sc.skill)}) OVER (PARTITION BY session_id, turn_id), false) AS tclaims,
-    coalesce(bool_or(loads NOT IN (${keep})) OVER (PARTITION BY session_id, turn_id), false) AS tother
+    coalesce(bool_or(contains(lds, ${lit(sc.skill)})) OVER (PARTITION BY session_id, turn_id), false) AS tclaims,
+    coalesce(bool_or(cardinality(filter(lds, s -> s NOT IN (${keep}))) > 0) OVER (PARTITION BY session_id, turn_id), false) AS tother
   FROM e0
 ),
 m AS (
@@ -122,7 +162,7 @@ e AS (SELECT m.*, (lc IS NOT NULL AND (lo IS NULL OR lc > lo)) AS owned FROM m),
 const ownJoin = (sc) => (turnScoped(sc) ? '\n  JOIN own ON own.session_id = x.session_id AND own.turn_id = x.turn_id' : '');
 
 // Bump when runsDayQuery's output changes, so cached days are re-queried.
-export const RUNS_QUERY_VERSION = 10;
+export const RUNS_QUERY_VERSION = 11;
 
 export function runsDayQuery({ scope, day, hours = [0, 24] }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error(`bad day ${day}`);
@@ -132,7 +172,7 @@ export function runsDayQuery({ scope, day, hours = [0, 24] }) {
 WITH ${pickedCte(scope, day, hours)},
 e0 AS (
   SELECT x.*, picked.skill_at AS picked_at, element_at(x.tool_result.result, 'output') AS out,
-    CASE WHEN x.entry_type = 'TOOL_CALL' AND x.tool_call.tool_name = 'skill' THEN element_at(x.tool_call.arguments, 'name') END AS loads
+    ${loadsOf('x.')} AS lds
   FROM ${ENTRIES} x JOIN picked ON picked.sid = x.session_id
   WHERE ${windowOf('x.created_date', day)}
 ),
@@ -159,7 +199,7 @@ agg AS (
     max(turn_boundary.duration_ms) FILTER (WHERE owned) AS longest_turn_ms,
     array_agg(DISTINCT element_at(tool_call.arguments, 'method')) FILTER (WHERE owned AND entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'invoke_rpc') AS methods,
     array_agg(DISTINCT element_at(metadata, 'codexVersionId')) FILTER (WHERE owned AND entry_type = 'TURN_BOUNDARY' AND element_at(metadata, 'codexVersionId') IS NOT NULL) AS codex_versions,
-    array_agg(DISTINCT element_at(tool_call.arguments, 'name')) FILTER (WHERE owned AND entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'skill') AS skills,
+    array_distinct(flatten(array_agg(lds) FILTER (WHERE owned AND lds IS NOT NULL))) AS skills,
     min_by(regexp_extract(out, 'https://[^"\\\\ ]+?\\.mp4'), sequence) FILTER (WHERE owned AND entry_type = 'TOOL_RESULT' AND element_at(tool_result.result, 'jobId') IS NOT NULL AND out LIKE '%.mp4%') AS first_clip,
     max_by(regexp_extract(out, 'https://[^"\\\\ ]+?\\.mp4'), sequence) FILTER (WHERE owned AND entry_type = 'TOOL_RESULT' AND element_at(tool_result.result, 'jobId') IS NOT NULL AND out LIKE '%.mp4%') AS last_clip,
     array_agg(DISTINCT element_at(system_event.payload, 'sentimentLabel')) FILTER (WHERE owned AND entry_type = 'SYSTEM_EVENT' AND system_event.event_name = 'turn_analysis' AND element_at(system_event.payload, 'sentimentLabel') IS NOT NULL) AS sentiments,
@@ -169,7 +209,7 @@ agg AS (
     max_by(regexp_extract(out, 'https://links\\.wixel\\.com/link/[A-Za-z0-9_-]+'), sequence) FILTER (WHERE owned AND entry_type = 'TOOL_RESULT' AND tool_result.tool_name = 'download') AS agent_download_link,
     min_by(regexp_extract(out, 'https://static\\.wixstatic\\.com/media/[^"\\\\ ]+?\\.(?:png|jpg|jpeg|webp)'), sequence) FILTER (WHERE owned AND entry_type = 'TOOL_RESULT' AND tool_result.tool_name IN ('generate_image', 'edit_image')) AS first_image,
     -- The whole session, for saying what the counted turns left out.
-    array_agg(DISTINCT loads) FILTER (WHERE loads IS NOT NULL) AS all_skills,
+    array_distinct(flatten(array_agg(lds) FILTER (WHERE lds IS NOT NULL))) AS all_skills,
     count(DISTINCT turn_id) FILTER (WHERE entry_type = 'TURN_BOUNDARY') AS all_turns,
     max(created_date) AS whole_last_ts,
     array_agg(DISTINCT turn_id) FILTER (WHERE owned) AS owned_turns
@@ -229,16 +269,13 @@ ORDER BY 1`;
 }
 
 // Which UTC days in the window have sessions that first loaded `skill`, and when it last ran.
-// Cheap (skill tool calls only), so the day slices are only queried where there's data.
+// Cheap (skill loads only), so the day slices are only queried where there's data.
 export function runsIndexQuery({ skill, windowDays }) {
   const d = days(windowDays);
   return `
 WITH picked AS (
   SELECT session_id, min(created_date) AS skill_at
-  FROM ${ENTRIES}
-  WHERE entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'skill'
-    AND element_at(tool_call.arguments, 'name') = ${lit(skill)}
-    AND created_date >= date_trunc('day', current_timestamp) - INTERVAL '${d}' DAY
+  FROM ${skillLoads(skill, (c) => `${c} >= date_trunc('day', current_timestamp) - INTERVAL '${d}' DAY`)} l
   GROUP BY 1
 )
 SELECT CAST(date(skill_at) AS varchar) AS day, count(*) AS sessions, max(skill_at) AS last_at
@@ -251,16 +288,13 @@ ORDER BY 1 DESC`;
 export function lastSeenQuery({ skill }) {
   return `
 SELECT max(created_date) AS last_at, count(DISTINCT session_id) AS sessions_90d
-FROM ${ENTRIES}
-WHERE entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'skill'
-  AND element_at(tool_call.arguments, 'name') = ${lit(skill)}
-  AND created_date >= current_timestamp - INTERVAL '90' DAY`;
+FROM ${skillLoads(skill, (c) => `${c} >= current_timestamp - INTERVAL '90' DAY`)} l`;
 }
 
 // Per-session step stats and timing for insights: per (tool, method, model) calls / failures /
 // time, plus request → first generation → last good generation → turn completions, and the
 // first turn's classified intent. Computed in Trino so insights never fetch sessions one by one.
-export const STEPS_QUERY_VERSION = 2;
+export const STEPS_QUERY_VERSION = 3;
 export function stepsDayQuery({ scope, day, hours = [0, 24] }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error(`bad day ${day}`);
   checkHours(hours);
@@ -315,12 +349,14 @@ ORDER BY t.session_id`;
 
 // How often each pair of skills is loaded in the same turn (last 3 days, all sessions), for
 // working out a skill's family: the helpers it loads alongside it. Skill loads only, so cheap.
+// A preload counts with everything preloaded (export-handler too): those are loaded together.
 export function skillPairsQuery() {
   return `
 WITH t AS (
-  SELECT session_id, turn_id, array_agg(DISTINCT element_at(tool_call.arguments, 'name')) AS sk
+  SELECT session_id, turn_id, array_distinct(flatten(array_agg(
+    CASE WHEN ${isPreload('')} THEN ${preloadAll('')} ELSE ARRAY[element_at(tool_call.arguments, 'name')] END))) AS sk
   FROM ${ENTRIES}
-  WHERE entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'skill'
+  WHERE ${isLoad()}
     AND created_date >= current_timestamp - INTERVAL '3' DAY
   GROUP BY 1, 2
 ),
