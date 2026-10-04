@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Autopsy Fleet</title>
+  <link rel="icon" type="image/png" href="/icon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/app.css" />
+  <link rel="stylesheet" href="/css/fleet.css" />
+</head>
+<body class="fleet">
+  <header class="topbar">
+    <a class="brand" href="/" title="Back to Autopsy (one skill's runs)"><svg class="i"><use href="#i-film" /></svg><span>Autopsy</span></a>
+    <span class="fl-title">Fleet <small>every major skill</small></span>
+    <div class="seg" id="period" role="radiogroup" aria-label="Period" title="Complete UTC days ending yesterday (Today = so far)">
+      <button data-p="today">Today</button><button data-p="1">1d</button><button data-p="7">7d</button><button data-p="14">14d</button><button data-p="30">30d</button><button data-p="90">90d</button>
+    </div>
+    <div class="seg" id="aud" role="radiogroup" aria-label="Users" title="Whose sessions count. Employees and the Wixel team test a lot; leave them out to see what customers hit.">
+      <button data-a="real">Real users</button><button data-a="all">Everyone</button><button data-a="internal">Internal</button>
+    </div>
+    <label class="fl-toggle" title="Only skills with ≥50 sessions a week (plus pinned ones)"><input type="checkbox" id="major" /> Major skills</label>
+    <div class="search">
+      <svg class="i"><use href="#i-search" /></svg>
+      <input id="q" type="search" placeholder="Filter issues, skills, tools…" autocomplete="off" spellcheck="false" />
+      <kbd>/</kbd>
+    </div>
+    <div class="spacer"></div>
+    <div class="fl-build" id="build" hidden></div>
+    <button class="icon-btn" id="share" title="Share: link, summary, PDF"><svg class="i"><use href="#i-external" /></svg></button>
+    <button id="textSize" class="icon-btn text-size" title="Text size (⌥+ / ⌥− / ⌥0)">Aa</button>
+    <button id="theme" class="icon-btn" title="Theme"><svg class="i"><use href="#i-contrast" /></svg></button>
+  </header>
+  <div class="loadbar" id="loadbar"><i></i></div>
+  <div class="net-banner" id="netBanner" role="alert" hidden></div>
+
+  <div class="fl-layout">
+    <main class="fl-main">
+      <div class="tabs" role="tablist" id="tabs">
+        <button role="tab" data-tab="overview" title="Overview (O)">Overview <kbd>O</kbd></button>
+        <button role="tab" data-tab="issues" title="What fails, ranked by time lost × how easy it is to fix (1)">Issues <span class="cnt" id="cntIssues"></span> <kbd>1</kbd></button>
+        <button role="tab" data-tab="waits" title="How long each operation really takes, and the right timeout (2)">Wait times <span class="cnt" id="cntWaits"></span> <kbd>2</kbd></button>
+        <button role="tab" data-tab="opps" title="Where the agent works harder than it needs to (3)">Opportunities <span class="cnt" id="cntOpps"></span> <kbd>3</kbd></button>
+        <button role="tab" data-tab="skills" title="Every skill side by side (4)">Skills <span class="cnt" id="cntSkills"></span> <kbd>4</kbd></button>
+        <button role="tab" data-tab="data" title="What the numbers are built from, and what they can't see (5)">Data <kbd>5</kbd></button>
+        <div class="fl-period" id="periodLabel"></div>
+      </div>
+      <div class="fl-body" id="body" tabindex="0"></div>
+      <div class="status-line" id="statusLine"></div>
+    </main>
+    <aside class="fl-detail" id="detail" aria-label="Details" hidden></aside>
+  </div>
+
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+      <symbol id="i-contrast" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></symbol>
+      <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4M12 17h.01"/></symbol>
+      <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></symbol>
+      <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9 4h6l-1 6 3 3H7l3-3-1-6zM12 13v8"/></symbol>
+      <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+      <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+      <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/></symbol>
+      <symbol id="i-bug" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="13" rx="5"/><path d="M12 7V4M7 12H3M21 12h-4M7 17l-3 2M17 17l3 2M7 9 4 7M17 9l3-2"/></symbol>
+      <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5z"/><path d="m3 13 9 5 9-5"/></symbol>
+    </defs>
+  </svg>
+
+  <script type="module" src="/js/fleet.js"></script>
+</body>
+</html>
