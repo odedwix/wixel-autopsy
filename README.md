@@ -16,7 +16,7 @@ Built in three levels: a grid of runs → a run's deep dive → the Genix graph 
 ## Install (new machine)
 
 ```bash
-git clone https://github.com/odedwix/wixel-autopsy.git   # private — ask Oded for access
+git clone https://github.com/odedwix/wixel-autopsy.git   # public repo; the app itself needs the Wix network
 cd wixel-autopsy
 npm run setup        # checks everything, installs, creates .env, builds the Desktop launcher
 npm start            # (re)starts the app and opens http://localhost:5178
