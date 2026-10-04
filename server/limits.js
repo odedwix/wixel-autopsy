@@ -115,3 +115,10 @@ export function loadReport() {
   }
   return out;
 }
+
+// How long a lane will stay in backoff (ms, 0 when it isn't): long jobs (Fleet day builds) wait it
+// out instead of adding load to a cluster that's already timing out.
+export function backoffRemaining(name) {
+  const lane = lanes[name];
+  return backingOff(lane) ? lane.backoffUntil - Date.now() : 0;
+}

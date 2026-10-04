@@ -21,10 +21,14 @@ import { takeOver, claim } from './singleton.js';
 import { requestContext } from './context.js';
 import { startSweeping, cacheReport } from './cache-gc.js';
 import { spawn, spawnSync } from 'node:child_process';
+import { fleetView, fleetIssue, backfillStatus, requestDays, periodDays, readDay } from './fleet.js';
+import { buildBrief, updateState, readState, startDraft, draftStatus, claudeAvailable } from './fleet-brief.js';
+import { codexSummary } from './codex.js';
+import { skillFix, askClaude, skillClaudeStatus } from './fleet-skillfix.js';
 import { existsSync } from 'node:fs';
 
 const WEB = path.join(config.root, 'web');
-const QUIET = /^\/api\/(load|media-batch|media-queue|health|exact\/[\w-]{36})$/;
+const QUIET = /^\/api\/(load|media-batch|media-queue|health|exact\/[\w-]{36}|fleet\/status|fleet\/draft\/\w+|fleet\/skillfix\/\w+(\/claude)?)$/;
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json', '.png': 'image/png' };
 
 function send(req, res, status, body, type = 'application/json; charset=utf-8') {
@@ -47,6 +51,33 @@ function capabilities() {
     exact: Boolean(chromePath()) && existsSync(path.join(config.cacheDir, 'vendor', 'capture-bootstrap.js')), // Exact composition → mp4
   };
   return caps;
+}
+
+function fleetParams(q) {
+  const aud = ['real', 'all', 'internal'].includes(q.get('aud')) ? q.get('aud') : 'real';
+  const end = /^\d{4}-\d{2}-\d{2}$/.test(q.get('end') || '') ? q.get('end') : undefined;
+  return { days: Number(q.get('days') || 7), end, today: q.get('today') === '1', aud, compare: q.get('compare') !== '0' };
+}
+
+// JSON bodies only, and only from this app's own pages: a cross-site form post (text/plain, no
+// preflight) must not be able to edit the shared Fleet state or start Claude runs.
+async function readBody(req) {
+  const origin = req.headers.origin;
+  if (!/^application\/json\b/i.test(req.headers['content-type'] || '')) throw Object.assign(new Error('JSON body required'), { status: 415 });
+  if (origin && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) throw Object.assign(new Error('cross-site request refused'), { status: 403 });
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > 100000) throw Object.assign(new Error('body too large'), { status: 413 });
+    chunks.push(chunk);
+  }
+  const raw = Buffer.concat(chunks).toString('utf8');
+  try {
+    return JSON.parse(raw || '{}');
+  } catch {
+    throw Object.assign(new Error('bad JSON'), { status: 400 });
+  }
 }
 
 function required(q, key) {
@@ -108,6 +139,48 @@ const routes = [
   }],
   [/^\/api\/media-queue$/, async () => queueDepth()],
   [/^\/api\/load$/, async () => ({ ...loadReport(), media: queueDepth(), cache: cacheReport(), net: connectivity() })],
+  // ---- Fleet: every major skill at once (daily rollups; see server/fleet.js) ----
+  [/^\/api\/fleet$/, async (_m, q) => fleetView(fleetParams(q))],
+  [/^\/api\/fleet\/status$/, async (_m, q) => {
+    const days = periodDays(q.get('today') === '1' ? { today: true } : { days: Number(q.get('days') || 30) });
+    const files = await Promise.all(days.map(readDay));
+    return { ...backfillStatus(), days: days.map((d, i) => ({ day: d, present: Boolean(files[i]), final: files[i]?.final || false, builtAt: files[i]?.builtAt || null, parts: files[i]?.parts || null })), codex: await codexSummary(), claude: claudeAvailable() };
+  }],
+  // Queue days for building (newest first, background lane). Also done automatically by /api/fleet.
+  [/^\/api\/fleet\/build$/, async (_m, q) => {
+    requestDays(periodDays({ days: Number(q.get('days') || 30) }));
+    return backfillStatus();
+  }],
+  [/^\/api\/fleet\/brief\/(\w+)$/, async ([, key], q) => {
+    const { issue, period, aud } = await fleetIssue(key, fleetParams(q));
+    return buildBrief({ ...issue, audLabel: aud === 'real' ? 'real users' : aud === 'internal' ? 'employees and team' : 'everyone' }, { period, withTraces: q.get('traces') !== '0' });
+  }],
+  // Fix per skill: what to change in one skill's instructions for one issue (+ a Claude Code prompt).
+  [/^\/api\/fleet\/skillfix\/(\w+)$/, async ([, key], q) => {
+    const { issue, period } = await fleetIssue(key, fleetParams(q));
+    return skillFix(issue, required(q, 'skill'), { period });
+  }],
+  // Ask Claude for that suggestion (local CLI, read-only); stored in FLEET_DIR/suggestions when done.
+  [/^\/api\/fleet\/skillfix\/(\w+)\/claude$/, async ([, key], q, _u, req) => {
+    // GET: how the run is going (and the stored answer once it's in).
+    if (req.method !== 'POST') return skillClaudeStatus(key, required(q, 'skill'));
+    await readBody(req);
+    if (!claudeAvailable()) throw Object.assign(new Error('The claude CLI is not installed'), { status: 501 });
+    const { issue, period } = await fleetIssue(key, fleetParams(q));
+    const fix = await skillFix(issue, required(q, 'skill'), { period });
+    if (fix.parked) throw Object.assign(new Error(fix.reason), { status: 400 });
+    const d = askClaude(issue, fix.skill, fix.prompt);
+    return { state: (await d).state };
+  }],
+  [/^\/api\/fleet\/state$/, async (_m, q, _u, req) => (req.method === 'POST' ? updateState(await readBody(req)) : readState())],
+  // Draft a fix with the local Claude CLI (read-only tools, in the codex checkout). POST starts it.
+  [/^\/api\/fleet\/draft\/(\w+)$/, async ([, key], q, _u, req) => {
+    if (req.method !== 'POST') return draftStatus(key);
+    if (!claudeAvailable()) throw Object.assign(new Error('The claude CLI is not installed'), { status: 501 });
+    const { markdown } = await readBody(req);
+    if (!markdown || markdown.length > 60000) throw Object.assign(new Error('brief required'), { status: 400 });
+    return startDraft(key, markdown);
+  }],
   // Failed generations: tool result has only a jobId; `at` is the tool call's start (ms).
   [/^\/api\/trace-job\/([\w-]{36})$/, async ([, jobId], q) => getJobTrace(jobId, Number(q.get('at')))],
 ];
@@ -197,9 +270,12 @@ async function serveAssetDownload(req, res, runId, assetId, name) {
 async function serveReportPdf(req, res, q) {
   const kind = q.get('kind');
   const view = q.get('view') || '';
-  if (!['run', 'insights'].includes(kind) || !view.startsWith('#v=') || view.length > 12000) return send(req, res, 400, { error: 'bad report request' });
+  const okView = kind === 'fleet' ? view.startsWith('#f=') : view.startsWith('#v=');
+  if (!['run', 'insights', 'fleet'].includes(kind) || !okView || view.length > 12000) return send(req, res, 400, { error: 'bad report request' });
   try {
-    const { buf } = await renderPdf(`http://127.0.0.1:${config.port}/?report=${kind}${view}`);
+    // The Fleet digest may wait for days still building (up to 4 minutes).
+    const page = kind === 'fleet' ? `/fleet.html?report=fleet${view}` : `/?report=${kind}${view}`;
+    const { buf } = await renderPdf(`http://127.0.0.1:${config.port}${page}`, kind === 'fleet' ? { timeoutMs: 300000 } : undefined);
     const name = `${String(q.get('name') || `autopsy ${kind} report`).replace(/[\/:*?"<>|\r\n]+/g, '-').slice(0, 180)}.pdf`;
     const ascii = name.replace(/[^\x20-\x7e]/g, '_').replace(/"/g, "'");
     res.writeHead(200, { 'content-type': 'application/pdf', 'content-length': buf.length, 'cache-control': 'no-store', 'content-disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}` });
@@ -258,7 +334,7 @@ const server = http.createServer(async (req, res) => {
     const ac = new AbortController();
     res.on('close', () => !res.writableEnded && ac.abort());
     try {
-      const body = await requestContext.run({ signal: ac.signal }, () => handler(m, url.searchParams, url));
+      const body = await requestContext.run({ signal: ac.signal }, () => handler(m, url.searchParams, url, req));
       if (!ac.signal.aborted) send(req, res, 200, body);
     } catch (err) {
       if (err?.name === 'AbortError' || ac.signal.aborted) {

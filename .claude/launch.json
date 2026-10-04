@@ -1,6 +1,8 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "proxy", "runtimeExecutable": "node", "runtimeArgs": ["server/server.js"], "port": 5178 }
+    { "name": "proxy", "runtimeExecutable": "node", "runtimeArgs": ["server/server.js"], "port": 5178 },
+    { "name": "fleet-dev", "runtimeExecutable": "env", "runtimeArgs": ["PORT=5179", "node", "server/server.js"], "port": 5179 },
+    { "name": "fleet-dev-ro", "runtimeExecutable": "env", "runtimeArgs": ["PORT=5179", "FLEET_READONLY=1", "node", "server/server.js"], "port": 5179 }
   ]
 }

@@ -11,6 +11,8 @@ The Insights tab summarizes the skill as a whole: failure rates, timings, top er
 
 Built in three levels: a grid of runs → a run's deep dive → the Genix graph run behind a generation. Start with `npm start` or the **Autopsy** app on the Desktop.
 
+**Fleet** (the button next to the logo, or `/fleet.html`) looks at every major skill at once: what fails most, how much time each failure costs, which fixes are easy, how long each operation really takes (and the right timeout), and where the agent does work it doesn't need to. See [Fleet](#fleet-every-major-skill-at-once).
+
 ## Install (new machine)
 
 ```bash
@@ -31,10 +33,12 @@ npm start            # (re)starts the app and opens http://localhost:5178
 | wixel-video-client checkout *(optional)* | the exact live product player (**E**) | clone `wix-private/wixel-video-client` to `~/dev/` (or set `WIXEL_VIDEO_CLIENT`), then `npm run build:player` |
 | Google Chrome *(optional)* | PDF reports saved straight to Downloads (no dialog), and **Exact composition** mp4 downloads | the normal install, or `CHROME_PATH=` in `.env` |
 | Python Pillow *(optional, macOS)* | the Desktop launcher icon | `pip3 install pillow` |
+| wixel-agent-codex checkout *(optional)* | Fleet fix briefs that point at the exact skill / resource / schema files | clone `wix-private/wixel-agent-codex` to `~/dev/` (or set `CODEX_DIR`) |
+| Claude Code CLI *(optional)* | Fleet's "Draft the fix with Claude" | `claude` on the PATH, signed in |
 
 The run list, details, timeline, scenes, brand, assets and insights work with just the Wix network and Node. Missing optional pieces switch off with a hint in the UI.
 
-Settings live in `.env` (gitignored; template in `.env.example`): `PORT`, `CACHE_MAX_GB`, `TEMPORAL_API_KEY` / `TEMPORAL_KEY_FILE`, `WIXEL_VIDEO_CLIENT`, `CHROME_PATH`.
+Settings live in `.env` (gitignored; template in `.env.example`): `PORT`, `CACHE_MAX_GB`, `TEMPORAL_API_KEY` / `TEMPORAL_KEY_FILE`, `WIXEL_VIDEO_CLIENT`, `CHROME_PATH`, and for Fleet `FLEET_DIR`, `FLEET_READONLY`, `CODEX_DIR`.
 
 **Off the Wix network?** Autopsy checks every minute whether `bo.wix.com` answers, and right away after a request fails. When it doesn't answer, a banner says so (connect the VPN), with **Check again**. Cached data keeps working.
 
@@ -168,6 +172,61 @@ Both keep the dark UI's colours on A4 landscape, with type about 25% larger than
   - A summary shows how long the build took after the last generation, split into composing, saves and checks, plus when the editor confirmed the save, and any failed saves.
 - **Keyboard:** `?` lists all shortcuts.
 
+## Fleet: every major skill at once
+
+`/fleet.html` (or **Fleet** in the top bar). Pick a period (Today, 1 / 7 / 14 / 30 / 90 complete UTC days) and whose sessions count (**Real users** by default; Everyone; Internal). Changes are against the previous period of the same length, once that period is mostly built.
+
+- **Overview:** sessions, failing tool calls (out of credits excluded), time lost to failures per week, hidden timeouts, frustrated turns, model iterations per turn, input tokens per iteration, agent thinking time, outputs kept, sessions with no skill. **Do these first** puts issues, timeouts and agent-design changes on one scale: hours a week given back. Plus failures per day, time lost by fix difficulty, and the major-skills leaderboard.
+- **Issues:** one row per error signature × operation, across every skill it happens in, ranked by priority.
+  - **Priority** = impact (time lost: failed calls + one recovery per run of failures + 10 min per session it ended + 5 min per user upset afterwards) × how fixable the class is × how concentrated it is, boosted when new or rising.
+  - **Kind / fix / owner:** missing file or skill, agent misuse of a tool, rejected parameters, output failed validation, content filter, permission, interrupted by restart, hidden timeout, transient/upstream, out of credits (not a bug, hidden by default).
+  - **Pattern:** a spike (most of it within 3 hours: an incident, likely upstream) vs every day (chronic). **Trend:** rate per 1k turns vs the previous period (Poisson z-test): new / rising / falling.
+  - **Detail:** per day, the skills it happens in (each links to that skill's runs where the step failed), the rate per **codex version** (did a change fix it?), models, the full example error, example runs (Autopsy and admin links), and a status (accepted / fixed in version … / won't fix / duplicate, with a note) shared with everyone using the same Fleet folder.
+  - **Fix per skill:** a tab for each skill the issue happens in, built from that skill's own failing calls (2 sessions, admin API, cached):
+    - what its failing calls show, e.g. which hosts the failing image URLs come from (Wix media, cloud-storage links like a scraped page's screenshot, other websites);
+    - the change to make in that skill's instructions;
+    - where: the skill file and the exact lines that mention the tool, plus the references/resources involved (GitHub links);
+    - its examples (request, error, what the agent did next);
+    - **Copy prompt for Claude Code**: a ready-to-paste prompt for the wixel-agent-codex checkout, limited to that skill's files ("don't change tools, agent configs or system prompts"), with a redacted failing call and an eval case to add;
+    - **Ask Claude for a suggestion** (optional, local `claude` CLI, read-only): the answer is saved in `FLEET_DIR/suggestions/` for everyone sharing the folder, tagged with the codex commit it read.
+
+    Only kinds of error a skill can fix get suggestions (missing file, agent misuse of a tool, failed validation, content filter, rejected parameters, unclassified). Timeouts, restarts, upstream failures, permissions and credits are platform or tool work: shown as parked.
+  - **Fix brief** (on demand, the whole issue): reads up to 3 example sessions (what was called, the error, what the agent did next), the Genix root cause of failed generations (Temporal, with a key), and the codex (below), then writes what's wrong, how big, where to look (exact files with GitHub links), a suggested fix, how to verify it (the rate per codex version; the eval sets mapped to the skill) and a redacted repro. Copy it as Markdown, email it, or **Draft the fix with Claude**: the local `claude` CLI, read-only tools, in the codex checkout, asked for the smallest change as a diff. Nothing is edited. The brief is redacted (no emails or phone numbers) but includes users' requests (shortened); check that's fine before sending it to Claude.
+- **Wait times:** per tool · method · model · input size (clip length, resolution), across all skills: calls, failures, p50 / p90 / p99 of successes, hidden timeouts and the cap they hit, how often a retry works and how long the agent waited before retrying.
+  - **Recommended wait:** the cap τ that minimizes the expected time to a success, E(τ) = E[min(T, τ)] ÷ P(T ≤ τ), over the measured durations, treating a retry as an independent fresh try and hidden timeouts as jobs that wouldn't have finished. Never below 1.5× the p95 of successes. The detail shows the histogram with p50 / p99 / today's cap / the recommendation and the E(τ) curve.
+  - **Re-attach, don't restart:** a hidden timeout means the job was still running; poll the same job id instead of starting a new one (a fresh job pays again).
+- **Opportunities:** where the agent works harder than it needs to, each with evidence and an estimate per week (iterations, hours, input tokens) and a guard when it could backfire:
+  - **Scripted pipeline:** the same chain of ≥3 tool steps in ≥15% of a skill's turns → one deterministic step where the agent only picks the inputs.
+  - **Same call every time:** an operation called ≥100 times a week with ≤5 distinct argument sets a day (e.g. `ListCosts`, `list_rpc_methods`, `GetBrandByProjectId`) → put the answer in the context.
+  - **Always loaded together:** skill A loads B in ≥85% of its turns → preload or merge.
+  - **File busywork:** many read/list/write calls per turn, the same file re-read.
+  - **Let the tool fix it:** a validation slip the agent fixes itself on the next try ≥60% of the time → auto-correct inside the tool.
+  - **Rubber-stamp approval:** ≥5% of a skill's turns are just "yes / ok" → proceed by default.
+  - **Heavy context:** input tokens per iteration ≥1.4× the fleet median.
+  - **Trial and error:** generations per kept output ≥1.8× the fleet median.
+  - **Re-attach:** hidden timeouts (see Wait times).
+- **Skills:** every skill side by side: sessions, turns, failing calls (±95% interval), failed turns, time lost, hidden timeouts, frustration, iterations per turn, tokens per iteration, thinking time, **outputs kept** (sessions whose asset was downloaded, by the editor or the agent) and generations per kept output, "yes" replies. **Pin** a skill to treat it as major.
+- **Data:** each day's state (final / filling in / missing), build time, internal accounts, problems; every shift in the period; the definitions; and what Fleet can't see (rendering/export/player failures, output quality, the inside of generation graphs, client-side errors).
+- **Share:** a link to the exact view, a text summary, an email, or a **PDF digest** (headless Chrome, saved to Downloads).
+- **Keys:** `O` `1`–`5` tabs, `/` search, `J`/`K` next/previous row, `W` wide panel, `Esc` close, `⌥+ ⌥− ⌥0` text size.
+
+**How skills are told apart.** All skills are read in one pass per day, turn by turn: a turn belongs to the first skill it loads, and later turns stay with that skill until one loads a skill outside its family (the same families as the single-skill view). A skill reaches a turn two ways: the agent calls the `skill` tool, or (since 2026-09-30) the platform **preloads** it into the session's first message (`metadata.preloadedSkillBodies`); both count, and with several preloaded the product skill wins over utilities like export-handler. Helpers used by everything (site-content, wix-apis) never take a turn. Sessions with no skill at all are "no skill" (about 10%). Outputs kept is session-level (credited to the session's first skill), because downloads happen in the editor, outside turns; "produced" counts asset writes (`WRITE_METERING`) and handed-over assets (`AGENT_MENTIONED_ASSETS`), since `TURN_UPDATED_ASSETS` was only logged 2026-09-16 → 09-28.
+
+**What changed** (Overview and Data) flags a day whose failure rate, no-skill share, tokens per iteration, iterations per turn, hidden timeouts, frustration, kept outputs or sessions moved beyond the range of the 7 days before it, and names any codex version that took over ≥20% of that day's turns: the in-app alert after a deploy. That is how the 2026-09-30 switch to preloaded skills was found: before preloads were counted, sessions with no skill load jumped from 15% to 58% overnight.
+
+**Measured vs estimated.** Counts, durations, recoveries, tokens, versions and outcomes are measured from the agent's own entries and events. Time lost uses one stated rule: each failed call's own time, plus one recovery per run of consecutive failures: from the first failure until the next successful attempt of that operation was started in the turn (else the turn's end). Savings and recommended timeouts are estimates; each card and panel says how it was computed.
+
+### How it's built (and why it doesn't load Trino)
+
+- **Daily rollups, not sessions.** Each UTC day becomes one small file (`FLEET_DIR/days/YYYY-MM-DD.json`, ~1 MB) from 6 queries that read the whole day for every skill and return totals only, each under 500 rows (the endpoint re-runs a query per page): usage per skill and tool, timing per operation (mergeable histograms, so week and month percentiles stay right), failure signatures (the ~450 most common a day; the rest fold into one row per skill), work chains, outcomes, and the day's internal accounts.
+- **Cost:** about a minute of Trino per day, one query at a time, at background priority (on-screen work always goes first, and it pauses while Trino is busy). A day is final 6 hours after it ends and is never queried again; today refreshes at most every 30 minutes. A week or month is the day files added up locally: no extra queries. Each query part has its own version, so a changed query re-runs only itself on days already built.
+- **When Trino is busy:** after a timeout, the rest of that day's queries are skipped (the day is retried later) and the next day waits out the limiter's backoff; `npm run fleet` stops after 3 busy days in a row. Finished days are always kept.
+- **Backfill:** opening a period queues its missing days (and the previous period's, for trends), newest first; the view fills in as they land. Or from the command line: `npm run fleet` (last 30 days), `npm run fleet -- --days 90`, `npm run fleet -- --day 2026-10-02 --force`.
+- **The knowledge is in the repo.** `.fleet/` is committed: the day rollups (`.fleet/days/`, ~800 KB a day; example error texts have emails, phone numbers and URL query strings stripped), the decisions (`.fleet/state.json`) and saved Claude suggestions (`.fleet/suggestions/`). `npm run fleet:snapshot` writes a readable summary to `knowledge/`: `README.md` (the findings in plain words: numbers, what we learned about the data, what changed, top issues with the fix per skill, wait times, opportunities, asks that end badly, major skills, decisions) plus `fleet-7d.json`, `fleet-30d.json` and `skill-fixes.json`. It never queries Trino (the fixes per skill read a few cached sessions and the codex). Commit both after a rebuild.
+- **One producer for a team.** Point everyone's `FLEET_DIR` at a shared folder. One machine builds the days (`npm run fleet:nightly` installs a macOS LaunchAgent that runs at 06:15; `-- --remove` uninstalls it); the others set `FLEET_READONLY=1` and only read. Issue statuses and pins (`FLEET_DIR/state.json`) are shared the same way.
+- **Briefs** are the only per-session reads: ≤3 session bundles (admin API, cached) and ≤2 job traces (Temporal, cached) per brief, only when someone asks for it.
+- **The codex** (`CODEX_DIR`, default `~/dev/wixel-agent-codex`): skills by their `name:`, files, RPC schemas, agent configs and eval mappings, read with `git show / grep / ls-tree` from the latest fetched commit (`origin/HEAD`). The working tree is never touched, so a stale checkout still reads the newest fetch (`git fetch` it now and then).
+
 ## Project layout
 
 | Path | What |
@@ -185,7 +244,12 @@ Both keep the dark UI's colours on A4 landscape, with type about 25% larger than
 | `web/js/app.js` | Boot, loading, filters panel, summary, keyboard |
 | `web/js/grid.js` · `inspect.js` · `timeline.js` · `deep.js` · `graph.js` | Grid, details panel, timeline, scenes / brand / assets / raw, graph run |
 | `web/js/insights.js` · `share.js` · `skillpicker.js` · `family.js` · `ui.js` · `filters.js` · `state.js` | Insights, sharing, skill / user picker, what counts as a skill (Counting editor), tooltips / toasts / popovers, facets, persisted state |
-| `scripts/` | `setup.sh`, `launch.sh`, `make-launcher.sh`, `make-icon.py`, `build-player.sh`, `pull-sample.js` |
+| `server/fleet.js` · `server/fleet-queries.js` · `server/fleet-analyze.js` | Fleet: day files, backfill queue, the all-skill rollup SQL, and the analysis (issues, wait times, opportunities, skills) |
+| `server/fleet-skillfix.js` | Fix per skill: evidence from that skill's failures, the change to its instructions, the Claude Code prompt, saved Claude suggestions |
+| `server/fleet-brief.js` · `server/codex.js` | Fix briefs (evidence, codex findings, shared state, the Claude draft runner); read-only access to the wixel-agent-codex checkout |
+| `web/fleet.html` · `web/js/fleet.js` · `web/js/fleet-views.js` · `web/css/fleet.css` | The Fleet page |
+| `scripts/` | `setup.sh`, `launch.sh`, `make-launcher.sh`, `make-icon.py`, `build-player.sh`, `pull-sample.js`, `fleet-rollup.js` (`npm run fleet`), `fleet-snapshot.js` (`npm run fleet:snapshot`), `fleet-nightly.sh` |
+| `.fleet/` · `knowledge/` | Fleet's committed knowledge: day rollups, decisions, saved suggestions; the readable snapshot |
 
 ## Load on production systems
 
@@ -198,6 +262,7 @@ Every upstream call goes through `server/limits.js`: a concurrency cap and minim
 | System | What it is | Cap | When it's called |
 |---|---|---|---|
 | Trino (via the admin SQL endpoint) | shared analytics cluster, not production serving | 4 concurrent, ≥250 ms apart | list, index and step queries, plus one skill co-load query a day (families). A day older than 3 days is cached forever per skill and family, so steady state is a few queries per 3 minutes for the last 3 days. Editing a family re-queries that skill's days |
+| Trino, Fleet rollups | same cluster | 1 background slot, one query at a time | 6 queries (~1 min) per UTC day, once: final days are never re-queried, today at most every 30 min. Nothing per session |
 | Wixel admin API | production BO service reading the agent's session store | 3 concurrent, ≥150 ms apart | opening a run, hovering a card for 600 ms, assembling an ad without a render, building a download, listing a user's sessions (user mode; cached 2 min). Session details are cached forever once the session has been idle 30 minutes |
 | Temporal Cloud prod namespace | shares request limits with production workers | 2 concurrent, ≥250 ms apart | only when you open a graph run or a nodes table. Each trace is about 3–5 calls, cached forever once finished |
 | Wix CDN (wixmp) | media delivery | ffmpeg, 2 builds at a time | downloading clips and renders for review copies |
@@ -228,6 +293,13 @@ Every upstream call goes through `server/limits.js`: a concurrency cap and minim
 | `GET /api/media-batch?ids=a,b,…` | review-media status for the cards on screen | local |
 | `GET /api/player-input/:runId?root=<assetId>` | the live product player's input, built from the asset tree | admin API |
 | `GET /_api/wixel-viewer-bundle-server/bundles?…` | same-origin pass-through for the player's component bundles | manage.wix.com (public) |
+| `GET /api/fleet?days=7&today=0&aud=real\|all\|internal&end=` | the Fleet view for a period (and the previous one, for trends); queues missing days | day files (Trino when building) |
+| `GET /api/fleet/status?days=` · `GET /api/fleet/build?days=` | which days are built; queue days for building | local |
+| `GET /api/fleet/brief/:issue?days=&aud=&traces=1` | a fix brief for one issue | admin API, Temporal, codex (git) |
+| `GET /api/fleet/skillfix/:issue?skill=&days=&aud=` | what to change in one skill for one issue, and a Claude Code prompt | admin API, codex (git) |
+| `POST /api/fleet/skillfix/:issue/claude?skill=` · `GET` | ask the local `claude` CLI for that change (stored in FLEET_DIR/suggestions) | local |
+| `GET/POST /api/fleet/state` | issue statuses, dismissed / accepted ideas, pinned skills (shared via FLEET_DIR) | local |
+| `POST /api/fleet/draft/:issue` · `GET` | draft the fix with the local `claude` CLI (read-only, in the codex checkout) | local |
 | `GET /api/health` | what this install can do (Temporal key, ffmpeg, player), plus cache use | local |
 | `GET /api/load` | upstream calls in the last 5 minutes, the media queue, and cache use | local |
 

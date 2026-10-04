@@ -1,0 +1,1640 @@
+[
+ {
+  "issue": "u4ckmt",
+  "sig": "INVALID_ARGUMENT: Error invoking endpoint: [N] → (provider returned an empty error)",
+  "skill": "single-page-design",
+  "parked": false,
+  "n": 1318,
+  "share": 0.6294173829990449,
+  "skillPath": "skills/image/single-page-design.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [
+   [
+    "static.wixstatic.com",
+    3
+   ],
+   [
+    "storage.googleapis.com",
+    2
+   ]
+  ],
+  "notes": [],
+  "fix": [
+   "Check the parameters single-page-design tells the agent to pass to `edit_image` against the model's live schema; spell out the allowed values in the skill."
+  ],
+  "files": [
+   {
+    "path": "skills/image/single-page-design.md",
+    "why": "the single-page-design skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "line": 14,
+    "why": "mentions edit_image: \"**How this is built:** a single AI-generated image, always. You call `generate_image` with\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L14"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "line": 16,
+    "why": "mentions edit_image: \"**Escape hatch — a real mockup.** Only when the user *explicitly* asks for a product mocku\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L16"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "line": 67,
+    "why": "mentions edit_image: \"- **A real logo only enters as an image**, never as a description — the brand's logo asset\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L67"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "line": 93,
+    "why": "mentions edit_image: \"- **The user attached an image, design, or existing asset for reference** → that's an **`e\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L93"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "why": "skill single-page-design (1318 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md"
+   }
+  ],
+  "evals": [
+   "tests/image/spd-open-intents.json",
+   "tests/image/spd-brand-flyer.json",
+   "tests/image/spd-cover-format.json",
+   "tests/image/spd-intro-post.json",
+   "tests/image/spd-logo-requested.json",
+   "tests/image/spd-platform-format.json",
+   "tests/image/image-core-flows.json",
+   "tests/image/clay-play.json",
+   "tests/agent-to-agent/sequence-negative.json"
+  ],
+  "prompt": "Fix a recurring failure in the `single-page-design` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `edit_image` fails with: INVALID_ARGUMENT: Error invoking endpoint: [N] → (provider returned an empty error)\nSize: 1,318 times in single-page-design in the last 7 days (63% of this error across skills); the same operation never succeeded later in the turn 71% of the time.\n\nWhat the evidence shows:\n\nChange to make:\n- Check the parameters single-page-design tells the agent to pass to `edit_image` against the model's live schema; spell out the allowed values in the skill.\n\nScope: edit only `skills/image/single-page-design.md`. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/image/single-page-design.md:14, skills/image/single-page-design.md:16, skills/image/single-page-design.md:67, skills/image/single-page-design.md:93.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"edit_image\",\n  \"arguments\": {\n    \"source_urls\": \"[\\\"https://storage.googleapis.com/firecrawl-scrape-media/screenshot-23b17e32-34e3-4a75-856c-a2e95864a54e.png?…\\\",\\\"https://static.wixstatic.com/media/a35bcf_c539ededee0643d194020b81917fc5f7~mv2.png\\\",\\\"https://static.wixstatic.com/media/a35bcf_3995dd3174d0432196ec0838f82af22c~mv2.png\\\"]\",\n    \"intent\": \"brand-post\",\n    \"instruction\": \"Design a polished, square 2D flat digital design layout with photographic imagery for Mitra Su Arıtma, matching the attached homepage screenshot’s water-inspired visual language: calm white and pale aqua space, deep navy-teal accents, clean corporate sans-serif typography, generous whitespace, restrained rounded shapes, and the site’s understated professional feel. The screenshot is a style reference only; do not reproduce its webpage layout or any navigation, controls, buttons, or unrelated text. The attached Mitra Su Arıtma logo image is the exact brand mark: reproduce those pixels faithfull\",\n    \"height\": \"2048\",\n    \"width\": \"2048\"\n  }\n}\n```\nError: Exception during invocation of Prompt ''. PredictionId: 7dd2af5c-b1d7-49d5-8977-d672913a1a71 INVALID_ARGUMENT: Error invoking endpoint: [400] [taskUUID=6688f981-4777-4d8a-8fcf-d9a7f1519d88] { \"data\": [], \"errors\": } error_json:{\"error\":\"[taskUUID=6688f981-4777-4d8a-8fcf-d9a7f1519d88] {\\n \\\"data\\\": [\n\nThen: add a case for this to the skill's eval set (tests/image/spd-open-intents.json, tests/image/spd-brand-flyer.json, tests/image/spd-cover-format.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "u4ckmt",
+  "sig": "INVALID_ARGUMENT: Error invoking endpoint: [N] → (provider returned an empty error)",
+  "skill": "brand-kit",
+  "parked": false,
+  "n": 307,
+  "share": 0.1466093600764088,
+  "skillPath": "skills/brand/brand-kit.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-kit.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [
+   [
+    "wixmp-fe53c9ff592a4da924211f23.wixmp.com",
+    2
+   ]
+  ],
+  "notes": [],
+  "fix": [
+   "Check the parameters brand-kit tells the agent to pass to `edit_image` against the model's live schema; spell out the allowed values in the skill."
+  ],
+  "files": [
+   {
+    "path": "skills/brand/brand-kit.md",
+    "why": "the brand-kit skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-kit.md"
+   },
+   {
+    "path": "skills/brand/brand-kit.md",
+    "line": 10,
+    "why": "mentions edit_image: \"**This skill generates nothing itself — it routes.** Every item in the kit is built by the\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-kit.md#L10"
+   },
+   {
+    "path": "skills/brand/brand-kit.md",
+    "why": "skill brand-kit (307 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-kit.md"
+   }
+  ],
+  "evals": [
+   "tests/brand/brand-creation-flows.json",
+   "tests/brand/brand-edit-flows.json",
+   "tests/brand/on-brand-assets.json",
+   "tests/brand/brand-kit-flows.json"
+  ],
+  "prompt": "Fix a recurring failure in the `brand-kit` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `edit_image` fails with: INVALID_ARGUMENT: Error invoking endpoint: [N] → (provider returned an empty error)\nSize: 307 times in brand-kit in the last 7 days (15% of this error across skills); the same operation never succeeded later in the turn 71% of the time.\n\nWhat the evidence shows:\n\nChange to make:\n- Check the parameters brand-kit tells the agent to pass to `edit_image` against the model's live schema; spell out the allowed values in the skill.\n\nScope: edit only `skills/brand/brand-kit.md`. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/brand/brand-kit.md:10.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"edit_image\",\n  \"arguments\": {\n    \"source_urls\": \"[\\\"https://wixmp-fe53c9ff592a4da924211f23.wixmp.com/wixel-brand-service/logos/fa873c40-1a69-43f4-bdc1-579292817428/d3d001a7-a0c6-46e0-932d-c5c73b80350c.png\\\"]\",\n    \"model\": \"openai/gpt-image-2.5/sunburst/edit\",\n    \"intent\": \"logo-variations\",\n    \"instruction\": \"The attached image is an existing logo. Build a new layout variation of this exact logo. Reproduce its elements, do not reinterpret them.\\n\\nMUST KEEP, unchanged:\\n- The icon/symbol exactly as drawn in the attached image — the same white rugged human figure, same silhouette, same proportions and same interior black cutouts and details. Do not redraw, simplify, restyle or substitute it.\\n- The brand name spelled exactly: “SURVIVAL HUB” in uppercase.\\n- The tagline reading exactly “Preparedness Essentials,” set beneath the brand name in the same typeface and case as the logo’s secondary text and clea\",\n    \"aspect_ratio\": \"1:1\"\n  }\n}\n```\nError: Exception during invocation of Prompt ''. PredictionId: e17e98b2-d0ae-45a5-889d-20b4f9003b89 INVALID_ARGUMENT: Error invoking endpoint: [400] [taskUUID=089ad289-096d-481e-96e5-7790595da4ec] { \"data\": [], \"errors\": } error_json:{\"error\":\"[taskUUID=089ad289-096d-481e-96e5-7790595da4ec] {\\n \\\"data\\\": [\n\nThen: add a case for this to the skill's eval set (tests/brand/brand-creation-flows.json, tests/brand/brand-edit-flows.json, tests/brand/on-brand-assets.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "u4ckmt",
+  "sig": "INVALID_ARGUMENT: Error invoking endpoint: [N] → (provider returned an empty error)",
+  "skill": "wixel-ads",
+  "parked": false,
+  "n": 124,
+  "share": 0.05921680993314231,
+  "skillPath": "skills/video/wixel-ads.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [
+   [
+    "static.wixstatic.com",
+    3
+   ]
+  ],
+  "notes": [],
+  "fix": [
+   "Check the parameters wixel-ads tells the agent to pass to `edit_image` against the model's live schema; spell out the allowed values in the skill."
+  ],
+  "files": [
+   {
+    "path": "skills/video/wixel-ads.md",
+    "why": "the wixel-ads skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md"
+   },
+   {
+    "path": "skills/video/wixel-ads.md",
+    "line": 24,
+    "why": "mentions edit_image: \"**Every named method is an `invoke_rpc` call — never a tool by that name.** `generateExpre\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L24"
+   },
+   {
+    "path": "skills/video/wixel-ads.md",
+    "line": 84,
+    "why": "mentions edit_image: \"- **Physical product:** real harvested/uploaded pixels, composed large (≥55% of short edge\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L84"
+   },
+   {
+    "path": "skills/video/wixel-ads.md",
+    "line": 93,
+    "why": "mentions edit_image: \"**Only image files enter the run** (entry sheet §Only image files): a URL whose path ends \"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L93"
+   },
+   {
+    "path": "skills/video/wixel-ads.md",
+    "line": 107,
+    "why": "mentions edit_image: \"- `static`: the brief asks for a plain/regular/static logo → ignore animated reuse candida\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L107"
+   },
+   {
+    "path": "skills/video/wixel-ads.md",
+    "why": "skill wixel-ads (124 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md"
+   }
+  ],
+  "evals": [
+   "tests/video/video-ad-symphony.json",
+   "tests/video/video-ad-symphony-edge-cases.json",
+   "tests/stories/stories-symphony-routing.json",
+   "tests/video/video-ad-symphony-contracts.json"
+  ],
+  "prompt": "Fix a recurring failure in the `wixel-ads` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `edit_image` fails with: INVALID_ARGUMENT: Error invoking endpoint: [N] → (provider returned an empty error)\nSize: 124 times in wixel-ads in the last 7 days (6% of this error across skills); the same operation never succeeded later in the turn 71% of the time.\n\nWhat the evidence shows:\n\nChange to make:\n- Check the parameters wixel-ads tells the agent to pass to `edit_image` against the model's live schema; spell out the allowed values in the skill.\n\nScope: edit only `skills/video/wixel-ads.md`. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/wixel-ads.md:24, skills/video/wixel-ads.md:84, skills/video/wixel-ads.md:93, skills/video/wixel-ads.md:107.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"edit_image\",\n  \"arguments\": {\n    \"source_urls\": \"[\\\"https://static.wixstatic.com/media/26f379_af88704c9a7946389e9131814fe7d4e5~mv2.png\\\"]\",\n    \"intent\": \"ad-product-visual\",\n    \"instruction\": \"Preserve the actual mustard-yellow NEMO Vantage 26L daypack from the left listing exactly as photographed, including the real outline, stitching, pockets, straps, color and marks. Remove the surrounding product listing layout and text. Place the single backpack upright at right in a wide 16:9 cinematic composition; dark #0A0A0F open field at left; restrained #FF6B2B edge glow, premium dramatic product lighting. No second backpack and no invented lettering.\",\n    \"height\": \"1080\",\n    \"width\": \"1920\"\n  }\n}\n```\nError: Exception during invocation of Prompt ''. PredictionId: 329186c9-315b-4e5a-a252-488c681f0132 INVALID_ARGUMENT: Error invoking endpoint: [400] [taskUUID=8a659ef1-72cf-4ad5-b257-a002aa43ffef] { \"data\": [], \"errors\": } error_json:{\"error\":\"[taskUUID=8a659ef1-72cf-4ad5-b257-a002aa43ffef] {\\n \\\"data\\\": [\n\nThen: add a case for this to the skill's eval set (tests/video/video-ad-symphony.json, tests/video/video-ad-symphony-edge-cases.json, tests/stories/stories-symphony-routing.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "vjh5xi",
+  "sig": "Failed to analyze image: description: INVALID_ARGUMENT: INVALID_ARGUMENT: Error invoking endpoint: [N] → Cannot fetch content from the provided URL. Please ensu",
+  "skill": "wixel-ads",
+  "parked": false,
+  "n": 1170,
+  "share": 0.5503292568203199,
+  "skillPath": "skills/video/wixel-ads.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [
+   [
+    "storage.googleapis.com",
+    2
+   ]
+  ],
+  "notes": [
+   "The failing calls pass cloud-storage links: storage.googleapis.com (2). These are usually temporary or signed URLs (e.g. a scraped page's screenshot) that expire or need credentials by the time the provider fetches them."
+  ],
+  "fix": [
+   "In wixel-ads's instructions, don't hand `analyze_image` a cloud-storage link from an earlier step: re-host it on Wix first (the upload / convert step), or call `analyze_image` right after the step that produced it."
+  ],
+  "files": [
+   {
+    "path": "skills/video/wixel-ads.md",
+    "why": "the wixel-ads skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md"
+   },
+   {
+    "path": "skills/video/wixel-ads.md",
+    "line": 24,
+    "why": "mentions analyze_image: \"**Every named method is an `invoke_rpc` call — never a tool by that name.** `generateExpre\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L24"
+   },
+   {
+    "path": "skills/video/wixel-ads.md",
+    "line": 30,
+    "why": "mentions analyze_image: \"3. **Design preparation** — after harvest and entry have returned, `read` **`resources/vid\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L30"
+   },
+   {
+    "path": "skills/video/wixel-ads.md",
+    "line": 93,
+    "why": "mentions analyze_image: \"**Only image files enter the run** (entry sheet §Only image files): a URL whose path ends \"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L93"
+   },
+   {
+    "path": "skills/video/wixel-ads.md",
+    "line": 101,
+    "why": "mentions analyze_image: \"**Before ANY richtext write, in this order, no exceptions:** (a) the root read back in an \"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L101"
+   },
+   {
+    "path": "skills/video/wixel-ads.md",
+    "why": "skill wixel-ads (1170 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md"
+   }
+  ],
+  "evals": [
+   "tests/video/video-ad-symphony.json",
+   "tests/video/video-ad-symphony-edge-cases.json",
+   "tests/stories/stories-symphony-routing.json",
+   "tests/video/video-ad-symphony-contracts.json"
+  ],
+  "prompt": "Fix a recurring failure in the `wixel-ads` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `analyze_image` fails with: Failed to analyze image: description: INVALID_ARGUMENT: INVALID_ARGUMENT: Error invoking endpoint: [N] → Cannot fetch content from the provided URL. Please ensu\nSize: 1,170 times in wixel-ads in the last 7 days (55% of this error across skills); the same operation never succeeded later in the turn 46% of the time.\n\nWhat the evidence shows:\n- The failing calls pass cloud-storage links: storage.googleapis.com (2). These are usually temporary or signed URLs (e.g. a scraped page's screenshot) that expire or need credentials by the time the provider fetches them.\n\nChange to make:\n- In wixel-ads's instructions, don't hand `analyze_image` a cloud-storage link from an earlier step: re-host it on Wix first (the upload / convert step), or call `analyze_image` right after the step that produced it.\n\nScope: edit only `skills/video/wixel-ads.md`. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/wixel-ads.md:24, skills/video/wixel-ads.md:30, skills/video/wixel-ads.md:93, skills/video/wixel-ads.md:101.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"analyze_image\",\n  \"arguments\": {\n    \"detect\": \"true\",\n    \"prompt\": \"Describe the page's typography and layout only, as TWO frames. PHOTO FRAME — the first section where copy sits over a photograph or video: HEADLINE: serif|sans|slab|script|display, weight light|regular|bold|heavy, case sentence|title|upper, tracking tight|normal|wide, colour as hex. SUPPORT: same five fields for smaller text. BACKGROUND under copy: hex, photo darkened|photo plain. BUTTON: pill|rectangle|underline|none, fill hex, text hex. COPY BLOCK: left|centre|right, top|middle|bottom third, flush-left|centred. FLAT FRAME — first section where copy sits on a flat colour, same fields, BACKGRO\",\n    \"image_url\": \"https://storage.googleapis.com/firecrawl-scrape-media/screenshot-3688e5c6-6ca8-498d-9ded-589bd902e201.png?…\",\n    \"detect_labels\": \"[\\\"headline text over a photo\\\",\\\"smaller text over a photo\\\",\\\"headline text on a flat background\\\",\\\"smaller text on a flat background\\\",\\\"button\\\"]\"\n  }\n}\n```\nError: Failed to analyze image: description: INVALID_ARGUMENT: [com.wixpress.ds.wix-ai-gateway~wix.ds.wix_ai_gateway.v1.WixAiGateway#generateTextByPromptObject] Exception during invocation of Prompt ''. PredictionId: 8b7703d3-a2e6-4c2e-8a0e-3c3f3b0a9ff6\nINVALID_ARGUMENT: Error invoking endpoint: [400] {\n  \n\nThen: add a case for this to the skill's eval set (tests/video/video-ad-symphony.json, tests/video/video-ad-symphony-edge-cases.json, tests/stories/stories-symphony-routing.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "vjh5xi",
+  "sig": "Failed to analyze image: description: INVALID_ARGUMENT: INVALID_ARGUMENT: Error invoking endpoint: [N] → Cannot fetch content from the provided URL. Please ensu",
+  "skill": "single-page-design",
+  "parked": false,
+  "n": 240,
+  "share": 0.11288805268109126,
+  "skillPath": "skills/image/single-page-design.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [
+   [
+    "static.wixstatic.com",
+    1
+   ],
+   [
+    "storage.googleapis.com",
+    1
+   ]
+  ],
+  "notes": [
+   "The failing calls pass cloud-storage links: storage.googleapis.com (1). These are usually temporary or signed URLs (e.g. a scraped page's screenshot) that expire or need credentials by the time the provider fetches them."
+  ],
+  "fix": [
+   "In single-page-design's instructions, don't hand `analyze_image` a cloud-storage link from an earlier step: re-host it on Wix first (the upload / convert step), or call `analyze_image` right after the step that produced it."
+  ],
+  "files": [
+   {
+    "path": "skills/image/single-page-design.md",
+    "why": "the single-page-design skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "line": 81,
+    "why": "mentions analyze_image: \"**`Crawler's logo guess:` is a candidate, never the answer.** When the block cannot isolat\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L81"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "line": 91,
+    "why": "mentions analyze_image: \"- **A URL is given or is the subject** (*\"a cover for wixel.com\"*, *\"a flyer for my site\"*\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L91"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "line": 92,
+    "why": "mentions analyze_image: \"- **A brand is connected** → take the palette and fonts from `brand-new`, and attach the b\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L92"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "line": 95,
+    "why": "mentions analyze_image: \"**Attach, don’t describe.** When a screenshot, logo, or reference is going into the genera\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L95"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "why": "skill single-page-design (240 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md"
+   }
+  ],
+  "evals": [
+   "tests/image/spd-open-intents.json",
+   "tests/image/spd-brand-flyer.json",
+   "tests/image/spd-cover-format.json",
+   "tests/image/spd-intro-post.json",
+   "tests/image/spd-logo-requested.json",
+   "tests/image/spd-platform-format.json",
+   "tests/image/image-core-flows.json",
+   "tests/image/clay-play.json",
+   "tests/agent-to-agent/sequence-negative.json"
+  ],
+  "prompt": "Fix a recurring failure in the `single-page-design` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `analyze_image` fails with: Failed to analyze image: description: INVALID_ARGUMENT: INVALID_ARGUMENT: Error invoking endpoint: [N] → Cannot fetch content from the provided URL. Please ensu\nSize: 240 times in single-page-design in the last 7 days (11% of this error across skills); the same operation never succeeded later in the turn 46% of the time.\n\nWhat the evidence shows:\n- The failing calls pass cloud-storage links: storage.googleapis.com (1). These are usually temporary or signed URLs (e.g. a scraped page's screenshot) that expire or need credentials by the time the provider fetches them.\n\nChange to make:\n- In single-page-design's instructions, don't hand `analyze_image` a cloud-storage link from an earlier step: re-host it on Wix first (the upload / convert step), or call `analyze_image` right after the step that produced it.\n\nScope: edit only `skills/image/single-page-design.md`. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/image/single-page-design.md:81, skills/image/single-page-design.md:91, skills/image/single-page-design.md:92, skills/image/single-page-design.md:95.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"analyze_image\",\n  \"arguments\": {\n    \"detect\": \"false\",\n    \"prompt\": \"Is this image a logo, wordmark, or brand mark? If it is, what company name or letters does it show? If it is not a logo, say what it is.\",\n    \"image_url\": \"https://static.wixstatic.com/media/0286a8_d986f06e5f2a1a2d251d316d75fd734e.jpg/v1/fill/w_124,h_156,al_c,q_80,usm_0.66_1.00,0.01,enc_avif,quality_auto/0286a8_d986f06e5f2a1a2d251d316d75fd734e.jpg\",\n    \"detect_labels\": \"[]\"\n  }\n}\n```\nError: Failed to analyze image: description: INVALID_ARGUMENT: [com.wixpress.ds.wix-ai-gateway~wix.ds.wix_ai_gateway.v1.WixAiGateway#generateTextByPromptObject] Exception during invocation of Prompt ''. PredictionId: c376b2f0-cd57-4f43-bf7b-ffde96b17ec8\nINVALID_ARGUMENT: Error invoking endpoint: [400] {\n  \n\nThen: add a case for this to the skill's eval set (tests/image/spd-open-intents.json, tests/image/spd-brand-flyer.json, tests/image/spd-cover-format.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "vjh5xi",
+  "sig": "Failed to analyze image: description: INVALID_ARGUMENT: INVALID_ARGUMENT: Error invoking endpoint: [N] → Cannot fetch content from the provided URL. Please ensu",
+  "skill": "video-creation",
+  "parked": false,
+  "n": 190,
+  "share": 0.08936970837253057,
+  "skillPath": "skills/video/video.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [
+   [
+    "storage.googleapis.com",
+    2
+   ]
+  ],
+  "notes": [
+   "The failing calls pass cloud-storage links: storage.googleapis.com (2). These are usually temporary or signed URLs (e.g. a scraped page's screenshot) that expire or need credentials by the time the provider fetches them."
+  ],
+  "fix": [
+   "In video-creation's instructions, don't hand `analyze_image` a cloud-storage link from an earlier step: re-host it on Wix first (the upload / convert step), or call `analyze_image` right after the step that produced it."
+  ],
+  "files": [
+   {
+    "path": "skills/video/video.md",
+    "why": "the video-creation skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 306,
+    "why": "mentions analyze_image: \"- **Reserve the plan's own image spend before that number becomes a ceiling.** `ListCosts`\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L306"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 344,
+    "why": "mentions analyze_image: \"3. **Compose and analyze the first frame after approval**, using `edit_image` when the use\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L344"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 487,
+    "why": "mentions analyze_image: \"1. **Pre-allocate persistent reference UUIDs and finish approved ingredient forms** — one \"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L487"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 505,
+    "why": "mentions analyze_image: \"For a shared location or recurring composed character, create one master plate first and d\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L505"
+   }
+  ],
+  "evals": [
+   "tests/video/video-core-flows.json",
+   "tests/video/video-creation-e2e.json",
+   "tests/video/video-planning-quality.json",
+   "tests/video/video-plan-approval.json",
+   "tests/video/creative-world-routing.json",
+   "tests/video/stable-graph-policy.json",
+   "tests/video/video-credits-stop-cleanup.json",
+   "tests/video/example-video-test-set.json",
+   "tests/export/export-edge-cases.json",
+   "tests/video/video-edge-cases.json"
+  ],
+  "prompt": "Fix a recurring failure in the `video-creation` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `analyze_image` fails with: Failed to analyze image: description: INVALID_ARGUMENT: INVALID_ARGUMENT: Error invoking endpoint: [N] → Cannot fetch content from the provided URL. Please ensu\nSize: 190 times in video-creation in the last 7 days (9% of this error across skills); the same operation never succeeded later in the turn 46% of the time.\n\nWhat the evidence shows:\n- The failing calls pass cloud-storage links: storage.googleapis.com (2). These are usually temporary or signed URLs (e.g. a scraped page's screenshot) that expire or need credentials by the time the provider fetches them.\n\nChange to make:\n- In video-creation's instructions, don't hand `analyze_image` a cloud-storage link from an earlier step: re-host it on Wix first (the upload / convert step), or call `analyze_image` right after the step that produced it.\n\nScope: edit only `skills/video/video.md`. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/video.md:306, skills/video/video.md:344, skills/video/video.md:487, skills/video/video.md:505.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"analyze_image\",\n  \"arguments\": {\n    \"detect\": \"true\",\n    \"prompt\": \"Describe the page's typography and layout only, as TWO frames. PHOTO FRAME — the first section where copy sits over a photograph or video: HEADLINE: <serif|sans|slab|script|display>, <weight: light|regular|bold|heavy>, <case: sentence|title|upper>, <tracking: tight|normal|wide>, <colour as hex>. SUPPORT: the same five fields for the smaller text under or beside it. BACKGROUND under the copy: <hex>, <photo darkened|photo plain>. BUTTON: <pill|rectangle|underline|none>, <fill hex>, <text hex>. COPY BLOCK: <left|centre|right>, <top|middle|bottom third>, <flush-left|centred>. FLAT FRAME — the firs\",\n    \"image_url\": \"https://storage.googleapis.com/firecrawl-scrape-media/screenshot-1ed4f74d-8a2e-498b-b945-ee60163ab6e3.png?…\",\n    \"detect_labels\": \"[\\\"headline text over a photo\\\",\\\"smaller text over a photo\\\",\\\"headline text on a flat background\\\",\\\"smaller text on a flat background\\\",\\\"button\\\"]\"\n  }\n}\n```\nError: Failed to analyze image: description: INVALID_ARGUMENT: [com.wixpress.ds.wix-ai-gateway~wix.ds.wix_ai_gateway.v1.WixAiGateway#generateTextByPromptObject] Exception during invocation of Prompt ''. PredictionId: a8e570d3-c5df-478e-8860-d7e4c117815d\nINVALID_ARGUMENT: Error invoking endpoint: [400] {\n  \n\nThen: add a case for this to the skill's eval set (tests/video/video-core-flows.json, tests/video/video-creation-e2e.json, tests/video/video-planning-quality.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "1w1lpjy",
+  "sig": "Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: document 'resources/video/video-capability-catalog.md' not found in current",
+  "skill": "wixel-ads",
+  "parked": false,
+  "n": 644,
+  "share": 0.6605128205128206,
+  "skillPath": "skills/video/wixel-ads.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [],
+  "notes": [
+   "resources/video/video-capability-catalog.md is not in the codex, but references/video/video-capability-catalog.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.",
+   "It's referred to by bare name in 9 file(s), e.g. references/video/video-ads-craft.md:24, references/video/video-audio.md:142, references/video/video-call-card.md:28 — that wording is what sends the agent looking."
+  ],
+  "fix": [
+   "Reword wixel-ads's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/."
+  ],
+  "files": [
+   {
+    "path": "skills/video/wixel-ads.md",
+    "why": "the wixel-ads skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md"
+   },
+   {
+    "path": "skills/video/wixel-ads.md",
+    "line": 8,
+    "why": "mentions read: \"**Worker scope:** an assigned `symphony_worker_role` (`logo` or `ad`) reads `resources/vid\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L8"
+   },
+   {
+    "path": "skills/video/wixel-ads.md",
+    "line": 10,
+    "why": "mentions read: \"Build the **Symphony creator-style ad** — **everything defaults to video**: every beat is \"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L10"
+   },
+   {
+    "path": "skills/video/wixel-ads.md",
+    "line": 22,
+    "why": "mentions read: \"## Entry and required phase reads\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L22"
+   },
+   {
+    "path": "skills/video/wixel-ads.md",
+    "line": 24,
+    "why": "mentions read: \"**Every named method is an `invoke_rpc` call — never a tool by that name.** `generateExpre\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L24"
+   },
+   {
+    "path": "references/video/video-capability-catalog.md",
+    "why": "where the file really is",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-capability-catalog.md"
+   },
+   {
+    "path": "references/video/video-ads-craft.md",
+    "why": "mentions video-capability-catalog.md",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-ads-craft.md#L24"
+   },
+   {
+    "path": "references/video/video-audio.md",
+    "why": "mentions video-capability-catalog.md",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-audio.md#L142"
+   },
+   {
+    "path": "references/video/video-call-card.md",
+    "why": "mentions video-capability-catalog.md",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-call-card.md#L28"
+   }
+  ],
+  "evals": [
+   "tests/video/video-ad-symphony.json",
+   "tests/video/video-ad-symphony-edge-cases.json",
+   "tests/stories/stories-symphony-routing.json",
+   "tests/video/video-ad-symphony-contracts.json"
+  ],
+  "prompt": "Fix a recurring failure in the `wixel-ads` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: document 'resources/video/video-capability-catalog.md' not found in current\nSize: 644 times in wixel-ads in the last 7 days (66% of this error across skills); the same operation never succeeded later in the turn 32% of the time.\n\nWhat the evidence shows:\n- resources/video/video-capability-catalog.md is not in the codex, but references/video/video-capability-catalog.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 9 file(s), e.g. references/video/video-ads-craft.md:24, references/video/video-audio.md:142, references/video/video-call-card.md:28 — that wording is what sends the agent looking.\n\nChange to make:\n- Reword wixel-ads's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only `skills/video/wixel-ads.md` and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/wixel-ads.md:8, skills/video/wixel-ads.md:10, skills/video/wixel-ads.md:22, skills/video/wixel-ads.md:24.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-capability-catalog.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-capability-catalog.md' not found in current version for base versio\n\nThen: add a case for this to the skill's eval set (tests/video/video-ad-symphony.json, tests/video/video-ad-symphony-edge-cases.json, tests/stories/stories-symphony-routing.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "1w1lpjy",
+  "sig": "Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: document 'resources/video/video-capability-catalog.md' not found in current",
+  "skill": "video-creation",
+  "parked": false,
+  "n": 221,
+  "share": 0.22666666666666666,
+  "skillPath": "skills/video/video.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [],
+  "notes": [
+   "resources/video/video-capability-catalog.md is not in the codex, but references/video/video-capability-catalog.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.",
+   "It's referred to by bare name in 9 file(s), e.g. references/video/video-ads-craft.md:24, references/video/video-audio.md:142, references/video/video-call-card.md:28 — that wording is what sends the agent looking."
+  ],
+  "fix": [
+   "Reword video-creation's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/."
+  ],
+  "files": [
+   {
+    "path": "skills/video/video.md",
+    "why": "the video-creation skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 26,
+    "why": "mentions read: \"> ## ⛔ ABSOLUTE RULES — read these before everything else\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L26"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 28,
+    "why": "mentions read: \"> **0. Apply Specialist handoff intake first; an active handoff stays here instead of retu\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L28"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 30,
+    "why": "mentions read: \"> **1. `write` only saves Assets, never Components.** You will only ever call `write` for \"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L30"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 36,
+    "why": "mentions read: \"> **4. Read and update by the PATH the write returned — not by an id you invented.** Every\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L36"
+   },
+   {
+    "path": "references/video/video-capability-catalog.md",
+    "why": "where the file really is",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-capability-catalog.md"
+   },
+   {
+    "path": "references/video/video-ads-craft.md",
+    "why": "mentions video-capability-catalog.md",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-ads-craft.md#L24"
+   },
+   {
+    "path": "references/video/video-audio.md",
+    "why": "mentions video-capability-catalog.md",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-audio.md#L142"
+   },
+   {
+    "path": "references/video/video-call-card.md",
+    "why": "mentions video-capability-catalog.md",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-call-card.md#L28"
+   }
+  ],
+  "evals": [
+   "tests/video/video-core-flows.json",
+   "tests/video/video-creation-e2e.json",
+   "tests/video/video-planning-quality.json",
+   "tests/video/video-plan-approval.json",
+   "tests/video/creative-world-routing.json",
+   "tests/video/stable-graph-policy.json",
+   "tests/video/video-credits-stop-cleanup.json",
+   "tests/video/example-video-test-set.json",
+   "tests/export/export-edge-cases.json",
+   "tests/video/video-edge-cases.json"
+  ],
+  "prompt": "Fix a recurring failure in the `video-creation` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: document 'resources/video/video-capability-catalog.md' not found in current\nSize: 221 times in video-creation in the last 7 days (23% of this error across skills); the same operation never succeeded later in the turn 32% of the time.\n\nWhat the evidence shows:\n- resources/video/video-capability-catalog.md is not in the codex, but references/video/video-capability-catalog.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 9 file(s), e.g. references/video/video-ads-craft.md:24, references/video/video-audio.md:142, references/video/video-call-card.md:28 — that wording is what sends the agent looking.\n\nChange to make:\n- Reword video-creation's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only `skills/video/video.md` and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/video.md:26, skills/video/video.md:28, skills/video/video.md:30, skills/video/video.md:36.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-capability-catalog.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-capability-catalog.md' not found in current version for base versio\n\nThen: add a case for this to the skill's eval set (tests/video/video-core-flows.json, tests/video/video-creation-e2e.json, tests/video/video-planning-quality.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "1w1lpjy",
+  "sig": "Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: document 'resources/video/video-capability-catalog.md' not found in current",
+  "skill": "video-regen",
+  "parked": false,
+  "n": 78,
+  "share": 0.08,
+  "skillPath": "skills/video/video-edit.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [],
+  "notes": [
+   "resources/video/video-capability-catalog.md is not in the codex, but references/video/video-capability-catalog.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.",
+   "It's referred to by bare name in 9 file(s), e.g. references/video/video-ads-craft.md:24, references/video/video-audio.md:142, references/video/video-call-card.md:28 — that wording is what sends the agent looking."
+  ],
+  "fix": [
+   "Reword video-regen's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/."
+  ],
+  "files": [
+   {
+    "path": "skills/video/video-edit.md",
+    "why": "the video-regen skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md"
+   },
+   {
+    "path": "skills/video/video-edit.md",
+    "line": 14,
+    "why": "mentions read: \"> ⛔ **A generation call has three outcomes, not two — this governs every call below.** `CO\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L14"
+   },
+   {
+    "path": "skills/video/video-edit.md",
+    "line": 40,
+    "why": "mentions read: \"**Self-heal stuck generation first (before the user's new request).** A previous turn can \"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L40"
+   },
+   {
+    "path": "skills/video/video-edit.md",
+    "line": 42,
+    "why": "mentions read: \"For every video-rendering edit, re-read the root after self-healing and snapshot every roo\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L42"
+   },
+   {
+    "path": "skills/video/video-edit.md",
+    "line": 62,
+    "why": "mentions read: \"- If any scene required for the decision has no `src` or returns an analysis error, stop b\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L62"
+   },
+   {
+    "path": "references/video/video-capability-catalog.md",
+    "why": "where the file really is",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-capability-catalog.md"
+   },
+   {
+    "path": "references/video/video-ads-craft.md",
+    "why": "mentions video-capability-catalog.md",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-ads-craft.md#L24"
+   },
+   {
+    "path": "references/video/video-audio.md",
+    "why": "mentions video-capability-catalog.md",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-audio.md#L142"
+   },
+   {
+    "path": "references/video/video-call-card.md",
+    "why": "mentions video-capability-catalog.md",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-call-card.md#L28"
+   }
+  ],
+  "evals": [
+   "tests/video/video-edit-v2v-routing.json",
+   "tests/video/video-core-flows.json",
+   "tests/video/root-timeline-refit.json",
+   "tests/video/video-credits-stop-cleanup.json",
+   "tests/video/video-edge-cases.json"
+  ],
+  "prompt": "Fix a recurring failure in the `video-regen` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: document 'resources/video/video-capability-catalog.md' not found in current\nSize: 78 times in video-regen in the last 7 days (8% of this error across skills); the same operation never succeeded later in the turn 32% of the time.\n\nWhat the evidence shows:\n- resources/video/video-capability-catalog.md is not in the codex, but references/video/video-capability-catalog.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 9 file(s), e.g. references/video/video-ads-craft.md:24, references/video/video-audio.md:142, references/video/video-call-card.md:28 — that wording is what sends the agent looking.\n\nChange to make:\n- Reword video-regen's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only `skills/video/video-edit.md` and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/video-edit.md:14, skills/video/video-edit.md:40, skills/video/video-edit.md:42, skills/video/video-edit.md:62.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-capability-catalog.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-capability-catalog.md' not found in current version for base versio\n\nThen: add a case for this to the skill's eval set (tests/video/video-edit-v2v-routing.json, tests/video/video-core-flows.json, tests/video/root-timeline-refit.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "1b11ugo",
+  "sig": "Failed to analyze image: description: INVALID_ARGUMENT: INVALID_ARGUMENT: Error invoking endpoint: [N] → invalid_value: Error while downloading file. Upstream s",
+  "skill": "single-page-design",
+  "parked": false,
+  "n": 300,
+  "share": 0.32608695652173914,
+  "skillPath": "skills/image/single-page-design.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [
+   [
+    "storage.googleapis.com",
+    2
+   ]
+  ],
+  "notes": [
+   "The failing calls pass cloud-storage links: storage.googleapis.com (2). These are usually temporary or signed URLs (e.g. a scraped page's screenshot) that expire or need credentials by the time the provider fetches them."
+  ],
+  "fix": [
+   "In single-page-design's instructions, don't hand `analyze_image` a cloud-storage link from an earlier step: re-host it on Wix first (the upload / convert step), or call `analyze_image` right after the step that produced it."
+  ],
+  "files": [
+   {
+    "path": "skills/image/single-page-design.md",
+    "why": "the single-page-design skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "line": 81,
+    "why": "mentions analyze_image: \"**`Crawler's logo guess:` is a candidate, never the answer.** When the block cannot isolat\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L81"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "line": 91,
+    "why": "mentions analyze_image: \"- **A URL is given or is the subject** (*\"a cover for wixel.com\"*, *\"a flyer for my site\"*\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L91"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "line": 92,
+    "why": "mentions analyze_image: \"- **A brand is connected** → take the palette and fonts from `brand-new`, and attach the b\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L92"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "line": 95,
+    "why": "mentions analyze_image: \"**Attach, don’t describe.** When a screenshot, logo, or reference is going into the genera\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L95"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "why": "skill single-page-design (300 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md"
+   }
+  ],
+  "evals": [
+   "tests/image/spd-open-intents.json",
+   "tests/image/spd-brand-flyer.json",
+   "tests/image/spd-cover-format.json",
+   "tests/image/spd-intro-post.json",
+   "tests/image/spd-logo-requested.json",
+   "tests/image/spd-platform-format.json",
+   "tests/image/image-core-flows.json",
+   "tests/image/clay-play.json",
+   "tests/agent-to-agent/sequence-negative.json"
+  ],
+  "prompt": "Fix a recurring failure in the `single-page-design` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `analyze_image` fails with: Failed to analyze image: description: INVALID_ARGUMENT: INVALID_ARGUMENT: Error invoking endpoint: [N] → invalid_value: Error while downloading file. Upstream s\nSize: 300 times in single-page-design in the last 7 days (33% of this error across skills); the same operation never succeeded later in the turn 40% of the time.\n\nWhat the evidence shows:\n- The failing calls pass cloud-storage links: storage.googleapis.com (2). These are usually temporary or signed URLs (e.g. a scraped page's screenshot) that expire or need credentials by the time the provider fetches them.\n\nChange to make:\n- In single-page-design's instructions, don't hand `analyze_image` a cloud-storage link from an earlier step: re-host it on Wix first (the upload / convert step), or call `analyze_image` right after the step that produced it.\n\nScope: edit only `skills/image/single-page-design.md`. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/image/single-page-design.md:81, skills/image/single-page-design.md:91, skills/image/single-page-design.md:92, skills/image/single-page-design.md:95.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"analyze_image\",\n  \"arguments\": {\n    \"detect\": \"false\",\n    \"prompt\": \"Look at the very top strip of this page. Is there a brand logo in the header? If so: which corner does it sit in; is it a symbol, a wordmark, or both; what exact capitalisation does the wordmark use; what colour is it; and what shape and colours are the symbol?\",\n    \"image_url\": \"https://storage.googleapis.com/firecrawl-scrape-media/screenshot-eae1f733-ec0f-4b20-bfc0-31c6b4448794.png?…\",\n    \"detect_labels\": \"[]\"\n  }\n}\n```\nError: Failed to analyze image: description: INVALID_ARGUMENT: [com.wixpress.ds.wix-ai-gateway~wix.ds.wix_ai_gateway.v1.WixAiGateway#generateContentByPromptObject] Exception during invocation of Prompt ''. PredictionId: 024b0b2a-0538-4fc0-a221-58412658b432\nINVALID_ARGUMENT: Error invoking endpoint: [400] {\n\nThen: add a case for this to the skill's eval set (tests/image/spd-open-intents.json, tests/image/spd-brand-flyer.json, tests/image/spd-cover-format.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "1b11ugo",
+  "sig": "Failed to analyze image: description: INVALID_ARGUMENT: INVALID_ARGUMENT: Error invoking endpoint: [N] → invalid_value: Error while downloading file. Upstream s",
+  "skill": "image-qr",
+  "parked": false,
+  "n": 86,
+  "share": 0.09347826086956522,
+  "skillPath": "skills/image/image-qr.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image-qr.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [
+   [
+    "storage.googleapis.com",
+    2
+   ]
+  ],
+  "notes": [
+   "The failing calls pass cloud-storage links: storage.googleapis.com (2). These are usually temporary or signed URLs (e.g. a scraped page's screenshot) that expire or need credentials by the time the provider fetches them."
+  ],
+  "fix": [
+   "In image-qr's instructions, don't hand `analyze_image` a cloud-storage link from an earlier step: re-host it on Wix first (the upload / convert step), or call `analyze_image` right after the step that produced it."
+  ],
+  "files": [
+   {
+    "path": "skills/image/image-qr.md",
+    "why": "the image-qr skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image-qr.md"
+   },
+   {
+    "path": "skills/image/image-qr.md",
+    "line": 186,
+    "why": "mentions analyze_image: \"`fetch_brand: true`, then `analyze_image` the screenshot with `single-page-design`'s eight\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image-qr.md#L186"
+   },
+   {
+    "path": "skills/image/image-qr.md",
+    "line": 192,
+    "why": "mentions analyze_image: \"call. Take its `Logo:` line, or its `Crawler's logo guess`, and `analyze_image` it with th\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image-qr.md#L192"
+   },
+   {
+    "path": "skills/image/image-qr.md",
+    "line": 455,
+    "why": "mentions analyze_image: \"model reads those pixels itself — spending an `analyze_image` round-trip first to write a \"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image-qr.md#L455"
+   },
+   {
+    "path": "skills/image/image-qr.md",
+    "line": 468,
+    "why": "mentions analyze_image: \"back to `analyze_image` with that skill's eight-question call, verbatim, and brief from th\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image-qr.md#L468"
+   },
+   {
+    "path": "skills/image/image-qr.md",
+    "why": "skill image-qr (86 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image-qr.md"
+   }
+  ],
+  "evals": [
+   "tests/image/image-core-flows.json"
+  ],
+  "prompt": "Fix a recurring failure in the `image-qr` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `analyze_image` fails with: Failed to analyze image: description: INVALID_ARGUMENT: INVALID_ARGUMENT: Error invoking endpoint: [N] → invalid_value: Error while downloading file. Upstream s\nSize: 86 times in image-qr in the last 7 days (9% of this error across skills); the same operation never succeeded later in the turn 40% of the time.\n\nWhat the evidence shows:\n- The failing calls pass cloud-storage links: storage.googleapis.com (2). These are usually temporary or signed URLs (e.g. a scraped page's screenshot) that expire or need credentials by the time the provider fetches them.\n\nChange to make:\n- In image-qr's instructions, don't hand `analyze_image` a cloud-storage link from an earlier step: re-host it on Wix first (the upload / convert step), or call `analyze_image` right after the step that produced it.\n\nScope: edit only `skills/image/image-qr.md`. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/image/image-qr.md:186, skills/image/image-qr.md:192, skills/image/image-qr.md:455, skills/image/image-qr.md:468.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"analyze_image\",\n  \"arguments\": {\n    \"detect\": \"false\",\n    \"prompt\": \"Answer each of these separately about this page. (1) Is there a logo — where does it sit, is it a symbol, a wordmark, or both, and what are its colours and forms? (2) Is the imagery photographic, illustrated, 3D, or a mix — and which elements are which? (3) What is the background treatment — flat fill, gradient, or texture — and which colours? (4) What colour is the main headline text? (5) How dense is the layout and how much negative space is there? (6) What is the type personality? (7) Which parts of this page are product interface or sample output rather than the brand's own imagery? (8) Fo\",\n    \"image_url\": \"https://storage.googleapis.com/firecrawl-scrape-media/screenshot-911ba5f1-47e3-4f09-b683-5dc95ab8a689.png?…\",\n    \"detect_labels\": \"[]\"\n  }\n}\n```\nError: Failed to analyze image: description: INVALID_ARGUMENT: [com.wixpress.ds.wix-ai-gateway~wix.ds.wix_ai_gateway.v1.WixAiGateway#generateContentByPromptObject] Exception during invocation of Prompt ''. PredictionId: e8130795-9b39-4738-9b79-98a887a78a9a\nINVALID_ARGUMENT: Error invoking endpoint: [400] {\n\nThen: add a case for this to the skill's eval set (tests/image/image-core-flows.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "1b11ugo",
+  "sig": "Failed to analyze image: description: INVALID_ARGUMENT: INVALID_ARGUMENT: Error invoking endpoint: [N] → invalid_value: Error while downloading file. Upstream s",
+  "skill": "stories-creation",
+  "parked": false,
+  "n": 82,
+  "share": 0.0891304347826087,
+  "skillPath": "skills/stories/stories-creation.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/stories/stories-creation.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [
+   [
+    "storage.googleapis.com",
+    1
+   ],
+   [
+    "static.wixstatic.com",
+    1
+   ]
+  ],
+  "notes": [
+   "The failing calls pass cloud-storage links: storage.googleapis.com (1). These are usually temporary or signed URLs (e.g. a scraped page's screenshot) that expire or need credentials by the time the provider fetches them."
+  ],
+  "fix": [
+   "In stories-creation's instructions, don't hand `analyze_image` a cloud-storage link from an earlier step: re-host it on Wix first (the upload / convert step), or call `analyze_image` right after the step that produced it."
+  ],
+  "files": [
+   {
+    "path": "skills/stories/stories-creation.md",
+    "why": "the stories-creation skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/stories/stories-creation.md"
+   },
+   {
+    "path": "skills/stories/stories-creation.md",
+    "line": 170,
+    "why": "mentions analyze_image: \"2. **Pick, don't pour.** From the pool take the logo, **at most three** images (one per pa\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/stories/stories-creation.md#L170"
+   },
+   {
+    "path": "skills/stories/stories-creation.md",
+    "line": 173,
+    "why": "mentions analyze_image: \"**Never load the `brand-new` skill.** Never `web_search` for brand identity. Brand colours\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/stories/stories-creation.md#L173"
+   }
+  ],
+  "evals": [
+   "tests/stories/stories-create.json",
+   "tests/stories/stories-edge-cases.json",
+   "tests/stories/stories-symphony-routing.json"
+  ],
+  "prompt": "Fix a recurring failure in the `stories-creation` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `analyze_image` fails with: Failed to analyze image: description: INVALID_ARGUMENT: INVALID_ARGUMENT: Error invoking endpoint: [N] → invalid_value: Error while downloading file. Upstream s\nSize: 82 times in stories-creation in the last 7 days (9% of this error across skills); the same operation never succeeded later in the turn 40% of the time.\n\nWhat the evidence shows:\n- The failing calls pass cloud-storage links: storage.googleapis.com (1). These are usually temporary or signed URLs (e.g. a scraped page's screenshot) that expire or need credentials by the time the provider fetches them.\n\nChange to make:\n- In stories-creation's instructions, don't hand `analyze_image` a cloud-storage link from an earlier step: re-host it on Wix first (the upload / convert step), or call `analyze_image` right after the step that produced it.\n\nScope: edit only `skills/stories/stories-creation.md`. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/stories/stories-creation.md:170, skills/stories/stories-creation.md:173.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"analyze_image\",\n  \"arguments\": {\n    \"detect\": \"false\",\n    \"prompt\": \"Describe the website's visual identity: layout density, colors, mood, imagery treatment, and typography feel. This is a style reference only.\",\n    \"image_url\": \"https://storage.googleapis.com/firecrawl-scrape-media/screenshot-b2b672b0-0462-4c62-9510-0ae8344549d5.png?…\",\n    \"detect_labels\": \"[]\"\n  }\n}\n```\nError: Failed to analyze image: description: INVALID_ARGUMENT: [com.wixpress.ds.wix-ai-gateway~wix.ds.wix_ai_gateway.v1.WixAiGateway#generateContentByPromptObject] Exception during invocation of Prompt ''. PredictionId: e029b121-6280-4d99-9948-5e8a297cc839\nINVALID_ARGUMENT: Error invoking endpoint: [400] {\n\nThen: add a case for this to the skill's eval set (tests/stories/stories-create.json, tests/stories/stories-edge-cases.json, tests/stories/stories-symphony-routing.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "1rzzqfr",
+  "sig": "Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: document 'resources/video/video-data-model.md' not found in current version for bas",
+  "skill": "wixel-ads",
+  "parked": false,
+  "n": 618,
+  "share": 0.588011417697431,
+  "skillPath": "skills/video/wixel-ads.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [],
+  "notes": [
+   "resources/video/video-data-model.md is not in the codex, but references/video/video-data-model.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.",
+   "It's referred to by bare name in 3 file(s), e.g. references/video/video-audio.md:3, references/video/video-audio.md:89, references/video/video-audio.md:156 — that wording is what sends the agent looking."
+  ],
+  "fix": [
+   "Reword wixel-ads's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/."
+  ],
+  "files": [
+   {
+    "path": "skills/video/wixel-ads.md",
+    "why": "the wixel-ads skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md"
+   },
+   {
+    "path": "skills/video/wixel-ads.md",
+    "line": 8,
+    "why": "mentions read: \"**Worker scope:** an assigned `symphony_worker_role` (`logo` or `ad`) reads `resources/vid\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L8"
+   },
+   {
+    "path": "skills/video/wixel-ads.md",
+    "line": 10,
+    "why": "mentions read: \"Build the **Symphony creator-style ad** — **everything defaults to video**: every beat is \"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L10"
+   },
+   {
+    "path": "skills/video/wixel-ads.md",
+    "line": 22,
+    "why": "mentions read: \"## Entry and required phase reads\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L22"
+   },
+   {
+    "path": "skills/video/wixel-ads.md",
+    "line": 24,
+    "why": "mentions read: \"**Every named method is an `invoke_rpc` call — never a tool by that name.** `generateExpre\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L24"
+   },
+   {
+    "path": "references/video/video-data-model.md",
+    "why": "where the file really is",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-data-model.md"
+   },
+   {
+    "path": "references/video/video-audio.md",
+    "why": "mentions video-data-model.md",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-audio.md#L3"
+   },
+   {
+    "path": "skills/video/wixel-ads.md",
+    "why": "skill wixel-ads (618 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md"
+   }
+  ],
+  "evals": [
+   "tests/video/video-ad-symphony.json",
+   "tests/video/video-ad-symphony-edge-cases.json",
+   "tests/stories/stories-symphony-routing.json",
+   "tests/video/video-ad-symphony-contracts.json"
+  ],
+  "prompt": "Fix a recurring failure in the `wixel-ads` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: document 'resources/video/video-data-model.md' not found in current version for bas\nSize: 618 times in wixel-ads in the last 7 days (59% of this error across skills); the same operation never succeeded later in the turn 24% of the time.\n\nWhat the evidence shows:\n- resources/video/video-data-model.md is not in the codex, but references/video/video-data-model.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 3 file(s), e.g. references/video/video-audio.md:3, references/video/video-audio.md:89, references/video/video-audio.md:156 — that wording is what sends the agent looking.\n\nChange to make:\n- Reword wixel-ads's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only `skills/video/wixel-ads.md` and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/wixel-ads.md:8, skills/video/wixel-ads.md:10, skills/video/wixel-ads.md:22, skills/video/wixel-ads.md:24.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-data-model.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-data-model.md' not found in current version for base version '53536764-191e\n\nThen: add a case for this to the skill's eval set (tests/video/video-ad-symphony.json, tests/video/video-ad-symphony-edge-cases.json, tests/stories/stories-symphony-routing.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "1rzzqfr",
+  "sig": "Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: document 'resources/video/video-data-model.md' not found in current version for bas",
+  "skill": "video-creation",
+  "parked": false,
+  "n": 279,
+  "share": 0.2654614652711703,
+  "skillPath": "skills/video/video.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [],
+  "notes": [
+   "resources/video/video-data-model.md is not in the codex, but references/video/video-data-model.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.",
+   "It's referred to by bare name in 3 file(s), e.g. references/video/video-audio.md:3, references/video/video-audio.md:89, references/video/video-audio.md:156 — that wording is what sends the agent looking."
+  ],
+  "fix": [
+   "Reword video-creation's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/."
+  ],
+  "files": [
+   {
+    "path": "skills/video/video.md",
+    "why": "the video-creation skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 26,
+    "why": "mentions read: \"> ## ⛔ ABSOLUTE RULES — read these before everything else\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L26"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 28,
+    "why": "mentions read: \"> **0. Apply Specialist handoff intake first; an active handoff stays here instead of retu\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L28"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 30,
+    "why": "mentions read: \"> **1. `write` only saves Assets, never Components.** You will only ever call `write` for \"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L30"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 36,
+    "why": "mentions read: \"> **4. Read and update by the PATH the write returned — not by an id you invented.** Every\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L36"
+   },
+   {
+    "path": "references/video/video-data-model.md",
+    "why": "where the file really is",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-data-model.md"
+   },
+   {
+    "path": "references/video/video-audio.md",
+    "why": "mentions video-data-model.md",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-audio.md#L3"
+   },
+   {
+    "path": "skills/video/video.md",
+    "why": "skill video-creation (279 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md"
+   }
+  ],
+  "evals": [
+   "tests/video/video-core-flows.json",
+   "tests/video/video-creation-e2e.json",
+   "tests/video/video-planning-quality.json",
+   "tests/video/video-plan-approval.json",
+   "tests/video/creative-world-routing.json",
+   "tests/video/stable-graph-policy.json",
+   "tests/video/video-credits-stop-cleanup.json",
+   "tests/video/example-video-test-set.json",
+   "tests/export/export-edge-cases.json",
+   "tests/video/video-edge-cases.json"
+  ],
+  "prompt": "Fix a recurring failure in the `video-creation` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: document 'resources/video/video-data-model.md' not found in current version for bas\nSize: 279 times in video-creation in the last 7 days (27% of this error across skills); the same operation never succeeded later in the turn 24% of the time.\n\nWhat the evidence shows:\n- resources/video/video-data-model.md is not in the codex, but references/video/video-data-model.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 3 file(s), e.g. references/video/video-audio.md:3, references/video/video-audio.md:89, references/video/video-audio.md:156 — that wording is what sends the agent looking.\n\nChange to make:\n- Reword video-creation's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only `skills/video/video.md` and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/video.md:26, skills/video/video.md:28, skills/video/video.md:30, skills/video/video.md:36.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-data-model.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-data-model.md' not found in current version for base version '53536764-191e\n\nThen: add a case for this to the skill's eval set (tests/video/video-core-flows.json, tests/video/video-creation-e2e.json, tests/video/video-planning-quality.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "1rzzqfr",
+  "sig": "Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: document 'resources/video/video-data-model.md' not found in current version for bas",
+  "skill": "video-regen",
+  "parked": false,
+  "n": 120,
+  "share": 0.11417697431018078,
+  "skillPath": "skills/video/video-edit.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [],
+  "notes": [
+   "resources/video/video-data-model.md is not in the codex, but references/video/video-data-model.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.",
+   "It's referred to by bare name in 3 file(s), e.g. references/video/video-audio.md:3, references/video/video-audio.md:89, references/video/video-audio.md:156 — that wording is what sends the agent looking."
+  ],
+  "fix": [
+   "Reword video-regen's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/."
+  ],
+  "files": [
+   {
+    "path": "skills/video/video-edit.md",
+    "why": "the video-regen skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md"
+   },
+   {
+    "path": "skills/video/video-edit.md",
+    "line": 14,
+    "why": "mentions read: \"> ⛔ **A generation call has three outcomes, not two — this governs every call below.** `CO\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L14"
+   },
+   {
+    "path": "skills/video/video-edit.md",
+    "line": 40,
+    "why": "mentions read: \"**Self-heal stuck generation first (before the user's new request).** A previous turn can \"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L40"
+   },
+   {
+    "path": "skills/video/video-edit.md",
+    "line": 42,
+    "why": "mentions read: \"For every video-rendering edit, re-read the root after self-healing and snapshot every roo\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L42"
+   },
+   {
+    "path": "skills/video/video-edit.md",
+    "line": 62,
+    "why": "mentions read: \"- If any scene required for the decision has no `src` or returns an analysis error, stop b\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L62"
+   },
+   {
+    "path": "references/video/video-data-model.md",
+    "why": "where the file really is",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-data-model.md"
+   },
+   {
+    "path": "references/video/video-audio.md",
+    "why": "mentions video-data-model.md",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-audio.md#L3"
+   },
+   {
+    "path": "skills/video/video-edit.md",
+    "why": "skill video-regen (120 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md"
+   }
+  ],
+  "evals": [
+   "tests/video/video-edit-v2v-routing.json",
+   "tests/video/video-core-flows.json",
+   "tests/video/root-timeline-refit.json",
+   "tests/video/video-credits-stop-cleanup.json",
+   "tests/video/video-edge-cases.json"
+  ],
+  "prompt": "Fix a recurring failure in the `video-regen` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: document 'resources/video/video-data-model.md' not found in current version for bas\nSize: 120 times in video-regen in the last 7 days (11% of this error across skills); the same operation never succeeded later in the turn 24% of the time.\n\nWhat the evidence shows:\n- resources/video/video-data-model.md is not in the codex, but references/video/video-data-model.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 3 file(s), e.g. references/video/video-audio.md:3, references/video/video-audio.md:89, references/video/video-audio.md:156 — that wording is what sends the agent looking.\n\nChange to make:\n- Reword video-regen's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only `skills/video/video-edit.md` and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/video-edit.md:14, skills/video/video-edit.md:40, skills/video/video-edit.md:42, skills/video/video-edit.md:62.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-data-model.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-data-model.md' not found in current version for base version '53536764-191e\n\nThen: add a case for this to the skill's eval set (tests/video/video-edit-v2v-routing.json, tests/video/video-core-flows.json, tests/video/root-timeline-refit.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "ttppvn",
+  "sig": "Sequence rejected before any step ran: unknown tool \"functions.edit_image\" in step \"gen\" — it is not available in this session.",
+  "skill": "single-page-design",
+  "parked": false,
+  "n": 401,
+  "share": 0.9780487804878049,
+  "skillPath": "skills/image/single-page-design.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [
+   [
+    "static.wixstatic.com",
+    2
+   ],
+   [
+    "storage.googleapis.com",
+    1
+   ]
+  ],
+  "notes": [
+   "The agent wrote the tool name as `functions.edit_image`. Inside a sequence, step tools are bare names."
+  ],
+  "fix": [
+   "Where single-page-design describes the sequence, add one literal example step with `\"tool\": \"edit_image\"` and say plainly: no `functions.` prefix."
+  ],
+  "files": [
+   {
+    "path": "skills/image/single-page-design.md",
+    "why": "the single-page-design skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "line": 354,
+    "why": "mentions sequence: \"**One call, not two — chain the generation into the write with `sequence`.** When the `seq\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L354"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "why": "skill single-page-design (401 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md"
+   }
+  ],
+  "evals": [
+   "tests/image/spd-open-intents.json",
+   "tests/image/spd-brand-flyer.json",
+   "tests/image/spd-cover-format.json",
+   "tests/image/spd-intro-post.json",
+   "tests/image/spd-logo-requested.json",
+   "tests/image/spd-platform-format.json",
+   "tests/image/image-core-flows.json",
+   "tests/image/clay-play.json",
+   "tests/agent-to-agent/sequence-negative.json"
+  ],
+  "prompt": "Fix a recurring failure in the `single-page-design` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `sequence` fails with: Sequence rejected before any step ran: unknown tool \"functions.edit_image\" in step \"gen\" — it is not available in this session.\nSize: 401 times in single-page-design in the last 7 days (98% of this error across skills); the same operation never succeeded later in the turn 84% of the time.\n\nWhat the evidence shows:\n- The agent wrote the tool name as `functions.edit_image`. Inside a sequence, step tools are bare names.\n\nChange to make:\n- Where single-page-design describes the sequence, add one literal example step with `\"tool\": \"edit_image\"` and say plainly: no `functions.` prefix.\n\nScope: edit only `skills/image/single-page-design.md`. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/image/single-page-design.md:354.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"sequence\",\n  \"arguments\": {\n    \"steps\": \"[{\\\"id\\\":\\\"gen\\\",\\\"args\\\":{\\\"source_urls\\\":[\\\"https://static.wixstatic.com/media/9fff49_ea33a41068a546b2a318cbcf0a7ab337~mv2.png\\\"],\\\"model\\\":\\\"openai/gpt-image-2.5/sunburst/edit\\\",\\\"intent\\\":\\\"single-page-design\\\",\\\"instruction\\\":\\\"Design a 2D flat digital design layout with flat vector graphic simplicity, centered as a contained oval/arched badge. Use the attached image only as a visual-language reference for palette, shape vocabulary, and bold geometric treatment; create a distinct canyon-path composition rather than copying its layout. The badge has a forest-green border and generous peach and cream negative space. Inside, layered coral and terracotta canyon bands frame a clear winding trail that leads toward a small setting sun. Add simple semicircle motifs in the side margins. Keep the composition symmetrical, bold, highly simplified, and screenprint-friendly, with clean edges and ample negative space. The whole arrangement sits complete within the frame, not cropped by its edges. Set “TRAIL” in readable cream uppercase plain block sans type, curved evenly across the top of the oval. Set “CHIROPRACTIC” in readable cream uppercase plain block sans type, curved evenly across the bottom of the oval. Use exactly this text and no other text: “TRAIL” / “CHIROPRACTIC”. No extra embellishments, no intricate borders, no background patterns, no complex textures, no extra text, no watermarks, no clip-art clutter, no logo, no s\n```\nError: Sequence rejected before any step ran: unknown tool \"functions.edit_image\" in step \"gen\" — it is not available in this session.\n\nThen: add a case for this to the skill's eval set (tests/image/spd-open-intents.json, tests/image/spd-brand-flyer.json, tests/image/spd-cover-format.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "ttppvn",
+  "sig": "Sequence rejected before any step ran: unknown tool \"functions.edit_image\" in step \"gen\" — it is not available in this session.",
+  "skill": "stories-creation",
+  "parked": false,
+  "n": 8,
+  "share": 0.01951219512195122,
+  "skillPath": "skills/stories/stories-creation.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/stories/stories-creation.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [
+   [
+    "static.wixstatic.com",
+    2
+   ],
+   [
+    "storage.googleapis.com",
+    1
+   ]
+  ],
+  "notes": [
+   "The agent wrote the tool name as `functions.edit_image`. Inside a sequence, step tools are bare names.",
+   "stories-creation's file doesn't mention `sequence` by name; the call likely comes from a reference it includes, or from the agent improvising."
+  ],
+  "fix": [
+   "Where stories-creation describes the sequence, add one literal example step with `\"tool\": \"edit_image\"` and say plainly: no `functions.` prefix."
+  ],
+  "files": [
+   {
+    "path": "skills/stories/stories-creation.md",
+    "why": "the stories-creation skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/stories/stories-creation.md"
+   },
+   {
+    "path": "skills/stories/stories-creation.md",
+    "why": "skill stories-creation (8 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/stories/stories-creation.md"
+   }
+  ],
+  "evals": [
+   "tests/stories/stories-create.json",
+   "tests/stories/stories-edge-cases.json",
+   "tests/stories/stories-symphony-routing.json"
+  ],
+  "prompt": "Fix a recurring failure in the `stories-creation` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `sequence` fails with: Sequence rejected before any step ran: unknown tool \"functions.edit_image\" in step \"gen\" — it is not available in this session.\nSize: 8 times in stories-creation in the last 7 days (2% of this error across skills); the same operation never succeeded later in the turn 84% of the time.\n\nWhat the evidence shows:\n- The agent wrote the tool name as `functions.edit_image`. Inside a sequence, step tools are bare names.\n- stories-creation's file doesn't mention `sequence` by name; the call likely comes from a reference it includes, or from the agent improvising.\n\nChange to make:\n- Where stories-creation describes the sequence, add one literal example step with `\"tool\": \"edit_image\"` and say plainly: no `functions.` prefix.\n\nScope: edit only `skills/stories/stories-creation.md`. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"sequence\",\n  \"arguments\": {\n    \"steps\": \"[{\\\"id\\\":\\\"gen\\\",\\\"args\\\":{\\\"source_urls\\\":[\\\"https://storage.googleapis.com/firecrawl-scrape-media/screenshot-d19f1874-7b3e-4e85-82f4-480f58f5ade3.png?…\\\",\\\"https://static.wixstatic.com/media/9f8da2_5cdff22c9dc14d939a9762ca1eff479d~mv2.jpg/v1/fill/w_332,h_85,al_c,q_80,usm_0.66_1.00_0.01,enc_avif,quality_auto/Logo%20JAC%20Art%20Capnaio_edited.jpg\\\",\\\"https://static.wixstatic.com/media/9f8da2_bc2718853b6948848002dcfc68cb6e74~mv2.jpg/v1/fit/w_2300,h_4999,q_90/file.jpg\\\"],\\\"model\\\":\\\"openai/gpt-image-2.5/sunburst/edit\\\",\\\"intent\\\":\\\"social-post\\\",\\\"instruction\\\":\\\"Design a 2D flat digital design layout with photographic imagery for a refined art-gallery social graphic. Use the attached Jac-Art website screenshot only as a visual-language reference for its quiet white space, restrained black typography, clean gallery presentation and sparse blue accent; do not reproduce its layout or any interface. Use the attached Jac-Art logo image as the actual logo, small and discreet near the bottom edge, preserving it exactly. Use the attached vase photograph as the content source: show that exact Suzanne Ramié Madoura vase as the unmistakable central subject, retaining its true ovoid silhouette, small offset neck, glossy cream-speckled glaze and natural details; compose it large and complete within the square frame, with a clean pale background and generous whitespace. Editorial, elegant serif headline with crisp restrained sans-serif \n```\nError: Sequence rejected before any step ran: unknown tool \"functions.edit_image\" in step \"gen\" — it is not available in this session.\n\nThen: add a case for this to the skill's eval set (tests/stories/stories-create.json, tests/stories/stories-edge-cases.json, tests/stories/stories-symphony-routing.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "ttppvn",
+  "sig": "Sequence rejected before any step ran: unknown tool \"functions.edit_image\" in step \"gen\" — it is not available in this session.",
+  "skill": "brand-new",
+  "parked": false,
+  "n": 1,
+  "share": 0.0024390243902439024,
+  "skillPath": "skills/brand/brand-new.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-new.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [
+   [
+    "static.wixstatic.com",
+    1
+   ]
+  ],
+  "notes": [
+   "The agent wrote the tool name as `functions.edit_image`. Inside a sequence, step tools are bare names."
+  ],
+  "fix": [
+   "Where brand-new describes the sequence, add one literal example step with `\"tool\": \"edit_image\"` and say plainly: no `functions.` prefix."
+  ],
+  "files": [
+   {
+    "path": "skills/brand/brand-new.md",
+    "why": "the brand-new skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-new.md"
+   },
+   {
+    "path": "skills/brand/brand-new.md",
+    "line": 72,
+    "why": "mentions sequence: \"Gather these before asking the user anything. **`list` (project assets) and `read project/\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-new.md#L72"
+   },
+   {
+    "path": "skills/brand/brand-new.md",
+    "line": 221,
+    "why": "mentions sequence: \"**\"I don't have a name yet\" is answered in one turn, not with a discovery interview.** A u\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-new.md#L221"
+   },
+   {
+    "path": "skills/brand/brand-new.md",
+    "line": 236,
+    "why": "mentions sequence: \"Do **not** call `UpsertBrandAndGenerateThemeOptions` or `UpdateBrand` for this flow (`Upse\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-new.md#L236"
+   },
+   {
+    "path": "skills/brand/brand-new.md",
+    "line": 403,
+    "why": "mentions sequence: \"**The order is fixed for structural reasons, the same ones as the black-and-white sequence\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-new.md#L403"
+   },
+   {
+    "path": "skills/brand/brand-new.md",
+    "why": "skill brand-new (1 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-new.md"
+   }
+  ],
+  "evals": [
+   "tests/brand/brand-creation-flows.json",
+   "tests/brand/brand-edit-flows.json",
+   "tests/brand/on-brand-assets.json",
+   "tests/brand/brand-kit-flows.json"
+  ],
+  "prompt": "Fix a recurring failure in the `brand-new` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `sequence` fails with: Sequence rejected before any step ran: unknown tool \"functions.edit_image\" in step \"gen\" — it is not available in this session.\nSize: 1 times in brand-new in the last 7 days (0% of this error across skills); the same operation never succeeded later in the turn 84% of the time.\n\nWhat the evidence shows:\n- The agent wrote the tool name as `functions.edit_image`. Inside a sequence, step tools are bare names.\n\nChange to make:\n- Where brand-new describes the sequence, add one literal example step with `\"tool\": \"edit_image\"` and say plainly: no `functions.` prefix.\n\nScope: edit only `skills/brand/brand-new.md`. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/brand/brand-new.md:72, skills/brand/brand-new.md:221, skills/brand/brand-new.md:236, skills/brand/brand-new.md:403.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"sequence\",\n  \"arguments\": {\n    \"steps\": \"[{\\\"id\\\":\\\"gen\\\",\\\"args\\\":{\\\"source_urls\\\":[\\\"https://static.wixstatic.com/media/2addc6_b3e22fd00016478d8e59217b2c97a772~mv2.png\\\"],\\\"model\\\":\\\"openai/gpt-image-2.5/sunburst/edit\\\",\\\"intent\\\":\\\"instagram-brand-post\\\",\\\"instruction\\\":\\\"Design a square 2D flat digital design layout with photographic imagery for Germinare’s brand concept. Use the attached image as the actual Germinare logo: place it small, intact and uncropped near the lower edge, preserving the exact mark and its original colors; do not redraw or restyle it. Create a clean, clinical, sophisticated composition with an ample white clinical background and generous negative space, using deep forest green for the main headline, the logo’s light green as a restrained accent and a very small muted copper detail. The photographic subject is a contemporary scientific still life: one simple unlabelled amber-glass dropper bottle beside a small group of plain capsules, with a subtle close botanical cannabis-leaf detail, arranged in a controlled modern laboratory aesthetic. Keep those elements secondary to the headline; no readable label on the bottle. Use refined, highly legible contemporary sans-serif typography, with the headline in a clear confident weight. Place the exact headline “Ciência e natureza em diálogo.” as the only added text, with correct Portuguese spelling and accents, in a calm, prominent block balanced against the photographic subject. The whole comp\n```\nError: Sequence rejected before any step ran: unknown tool \"functions.edit_image\" in step \"gen\" — it is not available in this session.\n\nThen: add a case for this to the skill's eval set (tests/brand/brand-creation-flows.json, tests/brand/brand-edit-flows.json, tests/brand/on-brand-assets.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "17rz67z",
+  "sig": "INVALID_ARGUMENT: Error invoking endpoint: [N] → providerBadRequest: Bad request returned by OpenAI. Additional information: Your request was rejected by the sa",
+  "skill": "image-generation-and-image-edit",
+  "parked": false,
+  "n": 439,
+  "share": 0.764808362369338,
+  "skillPath": "skills/image/image.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [
+   [
+    "static.wixstatic.com",
+    2
+   ]
+  ],
+  "notes": [],
+  "fix": [
+   "Check the parameters image-generation-and-image-edit tells the agent to pass to `edit_image` against the model's live schema; spell out the allowed values in the skill."
+  ],
+  "files": [
+   {
+    "path": "skills/image/image.md",
+    "why": "the image-generation-and-image-edit skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md"
+   },
+   {
+    "path": "skills/image/image.md",
+    "line": 8,
+    "why": "mentions edit_image: \"This skill uses the agent's image **tools** — `generate_image` (create) and `edit_image` (\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md#L8"
+   },
+   {
+    "path": "skills/image/image.md",
+    "line": 13,
+    "why": "mentions edit_image: \"2. **Reference-based generation** — when the user points to an existing or uploaded image \"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md#L13"
+   },
+   {
+    "path": "skills/image/image.md",
+    "line": 14,
+    "why": "mentions edit_image: \"3. **Edit-style requests** — style changes, themed variations, color/mood shifts, replacin\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md#L14"
+   },
+   {
+    "path": "skills/image/image.md",
+    "line": 20,
+    "why": "mentions edit_image: \"- **Remove the background / isolate the subject / transparent cutout** → load `image-remov\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md#L20"
+   },
+   {
+    "path": "skills/image/image.md",
+    "why": "skill image-generation-and-image-edit (439 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md"
+   }
+  ],
+  "evals": [
+   "tests/image/image-core-flows.json",
+   "tests/image/example-image-test-set.json",
+   "tests/image/image-test-set.json",
+   "tests/image/sunburst-model-probes.json"
+  ],
+  "prompt": "Fix a recurring failure in the `image-generation-and-image-edit` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `edit_image` fails with: INVALID_ARGUMENT: Error invoking endpoint: [N] → providerBadRequest: Bad request returned by OpenAI. Additional information: Your request was rejected by the sa\nSize: 439 times in image-generation-and-image-edit in the last 7 days (76% of this error across skills); the same operation never succeeded later in the turn 86% of the time.\n\nWhat the evidence shows:\n\nChange to make:\n- Check the parameters image-generation-and-image-edit tells the agent to pass to `edit_image` against the model's live schema; spell out the allowed values in the skill.\n\nScope: edit only `skills/image/image.md`. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/image/image.md:8, skills/image/image.md:13, skills/image/image.md:14, skills/image/image.md:20.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"edit_image\",\n  \"arguments\": {\n    \"instruction\": \"Change only the subject's clothing to a sexy, stylish, tasteful outfit: a fitted black dress with an elegant neckline and subtle sheer accents, alluring but fully covered and non-explicit. Preserve the person's identity, face, body shape, pose, framing, lighting, and background as closely as possible. Keep the result fashion-editorial and photorealistic; no nudity, no lingerie, no text.\",\n    \"source_urls\": \"[\\\"https://static.wixstatic.com/media/38a353_43aa6ec964274f4583121cc1e7aa210b~mv2.jpg\\\"]\"\n  }\n}\n```\nError: Exception during invocation of Prompt ''. PredictionId: d8eba565-9c0b-42ab-ae08-e7c72e5d0d30 INVALID_ARGUMENT: Error invoking endpoint: [400] [taskUUID=586fa1e2-9bdf-4c6f-8563-826bf1604262] { \"errors\": [ { \"code\": \"providerBadRequest\", \"message\": \"Bad request returned by OpenAI. Additional informati\n\nThen: add a case for this to the skill's eval set (tests/image/image-core-flows.json, tests/image/example-image-test-set.json, tests/image/image-test-set.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "17rz67z",
+  "sig": "INVALID_ARGUMENT: Error invoking endpoint: [N] → providerBadRequest: Bad request returned by OpenAI. Additional information: Your request was rejected by the sa",
+  "skill": "single-page-design",
+  "parked": false,
+  "n": 39,
+  "share": 0.06794425087108014,
+  "skillPath": "skills/image/single-page-design.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [
+   [
+    "static.wixstatic.com",
+    3
+   ],
+   [
+    "storage.googleapis.com",
+    1
+   ]
+  ],
+  "notes": [],
+  "fix": [
+   "Check the parameters single-page-design tells the agent to pass to `edit_image` against the model's live schema; spell out the allowed values in the skill."
+  ],
+  "files": [
+   {
+    "path": "skills/image/single-page-design.md",
+    "why": "the single-page-design skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "line": 14,
+    "why": "mentions edit_image: \"**How this is built:** a single AI-generated image, always. You call `generate_image` with\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L14"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "line": 16,
+    "why": "mentions edit_image: \"**Escape hatch — a real mockup.** Only when the user *explicitly* asks for a product mocku\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L16"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "line": 67,
+    "why": "mentions edit_image: \"- **A real logo only enters as an image**, never as a description — the brand's logo asset\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L67"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "line": 93,
+    "why": "mentions edit_image: \"- **The user attached an image, design, or existing asset for reference** → that's an **`e\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L93"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "why": "skill single-page-design (39 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md"
+   }
+  ],
+  "evals": [
+   "tests/image/spd-open-intents.json",
+   "tests/image/spd-brand-flyer.json",
+   "tests/image/spd-cover-format.json",
+   "tests/image/spd-intro-post.json",
+   "tests/image/spd-logo-requested.json",
+   "tests/image/spd-platform-format.json",
+   "tests/image/image-core-flows.json",
+   "tests/image/clay-play.json",
+   "tests/agent-to-agent/sequence-negative.json"
+  ],
+  "prompt": "Fix a recurring failure in the `single-page-design` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `edit_image` fails with: INVALID_ARGUMENT: Error invoking endpoint: [N] → providerBadRequest: Bad request returned by OpenAI. Additional information: Your request was rejected by the sa\nSize: 39 times in single-page-design in the last 7 days (7% of this error across skills); the same operation never succeeded later in the turn 86% of the time.\n\nWhat the evidence shows:\n\nChange to make:\n- Check the parameters single-page-design tells the agent to pass to `edit_image` against the model's live schema; spell out the allowed values in the skill.\n\nScope: edit only `skills/image/single-page-design.md`. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/image/single-page-design.md:14, skills/image/single-page-design.md:16, skills/image/single-page-design.md:67, skills/image/single-page-design.md:93.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"edit_image\",\n  \"arguments\": {\n    \"source_urls\": \"[\\\"https://static.wixstatic.com/media/549040_0967f5fe63b34553bc3cb2320f84736a~mv2.png/v1/fill/w_158,h_180,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/549040_0967f5fe63b34553bc3cb2320f84736a~mv2.png\\\",\\\"https://storage.googleapis.com/firecrawl-scrape-media/screenshot-f54a30bc-810b-4359-a662-88eed7379d31.png?…\\\",\\\"https://static.wixstatic.com/media/11062b_4153bb1f461b4929a595216ef72a0c61~mv2.jpg/v1/fill/w_620,h_444,al_c,q_80,usm_0.66_1.00_0.01,enc_avif,quality_auto/11062b_4153bb1f461b4929a595216ef72a0c61~mv2.jpg\\\"]\",\n    \"model\": \"openai/gpt-image-2.5/sunburst/edit\",\n    \"intent\": \"social-post\",\n    \"instruction\": \"Design a 2D flat digital design layout with photographic imagery, a serene editorial social graphic about breastfeeding reassurance. Use the attached nursing photo as the content reference: show a calm, reassured mother gently cuddling her baby close, with intimate, tender body language and a sense of safety; keep the image natural and photographic, not illustrated. Compose the photograph as the visual anchor on one side, with generous uncluttered negative space for a clear headline on the other. Use refined, friendly sans-serif typography with a clear hierarchy and excellent French text legib\",\n    \"height\": \"2048\",\n    \"width\": \"2048\"\n  }\n}\n```\nError: Exception during invocation of Prompt ''. PredictionId: 9de1ddea-4367-4324-b80d-107e2dfaf543 INVALID_ARGUMENT: Error invoking endpoint: [400] [taskUUID=8beeb5b1-1141-458f-828c-65d75606208c] { \"errors\": [ { \"code\": \"providerBadRequest\", \"message\": \"Bad request returned by OpenAI. Additional informati\n\nThen: add a case for this to the skill's eval set (tests/image/spd-open-intents.json, tests/image/spd-brand-flyer.json, tests/image/spd-cover-format.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "17rz67z",
+  "sig": "INVALID_ARGUMENT: Error invoking endpoint: [N] → providerBadRequest: Bad request returned by OpenAI. Additional information: Your request was rejected by the sa",
+  "skill": "export-handler",
+  "parked": false,
+  "n": 28,
+  "share": 0.04878048780487805,
+  "skillPath": "skills/export-handler.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/export-handler.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [
+   [
+    "static.wixstatic.com",
+    3
+   ]
+  ],
+  "notes": [],
+  "fix": [
+   "Check the parameters export-handler tells the agent to pass to `edit_image` against the model's live schema; spell out the allowed values in the skill."
+  ],
+  "files": [
+   {
+    "path": "skills/export-handler.md",
+    "why": "the export-handler skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/export-handler.md"
+   },
+   {
+    "path": "skills/export-handler.md",
+    "line": 123,
+    "why": "mentions edit_image: \"`edit_image` replaces the first step when a reference image is involved. The\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/export-handler.md#L123"
+   },
+   {
+    "path": "skills/export-handler.md",
+    "why": "skill export-handler (28 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/export-handler.md"
+   }
+  ],
+  "evals": [
+   "tests/export/export-edge-cases.json",
+   "tests/video/video-logo-animation.json",
+   "tests/agent-to-agent/sequence-negative.json"
+  ],
+  "prompt": "Fix a recurring failure in the `export-handler` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `edit_image` fails with: INVALID_ARGUMENT: Error invoking endpoint: [N] → providerBadRequest: Bad request returned by OpenAI. Additional information: Your request was rejected by the sa\nSize: 28 times in export-handler in the last 7 days (5% of this error across skills); the same operation never succeeded later in the turn 86% of the time.\n\nWhat the evidence shows:\n\nChange to make:\n- Check the parameters export-handler tells the agent to pass to `edit_image` against the model's live schema; spell out the allowed values in the skill.\n\nScope: edit only `skills/export-handler.md`. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/export-handler.md:123.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"edit_image\",\n  \"arguments\": {\n    \"source_urls\": \"[\\\"https://static.wixstatic.com/media/59569e_152edb42c7284788a166f344da99e636~mv2.png\\\"]\",\n    \"model\": \"openai/gpt-image-2.5/sunburst/edit\",\n    \"intent\": \"ovs-ad-397-face\",\n    \"instruction\": \"Design a 2D flat digital design layout for a supplement brand graphic, modifying the reference image.\\nMaintain the exact existing composition from the reference image: the pure obsidian black void (#000000) background, the fractured obsidian rock rubble exploding at the base, the dense drifting gold particle storm, the volcanic gold rim lighting from below, the colossal 3D metallic gold (#d4af37) \\\"OVS\\\" letters erupting into the frame, the athletic physique and muscular back architecture, and all copy layout.\\nSpecific adjustment:\\nThe female athlete turns her head back over her right shoulder to\",\n    \"height\": \"2048\",\n    \"aspect_ratio\": \"1:1\",\n    \"width\": \"2048\"\n  }\n}\n```\nError: Exception during invocation of Prompt ''. PredictionId: 5f7b2c70-8f55-4648-880f-36b7c39e1915 INVALID_ARGUMENT: Error invoking endpoint: [400] [taskUUID=06c9f0f1-4d38-4bbd-a9cc-16cec3aa48d2] { \"errors\": [ { \"code\": \"providerBadRequest\", \"message\": \"Bad request returned by OpenAI. Additional informati\n\nThen: add a case for this to the skill's eval set (tests/export/export-edge-cases.json, tests/video/video-logo-animation.json, tests/agent-to-agent/sequence-negative.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "1w07rmt",
+  "sig": "INVALID_ARGUMENT: Error invoking endpoint: [N] → failedToTransferImage: Invalid value for 'referenceImages[N]' parameter. Failed to transfer the provided image.",
+  "skill": "single-page-design",
+  "parked": false,
+  "n": 487,
+  "share": 0.7151248164464024,
+  "skillPath": "skills/image/single-page-design.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [
+   [
+    "static.wixstatic.com",
+    3
+   ],
+   [
+    "storage.googleapis.com",
+    2
+   ]
+  ],
+  "notes": [
+   "The failing calls pass cloud-storage links: storage.googleapis.com (2). These are usually temporary or signed URLs (e.g. a scraped page's screenshot) that expire or need credentials by the time the provider fetches them.",
+   "Most failing URLs are on Wix media hosts, so the link itself is wrong or expired: a URL copied with a transformation suffix, a temporary link, or one retyped instead of copied."
+  ],
+  "fix": [
+   "In single-page-design's instructions, don't hand `edit_image` a cloud-storage link from an earlier step: re-host it on Wix first (the upload / convert step), or call `edit_image` right after the step that produced it.",
+   "Tell the agent to pass media URLs exactly as a previous tool returned them (no editing, no /v1/ transform suffixes), and to re-fetch a fresh URL instead of reusing one from earlier in a long session."
+  ],
+  "files": [
+   {
+    "path": "skills/image/single-page-design.md",
+    "why": "the single-page-design skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "line": 14,
+    "why": "mentions edit_image: \"**How this is built:** a single AI-generated image, always. You call `generate_image` with\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L14"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "line": 16,
+    "why": "mentions edit_image: \"**Escape hatch — a real mockup.** Only when the user *explicitly* asks for a product mocku\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L16"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "line": 67,
+    "why": "mentions edit_image: \"- **A real logo only enters as an image**, never as a description — the brand's logo asset\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L67"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "line": 93,
+    "why": "mentions edit_image: \"- **The user attached an image, design, or existing asset for reference** → that's an **`e\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L93"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "why": "skill single-page-design (487 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md"
+   }
+  ],
+  "evals": [
+   "tests/image/spd-open-intents.json",
+   "tests/image/spd-brand-flyer.json",
+   "tests/image/spd-cover-format.json",
+   "tests/image/spd-intro-post.json",
+   "tests/image/spd-logo-requested.json",
+   "tests/image/spd-platform-format.json",
+   "tests/image/image-core-flows.json",
+   "tests/image/clay-play.json",
+   "tests/agent-to-agent/sequence-negative.json"
+  ],
+  "prompt": "Fix a recurring failure in the `single-page-design` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `edit_image` fails with: INVALID_ARGUMENT: Error invoking endpoint: [N] → failedToTransferImage: Invalid value for 'referenceImages[N]' parameter. Failed to transfer the provided image.\nSize: 487 times in single-page-design in the last 7 days (72% of this error across skills); the same operation never succeeded later in the turn 35% of the time.\n\nWhat the evidence shows:\n- The failing calls pass cloud-storage links: storage.googleapis.com (2). These are usually temporary or signed URLs (e.g. a scraped page's screenshot) that expire or need credentials by the time the provider fetches them.\n- Most failing URLs are on Wix media hosts, so the link itself is wrong or expired: a URL copied with a transformation suffix, a temporary link, or one retyped instead of copied.\n\nChange to make:\n- In single-page-design's instructions, don't hand `edit_image` a cloud-storage link from an earlier step: re-host it on Wix first (the upload / convert step), or call `edit_image` right after the step that produced it.\n- Tell the agent to pass media URLs exactly as a previous tool returned them (no editing, no /v1/ transform suffixes), and to re-fetch a fresh URL instead of reusing one from earlier in a long session.\n\nScope: edit only `skills/image/single-page-design.md`. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/image/single-page-design.md:14, skills/image/single-page-design.md:16, skills/image/single-page-design.md:67, skills/image/single-page-design.md:93.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"edit_image\",\n  \"arguments\": {\n    \"source_urls\": \"[\\\"https://storage.googleapis.com/firecrawl-scrape-media/screenshot-feae50c1-aad9-4c9a-85e1-fe69ce5463d0.png?…\\\",\\\"https://static.wixstatic.com/media/d6a9906c94be4282a487b3e92993a22f.png/v1/fill/w_1920,h_597,al_c,q_90,usm_0.66_1.00_0.01,enc_avif,quality_auto/d6a9906c94be4282a487b3e92993a22f.png\\\"]\",\n    \"model\": \"openai/gpt-image-2.5/sunburst/edit\",\n    \"intent\": \"social-post-create\",\n    \"instruction\": \"Design a square 2D flat digital design layout with photographic imagery for a bold campaign opener. Use the attached website screenshot only as a visual-language reference for its warm, candid dog photography, open image-led layouts, pastel lilac fields, generous white space, black copy, vivid magenta accents, small teal accents, and rounded modern sans-serif typography. Do not reproduce its layout or copy any interface: no navigation, browser chrome, buttons, controls, website layout, or screenshot text. The other attached image is the content source: feature the actual three French bulldog p\",\n    \"height\": \"2048\",\n    \"width\": \"2048\"\n  }\n}\n```\nError: Exception during invocation of Prompt ''. PredictionId: 01a9fffa-aed5-444b-b9ac-9022a34747ec INVALID_ARGUMENT: Error invoking endpoint: [400] [taskUUID=5bf6a724-f3ef-43a2-9ca7-835b1419b91a] { \"data\": [], \"errors\": [ { \"code\": \"failedToTransferImage\", \"message\": \"Invalid value for 'referenceImages[0]\n\nThen: add a case for this to the skill's eval set (tests/image/spd-open-intents.json, tests/image/spd-brand-flyer.json, tests/image/spd-cover-format.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "1w07rmt",
+  "sig": "INVALID_ARGUMENT: Error invoking endpoint: [N] → failedToTransferImage: Invalid value for 'referenceImages[N]' parameter. Failed to transfer the provided image.",
+  "skill": "image-generation-and-image-edit",
+  "parked": false,
+  "n": 89,
+  "share": 0.13069016152716592,
+  "skillPath": "skills/image/image.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [
+   [
+    "images-wixmp-14a6a70d3f0e6e1e6f56bf30wixmp.com",
+    1
+   ],
+   [
+    "static.wixstatic.com",
+    1
+   ],
+   [
+    "storage.googleapis.com",
+    1
+   ]
+  ],
+  "notes": [
+   "The failing calls pass cloud-storage links: storage.googleapis.com (1). These are usually temporary or signed URLs (e.g. a scraped page's screenshot) that expire or need credentials by the time the provider fetches them.",
+   "The failing calls pass images straight from other websites: images-wixmp-14a6a70d3f0e6e1e6f56bf30wixmp.com (1). Sites often block hotlinking, so the model provider can't fetch them."
+  ],
+  "fix": [
+   "In image-generation-and-image-edit's instructions, don't hand `edit_image` a cloud-storage link from an earlier step: re-host it on Wix first (the upload / convert step), or call `edit_image` right after the step that produced it.",
+   "In image-generation-and-image-edit's instructions, before calling `edit_image` with a site image, re-host it on Wix (the upload / convert step the skill already uses for site assets) and pass the wixstatic URL."
+  ],
+  "files": [
+   {
+    "path": "skills/image/image.md",
+    "why": "the image-generation-and-image-edit skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md"
+   },
+   {
+    "path": "skills/image/image.md",
+    "line": 8,
+    "why": "mentions edit_image: \"This skill uses the agent's image **tools** — `generate_image` (create) and `edit_image` (\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md#L8"
+   },
+   {
+    "path": "skills/image/image.md",
+    "line": 13,
+    "why": "mentions edit_image: \"2. **Reference-based generation** — when the user points to an existing or uploaded image \"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md#L13"
+   },
+   {
+    "path": "skills/image/image.md",
+    "line": 14,
+    "why": "mentions edit_image: \"3. **Edit-style requests** — style changes, themed variations, color/mood shifts, replacin\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md#L14"
+   },
+   {
+    "path": "skills/image/image.md",
+    "line": 20,
+    "why": "mentions edit_image: \"- **Remove the background / isolate the subject / transparent cutout** → load `image-remov\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md#L20"
+   },
+   {
+    "path": "skills/image/image.md",
+    "why": "skill image-generation-and-image-edit (89 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md"
+   }
+  ],
+  "evals": [
+   "tests/image/image-core-flows.json",
+   "tests/image/example-image-test-set.json",
+   "tests/image/image-test-set.json",
+   "tests/image/sunburst-model-probes.json"
+  ],
+  "prompt": "Fix a recurring failure in the `image-generation-and-image-edit` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `edit_image` fails with: INVALID_ARGUMENT: Error invoking endpoint: [N] → failedToTransferImage: Invalid value for 'referenceImages[N]' parameter. Failed to transfer the provided image.\nSize: 89 times in image-generation-and-image-edit in the last 7 days (13% of this error across skills); the same operation never succeeded later in the turn 35% of the time.\n\nWhat the evidence shows:\n- The failing calls pass cloud-storage links: storage.googleapis.com (1). These are usually temporary or signed URLs (e.g. a scraped page's screenshot) that expire or need credentials by the time the provider fetches them.\n- The failing calls pass images straight from other websites: images-wixmp-14a6a70d3f0e6e1e6f56bf30wixmp.com (1). Sites often block hotlinking, so the model provider can't fetch them.\n\nChange to make:\n- In image-generation-and-image-edit's instructions, don't hand `edit_image` a cloud-storage link from an earlier step: re-host it on Wix first (the upload / convert step), or call `edit_image` right after the step that produced it.\n- In image-generation-and-image-edit's instructions, before calling `edit_image` with a site image, re-host it on Wix (the upload / convert step the skill already uses for site assets) and pass the wixstatic URL.\n\nScope: edit only `skills/image/image.md`. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/image/image.md:8, skills/image/image.md:13, skills/image/image.md:14, skills/image/image.md:20.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"edit_image\",\n  \"arguments\": {\n    \"intent\": \"photo-transformation\",\n    \"instruction\": \"Create a photorealistic four-panel photographic collage based on the person in the reference image, imagining him as his own adult twin sister. Keep a recognizable family resemblance in the eyes, facial structure, and expression, but present her unambiguously as a woman with softly feminine facial features and a natural, modest, non-sexualized silhouette. Maintain the same woman consistently across all four scenes. Her hair is always short, neat, above the collar, and off the ears. The four panels show distinct moments in a quaint, tree-lined suburb, with a subtle story of her feeling uncertai\",\n    \"source_urls\": \"[\\\"https://images-wixmp-14a6a70d3f0e6e1e6f56bf30wixmp.com/58146d9d-cb0a-4ffd-83a5-2d0eee5baf91.jpg/v1/fit/w_3000,h_3000,lg_0/file.png\\\"]\"\n  }\n}\n```\nError: Exception during invocation of Prompt ''. PredictionId: b8811c94-d64e-4c01-841c-be09848a8c27 INVALID_ARGUMENT: Error invoking endpoint: [400] [taskUUID=beb3d4e7-1e08-4c16-aba4-85ccf07bc7ad] { \"data\": [], \"errors\": [ { \"code\": \"failedToTransferImage\", \"message\": \"Invalid value for 'referenceImages[0]\n\nThen: add a case for this to the skill's eval set (tests/image/image-core-flows.json, tests/image/example-image-test-set.json, tests/image/image-test-set.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "1w07rmt",
+  "sig": "INVALID_ARGUMENT: Error invoking endpoint: [N] → failedToTransferImage: Invalid value for 'referenceImages[N]' parameter. Failed to transfer the provided image.",
+  "skill": "brand-kit",
+  "parked": false,
+  "n": 37,
+  "share": 0.05433186490455213,
+  "skillPath": "skills/brand/brand-kit.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-kit.md",
+  "codexRef": "origin/HEAD @ 5010e885",
+  "hosts": [
+   [
+    "wixmp-fe53c9ff592a4da924211f23.wixmp.com",
+    2
+   ]
+  ],
+  "notes": [
+   "Most failing URLs are on Wix media hosts, so the link itself is wrong or expired: a URL copied with a transformation suffix, a temporary link, or one retyped instead of copied."
+  ],
+  "fix": [
+   "Tell the agent to pass media URLs exactly as a previous tool returned them (no editing, no /v1/ transform suffixes), and to re-fetch a fresh URL instead of reusing one from earlier in a long session."
+  ],
+  "files": [
+   {
+    "path": "skills/brand/brand-kit.md",
+    "why": "the brand-kit skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-kit.md"
+   },
+   {
+    "path": "skills/brand/brand-kit.md",
+    "line": 10,
+    "why": "mentions edit_image: \"**This skill generates nothing itself — it routes.** Every item in the kit is built by the\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-kit.md#L10"
+   },
+   {
+    "path": "skills/brand/brand-kit.md",
+    "why": "skill brand-kit (37 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-kit.md"
+   }
+  ],
+  "evals": [
+   "tests/brand/brand-creation-flows.json",
+   "tests/brand/brand-edit-flows.json",
+   "tests/brand/on-brand-assets.json",
+   "tests/brand/brand-kit-flows.json"
+  ],
+  "prompt": "Fix a recurring failure in the `brand-kit` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `edit_image` fails with: INVALID_ARGUMENT: Error invoking endpoint: [N] → failedToTransferImage: Invalid value for 'referenceImages[N]' parameter. Failed to transfer the provided image.\nSize: 37 times in brand-kit in the last 7 days (5% of this error across skills); the same operation never succeeded later in the turn 35% of the time.\n\nWhat the evidence shows:\n- Most failing URLs are on Wix media hosts, so the link itself is wrong or expired: a URL copied with a transformation suffix, a temporary link, or one retyped instead of copied.\n\nChange to make:\n- Tell the agent to pass media URLs exactly as a previous tool returned them (no editing, no /v1/ transform suffixes), and to re-fetch a fresh URL instead of reusing one from earlier in a long session.\n\nScope: edit only `skills/brand/brand-kit.md`. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/brand/brand-kit.md:10.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"edit_image\",\n  \"arguments\": {\n    \"source_urls\": \"[\\\"https://wixmp-fe53c9ff592a4da924211f23.wixmp.com/wixel-brand-service/logos/70345d92-191e-47ec-84b6-dd350301e365/3bba86e5-ca63-491b-a755-0bdbdede4d5c.png\\\"]\",\n    \"model\": \"openai/gpt-image-2.5/sunburst/edit\",\n    \"intent\": \"logo-variations\",\n    \"instruction\": \"The attached image is an existing logo. Build a new layout variation of this exact logo. Reproduce its elements, do not reinterpret them.\\n\\nMUST KEEP, unchanged:\\n- There is no separate icon or symbol; do not invent one.\\n- Keep only the first initial, the single letter “Z”, exactly the existing high-contrast uppercase serif letterform, in white, with its original character. No full brand name and no tagline in this monogram.\\n- The exact colors of the attached image: white lettering on a solid black background. Match them precisely; do not re-pick, re-mix, lighten, darken, approximate, or swap wh\",\n    \"aspect_ratio\": \"1:1\"\n  }\n}\n```\nError: Exception during invocation of Prompt ''. PredictionId: bd742fa4-0492-4359-bee0-e63de225e7b5 INVALID_ARGUMENT: Error invoking endpoint: [400] [taskUUID=9db23646-859b-4b5a-9829-2609fe9329b6] { \"data\": [], \"errors\": [ { \"code\": \"failedToTransferImage\", \"message\": \"Invalid value for 'referenceImages[0]\n\nThen: add a case for this to the skill's eval set (tests/brand/brand-creation-flows.json, tests/brand/brand-edit-flows.json, tests/brand/on-brand-assets.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ }
+]

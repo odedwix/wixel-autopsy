@@ -450,7 +450,7 @@ export async function listRuns({ skill, family, days = 7 }) {
 // video-creation each list the other), so families are shown and editable in the UI.
 // Pinned for 30 days per skill so cached days (keyed by the family) stay valid.
 const FAMILY_VERSION = 7;
-function skillPairs() {
+export function skillPairs() {
   return cached('meta', 'skill-pairs', DAY, async () => ({ value: await retryOnce(() => sql(skillPairsQuery(), { maxRows: 5000 })), ttlMs: DAY }));
 }
 
