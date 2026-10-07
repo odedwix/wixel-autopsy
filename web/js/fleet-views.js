@@ -299,8 +299,8 @@ function overview(view, fs, act) {
       const row = h('div', { class: 'fl-action', onclick: () => act.open(a.kind === 'issue' ? 'issue' : a.kind === 'wait' ? 'wait' : 'opp', a.ref, a.kind === 'issue' ? 'issues' : a.kind === 'wait' ? 'waits' : 'opps') },
         h('span', { class: 'n' }, String(i + 1)),
         h('div', { class: 't' }, h('b', {}, a.kind === 'issue' ? shortSig(a.title, 120) : a.title), h('small', {}, a.sub)),
-        h('div', { class: 'h' }, h('b', {}, hrs(a.hPerWeek)), h('small', {}, a.kind === 'opportunity' ? 'est. / week' : 'given back / week')));
-      tip(row, `${a.kind === 'issue' ? 'Fix' : a.kind === 'wait' ? 'Timeout' : 'Agent design'} · owner: ${a.owner} · ${a.fix} fix\n${a.kind === 'opportunity' ? 'Estimated' : 'Measured time lost × how fixable it is'}`);
+        h('div', { class: 'h' }, h('b', {}, hrs(a.hPerWeek)), h('small', {}, 'lost / week')));
+      tip(row, `Owner: ${a.owner}\nMeasured time lost: each failed call plus its recovery. Open it to see whether a fix is proven.`);
       return row;
     }))
     : h('p', { class: 'desc' }, 'Nothing stands out yet — or the period is still building.');
@@ -329,14 +329,14 @@ function overview(view, fs, act) {
   return h('div', {},
     tiles,
     h('div', { class: 'fl-cols' },
-      h('section', { class: 'fl-card' }, h('h3', {}, icon('bolt'), 'Do these first', h('span', { class: 'r' }, 'hours a week given back')), h('p', { class: 'desc' }, 'Issues, timeouts and agent-design changes on one scale. Issues count measured time lost × how fixable the class is; opportunities are estimates (see each card).'), actions),
+      h('section', { class: 'fl-card' }, h('h3', {}, icon('bolt'), 'Biggest problems', h('span', { class: 'r' }, 'measured time lost a week')), h('p', { class: 'desc' }, 'Ranked by measured time lost. A fix is suggested only where the cause is proven (open an issue → Fix per skill); the rest show what was observed and what would prove a fix.'), actions),
       h('section', { class: 'fl-card' }, h('h3', {}, 'Failed tool calls per day', h('span', { class: 'r' }, 'faded = day still filling in')),
         dailyChart(view.daily.map((d) => ({ ...d, okFails: Math.max(0, d.fails) })), { key1: 'fails', label1: 'Failed tool calls (incl. out of credits)' }),
         h('div', { class: 'legend' }, h('span', {}, h('i', { style: { background: 'var(--viz-seq)' } }), 'failed tool calls')),
         h('p', { class: 'desc', style: { marginTop: '8px' } }, `Time lost: ${view.daily.map((d) => `${d.day.slice(5)} ${hrs(d.lostMs / 3600000)}`).join(' · ')}`)),
       shiftsCard(view, act),
       intentsCard(view, fs, act),
-      h('section', { class: 'fl-card' }, h('h3', {}, 'Where the time lost could come back'), h('p', { class: 'desc' }, 'Time lost per week by how hard the fix is. Click to see those issues.'), fixBars),
+      h('section', { class: 'fl-card' }, h('h3', {}, 'Time lost by kind of problem'), h('p', { class: 'desc' }, 'Measured time lost per week, grouped by the usual difficulty of that class of error (a class-level guess, not a proven fix). Click to see those issues.'), fixBars),
       h('section', { class: 'fl-card wide' }, h('h3', {}, 'Major skills', h('span', { class: 'r' }, `≥50 sessions a week · ${view.skills.filter((s) => s.major).length} skills`)), board),
     ),
     h('p', { class: 'fl-note' }, h('b', {}, 'Measured vs estimated. '), 'Counts, durations, recoveries, tokens and versions are measured from the agent\'s own entries. Time lost uses one stated rule (failed calls + one recovery per run of failures). Savings from agent-design changes and recommended timeouts are estimates — each says how it was computed.'));
@@ -465,7 +465,7 @@ function waitsTab(view, fs, act) {
 }
 
 // ---------- opportunities ----------
-const KINDS = { 'trial-and-error': 'Trial and error', 'fixed-chain': 'Scripted pipeline', 'constant-args': 'Same call every time', 'co-load': 'Always loaded together', plumbing: 'File busywork', 'auto-correct': 'Let the tool fix it', 'rubber-stamp': 'Rubber-stamp approval', context: 'Heavy context', reattach: 'Re-attach, don\'t restart' };
+const KINDS = { 'trial-and-error': 'Trial and error', 'fixed-chain': 'Same chain every turn', 'rubber-stamp': 'Rubber-stamp approval', context: 'Heavy context' };
 function oppsTab(view, fs, act) {
   const major = majorSet(view);
   const kinds = {};
@@ -474,7 +474,7 @@ function oppsTab(view, fs, act) {
   const pick = fs.oppKind || null;
   const rows = base.filter((o) => !pick || o.kind === pick);
   return h('div', {},
-    h('p', { class: 'fl-note' }, h('b', {}, 'Where the agent works harder than it needs to. '), 'Every model iteration re-reads the whole context (~100k+ tokens) and takes seconds; each card estimates the iterations, time and tokens a change would save per week. These are estimates on stated assumptions — check the runs behind each before acting.'),
+    h('p', { class: 'fl-note' }, h('b', {}, 'Patterns worth a look — observations, not fixes. '), 'Each card says what was measured and what would prove a change helps. Saving estimates were dropped: an audit against the raw calls found them unproven, and several earlier kinds (same call every time, file busywork, let the tool fix it, re-attach, always loaded together) rested on wrong premises.'),
     h('div', { class: 'fl-filters' }, h('button', { class: `fbtn${!pick ? ' on' : ''}`, onclick: () => act.set({ oppKind: null }) }, 'All', h('small', {}, base.length)),
       Object.entries(kinds).sort((a, b) => b[1] - a[1]).map(([k, n]) => h('button', { class: `fbtn${pick === k ? ' on' : ''}`, onclick: () => act.set({ oppKind: pick === k ? null : k }) }, KINDS[k] || k, h('small', {}, n)))),
     rows.length ? h('div', { class: 'fl-cols' }, rows.map((o) => oppCard(o, view, fs, act))) : h('div', { class: 'fl-empty' }, h('b', {}, 'No opportunities match'), 'Try "All", or turn off "Major skills".'));
@@ -487,9 +487,10 @@ function oppCard(o, view, fs, act, { full = false } = {}) {
     o.chain ? h('div', { class: 'chain' }, o.chain.flatMap((s, i) => [i ? h('i', {}, '→') : null, h('span', {}, s)]).filter(Boolean)) : null,
     h('p', {}, o.detail),
     o.guard ? h('div', { class: 'guard' }, icon('alert'), o.guard) : null,
+    o.unproven ? h('p', { class: 'desc', style: { margin: '4px 0' } }, h('b', {}, 'Not proven: '), o.unproven) : null,
     o.evidence?.length ? h('ul', {}, o.evidence.map((e) => h('li', {}, e))) : null,
     h('div', { class: 'save' },
-      o.savings.hPerWeek ? h('div', {}, h('b', {}, hrs(o.savings.hPerWeek)), ' ', h('span', {}, 'per week')) : null,
+      o.savings.turnsPerWeek ? h('div', {}, h('b', {}, fmtK(o.savings.turnsPerWeek)), ' ', h('span', {}, 'turns / week')) : null,
       o.savings.iterationsPerWeek ? h('div', {}, h('b', {}, fmtK(o.savings.iterationsPerWeek)), ' ', h('span', {}, `${o.unit || 'iterations'} / week`)) : null,
       o.savings.tokensPerWeek ? h('div', {}, h('b', {}, fmtK(o.savings.tokensPerWeek)), ' ', h('span', {}, 'input tokens / week')) : null),
     full ? h('div', { class: 'acts' },
@@ -730,9 +731,26 @@ function skillFixSection(i, view, fs, act, qs) {
   let body;
   if (!cur || cur.loading) body = h('p', { class: 'desc', style: { color: 'var(--text-3)' } }, `Reading ${pick}'s failing calls and its skill file…`);
   else if (cur.error) body = h('p', { style: { color: 'var(--err)' } }, cur.error);
+  else if (cur.unproven) body = unprovenCard(cur);
   else if (cur.parked) body = h('p', { class: 'desc' }, cur.reason);
   else body = skillFixCard(i, cur, qs, act);
   return sect(['Fix per skill', h('span', { class: 'r' }, 'what to change in each skill\'s instructions')], tabs, body);
+}
+
+// Observed but not proven: what the calls show, why no change is suggested, and what would prove one.
+function unprovenCard(f) {
+  return h('div', {},
+    h('p', { class: 'desc', style: { margin: '0 0 8px', color: 'var(--text-3)', fontSize: '11.5px' } }, `${fmtN(f.n)} of this issue's occurrences (${pct(f.share)}) are in ${f.skill}`, f.skillPath ? [' · ', h('a', { href: f.skillUrl, target: '_blank', rel: 'noopener' }, f.skillPath)] : ''),
+    h('div', { class: 'guard' }, icon('alert'), h('span', {}, h('b', {}, 'No proven fix. '), f.reason)),
+    f.prove ? h('p', { class: 'desc', style: { margin: '6px 0' } }, h('b', {}, 'What would prove one: '), f.prove) : null,
+    f.notes?.length ? h('div', {}, h('b', { style: { fontWeight: 600, fontSize: '12px' } }, 'What its failing calls show'), h('ul', { style: { margin: '4px 0 8px', paddingLeft: '18px' } }, f.notes.map((x) => h('li', {}, x)))) : null,
+    f.evidence?.length ? h('details', { style: { margin: '0 0 8px' } }, h('summary', { style: { cursor: 'pointer', fontSize: '12px', color: 'var(--text-2)' } }, `${f.evidence.length} example${f.evidence.length === 1 ? '' : 's'} from ${f.skill}`),
+      f.evidence.map((e) => h('div', { class: 'err-row', style: { marginTop: '6px' } },
+        e.found === false ? `${e.session}: ${e.error || 'not found'}` : [
+          e.request ? h('div', {}, h('b', {}, 'Asked: '), `"${e.request}"`) : null,
+          h('div', { class: 'tip-msg' }, e.error),
+          e.next?.length ? h('div', { style: { color: 'var(--text-3)', marginTop: '3px' } }, `Then: ${e.next.join(' → ')}`) : null,
+          h('a', { href: e.adminUrl, target: '_blank', rel: 'noopener' }, 'Admin ↗')]))) : null);
 }
 
 function skillFixCard(i, f, qs, act) {
@@ -752,6 +770,7 @@ function skillFixCard(i, f, qs, act) {
     h('p', { class: 'desc', style: { margin: '0 0 8px', color: 'var(--text-3)', fontSize: '11.5px' } },
       `${fmtN(f.n)} of this issue's occurrences (${pct(f.share)}) are in ${f.skill}`, f.skillPath ? [' · ', h('a', { href: f.skillUrl, target: '_blank', rel: 'noopener' }, f.skillPath)] : ' · skill file not found in the codex', f.codexRef ? ` · codex ${f.codexRef}` : ''),
     f.notes.length ? h('div', {}, h('b', { style: { fontWeight: 600, fontSize: '12px' } }, 'What its failing calls show'), h('ul', { style: { margin: '4px 0 8px', paddingLeft: '18px' } }, f.notes.map((x) => h('li', {}, x)))) : null,
+    f.proof ? h('p', { class: 'desc', style: { margin: '0 0 6px' } }, h('b', {}, 'Proven: '), f.proof) : null,
     h('div', {}, h('b', { style: { fontWeight: 600, fontSize: '12px' } }, 'Change in the skill'), h('ul', { style: { margin: '4px 0 8px', paddingLeft: '18px' } }, f.fix.map((x) => h('li', {}, md(x)[0]?.childNodes ? [...md(x)[0].childNodes] : x)))),
     f.files.length ? h('div', {}, h('b', { style: { fontWeight: 600, fontSize: '12px' } }, 'Where'), h('ul', { style: { margin: '4px 0 8px', paddingLeft: '18px', fontSize: '12px' } }, f.files.map((x) => h('li', {}, h('a', { href: x.url, target: '_blank', rel: 'noopener', class: 'mono' }, `${x.path}${x.line ? `:${x.line}` : ''}`), ` — ${x.why}`)))) : null,
     f.evidence.length ? h('details', { style: { margin: '0 0 8px' } }, h('summary', { style: { cursor: 'pointer', fontSize: '12px', color: 'var(--text-2)' } }, `${f.evidence.length} example${f.evidence.length === 1 ? '' : 's'} from ${f.skill}`),
@@ -834,7 +853,7 @@ function waitDetail(w, view, fs, act) {
       kv(hrs(w.waitHPerWeek), 'spent waiting / wk'))),
     sect(['Durations', h('span', { class: 'r' }, 'blue = succeeded · red = failed or timed out')], histChart(w, view.edges)),
     w.recommend || w.hidden ? sect('Recommendation', w.recommend
-      ? h('p', { style: { margin: '0 0 6px' } }, h('b', {}, `Give up after ${sec(w.recommend.tau)}`), ` instead of ${w.cap ? sec(w.cap) : 'waiting as long as it takes'}: the expected time to a success drops from ${sec(w.eCurrent)} to ${sec(w.recommend.e)} — about ${hrs(w.recommend.savedHPerWeek)} a week across ${fmtN(w.callsPerWeek)} calls.`)
+      ? h('p', { style: { margin: '0 0 6px' } }, h('b', {}, `Model estimate: give up after ${sec(w.recommend.tau)}`), ` instead of ${w.cap ? sec(w.cap) : 'waiting as long as it takes'}: the expected time to a success would drop from ${sec(w.eCurrent)} to ${sec(w.recommend.e)} — about ${hrs(w.recommend.savedHPerWeek)} a week across ${fmtN(w.callsPerWeek)} calls. Not proven: it assumes a restart is free and as likely to succeed as a fresh try; restarts cost credits and weren't measured${w.recommend.tau < w.p99 ? `, and ${sec(w.recommend.tau)} is below the p99 of successes (${sec(w.p99)})` : ''}.`)
       : h('p', { style: { margin: '0 0 6px' } }, 'No shorter cap pays off on these numbers.'),
     w.hidden ? h('p', { style: { margin: '0 0 6px' } }, h('b', {}, 'Re-attach, don\'t restart. '), `${fmtN(w.hidden)} time${w.hidden === 1 ? '' : 's'} the tool returned while the job was still running. When the wait runs out, keep polling the same job id (or hand the agent the id to check later) — a fresh job pays again and may lose a result that's nearly done.`) : null,
     curve ? h('div', {}, h('p', { class: 'desc', style: { margin: '6px 0 2px', color: 'var(--text-3)', fontSize: '11.5px' } }, 'Expected time to a success (y) for each cap (x, log scale). Green = recommended, red = today\'s cap.'), curve) : null) : null,
@@ -870,7 +889,7 @@ function skillDetail(s, view, fs, act) {
       h('thead', {}, h('tr', {}, h('th', { class: 'l' }, 'Tool'), h('th', {}, 'Calls'), h('th', {}, 'Fail'), h('th', {}, 'Hidden t/o'), h('th', {}, 'Time lost'), h('th', {}, 'Arg. sets / day'))),
       h('tbody', {}, s.ops.map((o) => h('tr', { style: { cursor: 'default' } }, h('td', { class: 'l' }, opName(o.tool, o.method)), h('td', {}, fmtN(o.calls)), h('td', {}, pct(o.fails / Math.max(1, o.calls), 1)), h('td', {}, o.hidden ? fmtN(o.hidden) : '–'), h('td', {}, hrs(o.lostH)), h('td', {}, fmtN(o.maxShapes))))))) : null,
     s.chains?.length ? sect('Most common work chains (per turn)', h('div', {}, s.chains.map((c) => h('div', { style: { marginBottom: '8px' } }, h('div', { class: 'chain' }, c.k.split(' › ').flatMap((x, i) => [i ? h('i', {}, '→') : null, h('span', {}, x)]).filter(Boolean)), h('div', { class: 'dim', style: { color: 'var(--text-3)', fontSize: '11.5px' } }, `${fmtN(c.turns)} turns · ${(c.iterations / Math.max(1, c.turns)).toFixed(1)} iterations each · ${pct(c.withErrors / Math.max(1, c.turns))} hit an error`))))) : null,
-    opps.length ? sect('Opportunities', h('div', {}, opps.map((o) => h('div', { class: 'rep', onclick: () => act.open('opp', o.id, 'opps') }, h('span', { class: 't' }, o.title), h('span', { class: 'n' }, o.savings.hPerWeek ? `${hrs(o.savings.hPerWeek)}/wk` : `${fmtK(o.savings.tokensPerWeek)} tok/wk`))))) : null,
+    opps.length ? sect('Patterns worth a look', h('div', {}, opps.map((o) => h('div', { class: 'rep', onclick: () => act.open('opp', o.id, 'opps') }, h('span', { class: 't' }, o.title), h('span', { class: 'n' }, KINDS[o.kind] || o.kind))))) : null,
     s.versions?.length ? sect('Codex versions in use', h('div', { class: 'pills' }, s.versions.map(([v, n]) => h('span', { class: 'pill mono' }, `${v.slice(0, 12)} · ${fmtN(n)} turns`)))) : null);
 }
 
@@ -934,8 +953,8 @@ export function fleetSummary(view, fs) {
     `Autopsy Fleet — ${view.period.days[0]} → ${view.period.days.at(-1)} (${view.period.have.length} days), ${fs.aud === 'real' ? 'real users' : fs.aud}`,
     `${fmtN(t.sessions)} sessions · ${fmtN(t.turns)} turns · ${pct((t.fails - t.creditFails) / Math.max(1, t.calls), 1)} of tool calls failing · ${hrs((t.lostMs / 3600000) * wf)}/week lost to failures · ${fmtN(t.hidden)} hidden timeouts · ${pct(t.frustrated / Math.max(1, t.turns), 1)} frustrated turns`,
     '',
-    'Do these first (hours a week given back):',
-    ...view.actions.map((a, i) => `${i + 1}. ${a.kind === 'issue' ? shortSig(a.title, 110) : a.title} — ${hrs(a.hPerWeek)}/wk · ${a.owner}${a.kind === 'opportunity' ? ' (estimate)' : ''}`),
+    'Biggest problems (measured time lost a week; a fix is suggested only where the cause is proven):',
+    ...view.actions.map((a, i) => `${i + 1}. ${shortSig(a.title, 110)} — ${hrs(a.hPerWeek)}/wk lost · ${a.owner}`),
     '',
     'Top issues:',
     ...view.issues.filter((i) => i.score > 0).slice(0, 8).map((i) => `- [${i.cls.label}, ${i.cls.fix} fix] ${shortSig(i.sig, 110)} — ${fmtN(i.perWeek)}/wk, ${hrs(i.lostHPerWeek)}/wk lost, in ${i.owners.slice(0, 3).map((o) => nameOf(o.skill)).join(', ')}${i.trend.dir !== 'flat' ? ` (${i.trend.dir})` : ''}`),
@@ -943,8 +962,8 @@ export function fleetSummary(view, fs) {
     'Wait times:',
     ...view.waits.filter((w) => w.recommend || w.hidden).slice(0, 5).map((w) => `- ${opName(w.tool, w.method)}${w.size ? ` (${w.size})` : ''}: p50 ${sec(w.p50)}, p99 ${sec(w.p99)}${w.hidden ? `, ${w.hidden} hidden timeouts at ${sec(w.cap)}` : ''}${w.recommend ? ` → wait ≤ ${sec(w.recommend.tau)} (~${hrs(w.recommend.savedHPerWeek)}/wk)` : ''}`),
     '',
-    'Agent-design opportunities (estimates):',
-    ...view.opportunities.slice(0, 6).map((o) => `- ${o.title}${o.savings.hPerWeek ? ` — ~${hrs(o.savings.hPerWeek)}/wk` : ''}${o.savings.tokensPerWeek ? `, ~${fmtK(o.savings.tokensPerWeek)} tokens/wk` : ''}`),
+    'Patterns worth a look (observations, not proven fixes):',
+    ...view.opportunities.slice(0, 6).map((o) => `- ${o.title}`),
     '',
     'Counts, durations and recoveries are measured from the agent\'s entries; savings are estimates.',
   ];
@@ -968,5 +987,5 @@ export function renderReport(view, fs, meta) {
     ov,
     sec2('Top issues', issues),
     sec2('Wait times', waits),
-    sec2('Agent-design opportunities', opps));
+    sec2('Patterns worth a look (observations)', opps));
 }

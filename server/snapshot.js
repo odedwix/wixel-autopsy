@@ -148,6 +148,10 @@ export async function snapSkillPairs() {
   return (await readMemo(files.meta('skill-pairs'))) || [];
 }
 
+export async function snapPrices() {
+  return (await readMemo(files.meta('prices'))) || { graphs: {}, images: {}, at: null };
+}
+
 // User mode: `sessions` (the user's, from the admin API: { id, createdAt, email }) found in the
 // build, one row each. Runs are built per skill, so a session that ran several skills shows its
 // first skill's row (every skill it loaded is listed on it). A run is filed under the day its skill

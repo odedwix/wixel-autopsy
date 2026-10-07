@@ -106,19 +106,29 @@ function pickedCte(sc, day, hours) {
 )`;
 }
 
-const windowOf = (col, day) => `${col} >= TIMESTAMP '${day} 00:00:00' - INTERVAL '1' DAY
+// The entries read for the picked sessions. A whole day reads from the day before (sessions that
+// started then). An hour window [h, 24) — a slice of a heavy day, or Refresh's top-up — reads from 6 h
+// before h: the picked sessions first loaded the skill at h or later, so their counted turns start
+// there, and the turn that loaded it began moments before. Turns before the scan only feed the
+// whole-session extras (other skills used, turn count). Reading far less of the table is what makes
+// a top-up quick.
+const LOOKBACK_H = 6;
+function windowOf(col, day, hours = [0, 24]) {
+  const from = hours[0] > 0 ? hours[0] - LOOKBACK_H : -24;
+  return `${col} >= TIMESTAMP '${day} 00:00:00' ${from < 0 ? '-' : '+'} INTERVAL '${Math.abs(from)}' HOUR
     AND ${col} < TIMESTAMP '${day} 00:00:00' + INTERVAL '3' DAY`;
+}
 
 // Per turn: does it load the skill (claims) or a skill outside the family (other)? Read from the
 // turn boundaries and skill loads only, so it stays cheap next to the main scan.
-function ownCtes(sc, day) {
+function ownCtes(sc, day, hours) {
   if (!turnScoped(sc)) return '';
   const keep = skillNames([sc.skill, ...sc.family]).map(lit).join(', ');
   return `,
 tl0 AS (
   SELECT x.session_id, x.turn_id, x.sequence, ${loadsOf('x.')} AS lds
   FROM ${ENTRIES} x JOIN picked ON picked.sid = x.session_id
-  WHERE ${windowOf('x.created_date', day)}
+  WHERE ${windowOf('x.created_date', day, hours)}
     AND (x.entry_type = 'TURN_BOUNDARY' OR ${isLoad('x.')})
 ),
 tl AS (
@@ -162,7 +172,7 @@ e AS (SELECT m.*, (lc IS NOT NULL AND (lo IS NULL OR lc > lo)) AS owned FROM m),
 const ownJoin = (sc) => (turnScoped(sc) ? '\n  JOIN own ON own.session_id = x.session_id AND own.turn_id = x.turn_id' : '');
 
 // Bump when runsDayQuery's output changes, so cached days are re-queried.
-export const RUNS_QUERY_VERSION = 11;
+export const RUNS_QUERY_VERSION = 16;
 
 export function runsDayQuery({ scope, day, hours = [0, 24] }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error(`bad day ${day}`);
@@ -174,7 +184,7 @@ e0 AS (
   SELECT x.*, picked.skill_at AS picked_at, element_at(x.tool_result.result, 'output') AS out,
     ${loadsOf('x.')} AS lds
   FROM ${ENTRIES} x JOIN picked ON picked.sid = x.session_id
-  WHERE ${windowOf('x.created_date', day)}
+  WHERE ${windowOf('x.created_date', day, hours)}
 ),
 ${ownedRows(scope)}
 agg AS (
@@ -212,7 +222,36 @@ agg AS (
     array_distinct(flatten(array_agg(lds) FILTER (WHERE lds IS NOT NULL))) AS all_skills,
     count(DISTINCT turn_id) FILTER (WHERE entry_type = 'TURN_BOUNDARY') AS all_turns,
     max(created_date) AS whole_last_ts,
-    array_agg(DISTINCT turn_id) FILTER (WHERE owned) AS owned_turns
+    array_agg(DISTINCT turn_id) FILTER (WHERE owned) AS owned_turns,
+    -- The assets the counted turns wrote: every successful write names them ("Created
+    -- project/assets/<name>--<id8>.json (type: …, id: <id>…", batch writes list "id":"<id>"). The
+    -- one record of a sub-agent's writes, which WRITE_METERING doesn't log.
+    -- A sequence (generate → write in one call) holds its write steps' results; there only the
+    -- write header counts, since other steps' output is in there too.
+    -- (array_agg of no rows is NULL, and concat with a NULL is NULL: hence the coalesces.)
+    array_distinct(concat(
+      coalesce(flatten(array_agg(regexp_extract_all(substr(out, 1, 20000), 'id(?:: |":")([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 1))
+        FILTER (WHERE owned AND entry_type = 'TOOL_RESULT' AND tool_result.tool_name = 'write' AND out NOT LIKE 'Error%')), CAST(ARRAY[] AS array(varchar))),
+      coalesce(flatten(array_agg(regexp_extract_all(substr(out, 1, 40000), '(?:Created|Edited|Saved) project/assets/[^(]{0,300}\\(type: [^,]{1,60}, id: ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 1))
+        FILTER (WHERE owned AND entry_type = 'TOOL_RESULT' AND tool_result.tool_name = 'sequence')), CAST(ARRAY[] AS array(varchar))))) AS written_ids,
+    -- Why a run made nothing (toRun reads these only then): the end of what the counted turns last
+    -- said, the sentences in it that put a number on credits ("needs about 88 credits"), how the last
+    -- turn ended (STARTED = still open, e.g. on a question), the last tool called, the last question
+    -- put to the user (a widget's name, or the question's subtitle), and the credits the agent saw:
+    -- ListCosts' availableCredits and the plan's daily cap.
+    max_by(substr(assistant_message.text, greatest(1, length(assistant_message.text) - 399)), sequence)
+      FILTER (WHERE owned AND entry_type = 'ASSISTANT_MESSAGE' AND length(assistant_message.text) > 0) AS last_reply,
+    max_by(slice(regexp_extract_all(assistant_message.text, '[^.!?;\\n。]*\\d\\s*\\**\\s*(?i:credit|crédit|crédito|crediti|kredi|kredyt|קרדיט|кредит|クレジット|크레딧|积分)[^.!?\\n。]*'), 1, 2), sequence)
+      FILTER (WHERE owned AND entry_type = 'ASSISTANT_MESSAGE' AND length(assistant_message.text) > 0) AS credit_notes,
+    bool_or(assistant_message.text LIKE '%wixel-plans%') FILTER (WHERE owned AND entry_type = 'ASSISTANT_MESSAGE') AS upgrade_link,
+    max_by(turn_boundary.kind, sequence) FILTER (WHERE owned AND entry_type = 'TURN_BOUNDARY') AS last_turn_kind,
+    max_by(tool_call.tool_name, sequence) FILTER (WHERE owned AND entry_type = 'TOOL_CALL') AS last_tool,
+    max_by(coalesce(regexp_extract(element_at(tool_call.arguments, 'questions'), '"componentName":"([\\w-]+)"', 1), ''), sequence)
+      FILTER (WHERE owned AND entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'ask_user') AS ask_widget,
+    max_by(substr(coalesce(json_extract_scalar(element_at(tool_call.arguments, 'questions'), '$[0].subtitle'), json_extract_scalar(element_at(tool_call.arguments, 'questions'), '$[0].title'), ''), 1, 200), sequence)
+      FILTER (WHERE owned AND entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'ask_user') AS ask_text,
+    max_by(json_extract_scalar(out, '$.availableCredits'), sequence) FILTER (WHERE owned AND entry_type = 'TOOL_RESULT' AND out LIKE '{"availableCredits"%') AS credits_available,
+    max_by(json_extract_scalar(out, '$.dailyLimit.cap'), sequence) FILTER (WHERE owned AND entry_type = 'TOOL_RESULT' AND out LIKE '%"dailyLimit"%') AS credits_day_cap
   FROM e
   GROUP BY session_id
 )
@@ -243,6 +282,12 @@ FROM a LEFT JOIN t ON t.account_id = a.account_id`;
 // User-facing session events for the same day's sessions (thumbs, out of credits, stream errors)
 // and the assets each run wrote.
 // Separate from runsDayQuery so each stays well under the endpoint's 30s limit.
+//
+// What a session made is read from its own events, never from what else appeared in the project
+// (projects are shared: a campaign's sub-agents make a post, a story and a video side by side):
+//   WRITE_METERING          every asset write (since 2026-07-09): path 'project/assets/<name>--<id8>.json'
+//   TURN_UPDATED_ASSETS     the editor's per-turn report (logged 09-16 → 09-28 and again from 10-05)
+//   AGENT_MENTIONED_ASSETS  assets handed to the user (also existing ones the agent only referred to)
 export function eventsDayQuery({ scope, day, hours = [0, 24] }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error(`bad day ${day}`);
   checkHours(hours);
@@ -259,11 +304,16 @@ SELECT
   array_agg(DISTINCT concat(x.id, chr(31), ${t}, chr(31), element_at(x.payload, 'tags'))) FILTER (WHERE x.event_type = 'USER_FEEDBACK' AND element_at(x.payload, 'tags') IS NOT NULL) AS feedback_tags_t,
   array_agg(DISTINCT concat(x.id, chr(31), ${t})) FILTER (WHERE x.event_type = 'OUT_OF_FUNDS') AS out_of_funds_t,
   array_agg(DISTINCT concat(x.id, chr(31), ${t})) FILTER (WHERE x.event_type = 'MODEL_STREAM_ERROR') AS stream_errors_t,
-  -- The assets each turn wrote (id, name, assetType, intent, snapshotUrl): the run's outputs, exactly.
-  array_agg(concat(x.id, chr(31), ${t}, chr(31), element_at(x.payload, 'assets'))) FILTER (WHERE x.event_type = 'TURN_UPDATED_ASSETS') AS asset_events_t
+  -- The assets each turn reported (id, name, type, snapshotUrl, children).
+  array_agg(concat(x.id, chr(31), ${t}, chr(31), element_at(x.payload, 'assets'))) FILTER (WHERE x.event_type = 'TURN_UPDATED_ASSETS') AS asset_events_t,
+  -- Every asset write: path (with the asset id's first 8 hex once it exists), intent, asset type.
+  array_agg(concat(x.id, chr(31), ${t}, chr(31), coalesce(element_at(x.payload, 'path'), ''), chr(31), coalesce(element_at(x.payload, 'intent'), ''), chr(31), coalesce(element_at(x.payload, 'assetType'), '')))
+    FILTER (WHERE x.event_type = 'WRITE_METERING' AND element_at(x.payload, 'outcome') = 'written') AS asset_writes_t,
+  -- Assets handed to the user: { assetId: '{"name","type","snapshotUrl","isFallback"}' }.
+  array_agg(concat(x.id, chr(31), ${t}, chr(31), json_format(CAST(x.payload AS json)))) FILTER (WHERE x.event_type = 'AGENT_MENTIONED_ASSETS') AS asset_mentions_t
 FROM domain_events.www_wixel_agent.v1_session_event_crud x JOIN picked ON picked.sid = x.session_id
-WHERE ${windowOf('x.created_date', day)}
-  AND x.event_type IN ('USER_FEEDBACK', 'OUT_OF_FUNDS', 'MODEL_STREAM_ERROR', 'TURN_UPDATED_ASSETS')
+WHERE ${windowOf('x.created_date', day, hours)}
+  AND x.event_type IN ('USER_FEEDBACK', 'OUT_OF_FUNDS', 'MODEL_STREAM_ERROR', 'TURN_UPDATED_ASSETS', 'WRITE_METERING', 'AGENT_MENTIONED_ASSETS')
 GROUP BY 1
 ORDER BY 1`;
 }
@@ -294,35 +344,50 @@ FROM ${skillLoads(skill, (c) => `${c} >= current_timestamp - INTERVAL '90' DAY`)
 // Per-session step stats and timing for insights: per (tool, method, model) calls / failures /
 // time, plus request → first generation → last good generation → turn completions, and the
 // first turn's classified intent. Computed in Trino so insights never fetch sessions one by one.
-export const STEPS_QUERY_VERSION = 3;
+export const STEPS_QUERY_VERSION = 6;
 export function stepsDayQuery({ scope, day, hours = [0, 24] }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error(`bad day ${day}`);
   checkHours(hours);
   checkScope(scope);
   const failed = `(tool_result.status LIKE '%ERROR%' OR element_at(tool_result.result, 'output') LIKE 'Exception%' OR element_at(tool_result.result, 'output') LIKE '%error_json:%')`;
   return `
-WITH ${pickedCte(scope, day, hours)}${ownCtes(scope, day)},
+WITH ${pickedCte(scope, day, hours)}${ownCtes(scope, day, hours)},
 e AS (
   SELECT x.* FROM ${ENTRIES} x JOIN picked ON picked.sid = x.session_id${ownJoin(scope)}
-  WHERE ${windowOf('x.created_date', day)}
+  WHERE ${windowOf('x.created_date', day, hours)}
 ),
 calls AS (
-  SELECT session_id, tool_call.tool_call_id AS cid, element_at(tool_call.arguments, 'method') AS method,
-         json_extract_scalar(element_at(tool_call.arguments, 'requestJson'), '$.parameters.model') AS pmodel
+  SELECT session_id, tool_call.tool_call_id AS cid, created_date AS call_at, element_at(tool_call.arguments, 'method') AS method,
+         json_extract_scalar(element_at(tool_call.arguments, 'requestJson'), '$.parameters.model') AS pmodel,
+         TRY_CAST(json_extract_scalar(element_at(tool_call.arguments, 'requestJson'), '$.parameters.duration') AS double) AS pdur
   FROM e WHERE entry_type = 'TOOL_CALL'
 ),
 res AS (
   SELECT session_id, tool_result.tool_call_id AS cid, tool_result.tool_name AS tool, created_date,
          ${failed} AS failed,
+         element_at(tool_result.result, 'output') LIKE '%"status":"IN_PROGRESS"%' AS unfinished,
          TRY_CAST(element_at(metadata, 'durationMs') AS double) AS ms,
          CASE WHEN tool_result.tool_name IN ('generate_image', 'edit_image') THEN json_extract_scalar(element_at(tool_result.result, 'output'), '$.model') END AS omodel,
+         -- The Genix graph a media job ran: the key into the product's price list (ListCosts).
+         regexp_extract(element_at(tool_result.result, 'output'), 'graph execution for (\\w+)', 1) AS graph,
          substr(coalesce(tool_result.error_message, element_at(tool_result.result, 'output')), 1, 180) AS msg
   FROM e WHERE entry_type = 'TOOL_RESULT'
 ),
 st AS (
   SELECT r.session_id, r.tool, coalesce(c.method, '') AS method, coalesce(c.pmodel, r.omodel, '') AS model,
          count(*) AS n, count_if(r.failed) AS errs, sum(r.ms) AS ms, max(r.ms) AS max_ms,
-         min_by(r.msg, r.created_date) FILTER (WHERE r.failed) AS err
+         min_by(r.msg, r.created_date) FILTER (WHERE r.failed) AS err,
+         arbitrary(r.graph) FILTER (WHERE r.graph IS NOT NULL) AS graph,
+         sum(c.pdur) FILTER (WHERE NOT r.failed) AS billed_sec,
+         -- Where the time went (runs.js timeBreakdown): each call that is a generation, a sub-agent, a
+         -- question to the user or a failure, as flag:end ms:duration ms (flag 0 ok, 1 failed, 2 returned
+         -- with its job still running; a call blocks until its job is done, so end − duration is when it
+         -- started). Everything else counts as the agent's own time.
+         -- (No durationMs on some results, ask_user's among them: then from the call's own time.)
+         array_agg(concat_ws(':', IF(r.failed, '1', IF(r.unfinished, '2', '0')), CAST(CAST(round(to_unixtime(r.created_date) * 1000) AS bigint) AS varchar),
+             CAST(CAST(round(coalesce(r.ms, date_diff('millisecond', c.call_at, r.created_date))) AS bigint) AS varchar)))
+           FILTER (WHERE coalesce(r.ms, date_diff('millisecond', c.call_at, r.created_date)) > 0 AND (r.failed OR r.tool IN ('generate_image', 'edit_image', 'convert_image_format', 'sequence', 'analyze_image', 'ask_user', 'task')
+             OR (r.tool = 'invoke_rpc' AND regexp_like(coalesce(c.method, ''), '^generate|^Generate|^holdStill|^transformVideo|LogoShot|Animation$|Speech|Music|InvokeImageWorkflow|composeImage|DescribeVideo|mergeVoice')))) AS spans
   FROM res r LEFT JOIN calls c ON c.session_id = r.session_id AND c.cid = r.cid
   GROUP BY 1, 2, 3, 4
 ),
@@ -333,7 +398,11 @@ timing AS (
     max(created_date) FILTER (WHERE entry_type = 'TOOL_RESULT' AND element_at(tool_result.result, 'jobId') IS NOT NULL AND NOT ${failed}) AS last_gen_ok_at,
     array_agg(created_date) FILTER (WHERE entry_type = 'TURN_BOUNDARY' AND turn_boundary.kind LIKE '%COMPLETED%') AS turn_done_ats,
     min_by(element_at(system_event.payload, 'intentSubcategory'), sequence) FILTER (WHERE entry_type = 'SYSTEM_EVENT' AND system_event.event_name = 'turn_analysis') AS intent,
-    count(DISTINCT id) FILTER (WHERE entry_type = 'MODEL_CALL' AND model_call.status NOT LIKE '%SUCCESS%') AS llm_errors
+    count(DISTINCT id) FILTER (WHERE entry_type = 'MODEL_CALL' AND model_call.status NOT LIKE '%SUCCESS%') AS llm_errors,
+    -- Each counted turn's start and end as turn␟s|e␟ms (a turn still open ends at last_ms).
+    array_agg(concat_ws(chr(31), turn_id, IF(turn_boundary.kind LIKE '%STARTED%', 's', 'e'), CAST(CAST(round(to_unixtime(created_date) * 1000) AS bigint) AS varchar)))
+      FILTER (WHERE entry_type = 'TURN_BOUNDARY' AND turn_id IS NOT NULL) AS turn_marks,
+    CAST(round(to_unixtime(max(created_date)) * 1000) AS bigint) AS last_ms
   FROM e GROUP BY 1
 )
 SELECT t.*, s.steps
@@ -341,7 +410,7 @@ FROM timing t
 LEFT JOIN (
   SELECT session_id, array_agg(concat_ws(chr(31), tool, method, model, CAST(n AS varchar), CAST(errs AS varchar),
     CAST(CAST(coalesce(round(ms), 0) AS bigint) AS varchar), CAST(CAST(coalesce(round(max_ms), 0) AS bigint) AS varchar),
-    coalesce(replace(err, chr(31), ' '), ''))) AS steps
+    coalesce(replace(err, chr(31), ' '), ''), coalesce(graph, ''), CAST(coalesce(round(billed_sec, 1), 0) AS varchar), coalesce(array_join(spans, ','), ''))) AS steps
   FROM st GROUP BY 1
 ) s ON s.session_id = t.session_id
 ORDER BY t.session_id`;

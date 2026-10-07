@@ -10,6 +10,7 @@
 import { requestContext } from './context.js';
 import { backoffRemaining } from './limits.js';
 import { listSkills, familyFor, runsIndex, runsForDay, sampleFor, skillPairs } from './runs.js';
+import { prices } from './prices.js';
 import { DATA_VERSION, famId, files, readJson, writeJsonAtomic, listKeys, deleteKey, utcDay } from './snapshot.js';
 
 const DAY = 86400000;
@@ -134,6 +135,9 @@ export async function publish(win, { done, finished, only = [], startedAt = Date
   const listed = [...done, ...keep].sort((a, b) => Number(b.sessions) - Number(a.sessions));
   if (finished) {
     await writeJsonAtomic(files.meta('skill-pairs'), await skillPairs().catch(() => []));
+    // Model prices for cost figures (the shared copy can't query them either).
+    const p = await prices().catch(() => null);
+    if (p) await writeJsonAtomic(files.meta('prices'), p);
     for (const key of await listKeys(files.sessionsDir()).catch(() => [])) {
       const m = key.match(/\/(\d{4}-\d{2}-\d{2})\.json$/);
       if (m && m[1] < win.from) await deleteKey(key);

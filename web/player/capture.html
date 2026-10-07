@@ -32,7 +32,7 @@
       try {
         await loadPlatformFonts();
         if (!window.AutopsyCapture) throw new Error('capture bundle not built — run npm run build:player');
-        var input = await fetch('../api/player-input/' + q.get('run') + (q.get('root') ? '?root=' + q.get('root') : '')).then(function (r) {
+        var input = await fetch('../api/player-input/' + q.get('run') + '?captions=' + (q.get('captions') || 'user') + (q.get('root') ? '&root=' + q.get('root') : '')).then(function (r) {
           if (!r.ok) throw new Error('player input ' + r.status);
           return r.json();
         });

@@ -1,9 +1,10 @@
 import { $, h, icon, ago, fmtInt, getJson, debounce } from './util.js';
 import { state, set, onChange, toggleFilter, clearFilter, famParam } from './state.js';
-import { FACETS, STATS, SORTS, applyFilters, facetCounts, facetOptions, outputProfile, setProfile, typeLabel, primaryOutput } from './filters.js';
+import { FACETS, OUTCOMES, SORTS, applyFilters, facetCounts, facetOptions, outputProfile, setProfile, typeLabel, primaryOutput, expectedTypes, applyExpected, setExpected, setModelNamer, hasAd, pluralOf } from './filters.js';
 import { initGrid, setRuns, relayout, markSelected, scrollToIndex, columns, applySound, stopHover, isVideoRun } from './grid.js';
-import { downloadRun, downloadOutput } from './media.js';
-import { initInspect, openInspect, closeInspect, inspectedPlayer, prefetchDetail, toggleLive, toggleWide, setInspectTabByIndex, listLoaded } from './inspect.js';
+import { downloadOutput, mediaOf, resetMedia } from './media.js';
+import { initInspect, openInspect, closeInspect, inspectedPlayer, prefetchDetail, toggleLive, toggleWide, setInspectTabByIndex, listLoaded, downloadExactRun, clearDetails, togglePlayerFullscreen } from './inspect.js';
+import { modelName, pricesReady } from './models.js';
 import { computeInsights, renderInsights, headlines } from './insights.js';
 import { setSkills, renderSkillButton, openSkillPicker, rememberSkill } from './skillpicker.js';
 import { renderScopeButton, openFamilyEditor } from './family.js';
@@ -29,6 +30,10 @@ let loadStart = 0;
 let lastLoad = null;
 let loadTicker = null;
 let userInfo = null; // user mode: { id, email } and session count from the server
+let loadedView = null; // { key, at, days }: the view on screen and when its load began (Refresh tops up from there)
+let dayCounts = null; // the loading view's days and their session counts (from the index)
+let refreshing = false;
+const viewKey = () => `${state.mode}|${state.skill}|${famParam()}|${state.days}`;
 
 // Time windows are rolling (the last 1h / 24h / … from now), not UTC calendar days.
 const WINDOWS = { '1h': 1 / 24, '24h': 1, '3d': 3, '7d': 7, '14d': 14, '30d': 30, '90d': 90 };
@@ -59,22 +64,96 @@ function stepText(dir) {
   set({ textScale: next });
   toast(`Text size ${Math.round(next * 100)}%`, { ms: 1200 });
 }
-function openTextSize(btn) {
-  const pct = () => `${Math.round((Number(state.textScale) || 1) * 100)}%`;
-  const label = h('span', { class: 'ts-val' }, pct());
-  const bump = (d) => {
-    stepText(d);
-    label.textContent = pct();
-  };
-  popover(btn, h('div', { class: 'ts-pop' },
-    h('span', { class: 'ts-k' }, 'Text size'),
-    h('button', { class: 'btn', title: 'Smaller (⌥−)', onclick: () => bump(-1) }, 'A−'),
-    label,
-    h('button', { class: 'btn', title: 'Bigger (⌥+)', onclick: () => bump(1) }, 'A+'),
-    h('button', { class: 'btn ghost', title: 'Reset (⌥0)', onclick: () => { bump(0); closePopover(); } }, 'Reset')), { align: 'right' });
+// Everything about how the grid looks, in one menu: sort, card shape and size, sound on hover,
+// text size, theme.
+function openViewMenu(btn) {
+  const seg = (items, cur, onPick) => h('div', { class: 'seg' }, items.map(([v, label, title]) => h('button', { 'aria-checked': String(v === cur), title, onclick: () => { onPick(v); openViewMenu(btn); } }, label)));
+  const row = (k, ...v) => h('div', { class: 'vm-row' }, h('span', { class: 'vm-k' }, k), ...v);
+  const sort = h('select', { onchange: (e) => set({ sort: e.target.value }) }, [['newest', 'Newest'], ['oldest', 'Oldest'], ['errors', 'Most errors'], ['longest', 'Longest run'], ['generations', 'Most generations'], ['cost', 'Highest cost']].map(([v, l]) => h('option', { value: v, selected: state.sort === v }, l)));
+  const size = h('input', { type: 'range', min: 120, max: 360, step: 10, value: state.size, oninput: (e) => set({ size: Number(e.target.value) }) });
+  const pct = `${Math.round((Number(state.textScale) || 1) * 100)}%`;
+  popover(btn, h('div', { class: 'view-menu' },
+    row('Sort', sort),
+    row('Card shape', seg([['auto', 'Auto', 'From what the skill makes (A)'], ['9:16', h('span', { class: 'shape v' }), 'Vertical'], ['1:1', h('span', { class: 'shape s' }), 'Square'], ['16:9', h('span', { class: 'shape h' }), 'Horizontal']], state.aspect, (v) => set({ aspect: v }))),
+    row('Card size', size),
+    row('Sound on hover', seg([[true, 'On'], [false, 'Off']], Boolean(state.sound), (v) => set({ sound: v }))),
+    row('Text size', h('button', { class: 'btn', title: 'Smaller (⌥−)', onclick: () => { stepText(-1); openViewMenu(btn); } }, 'A−'), h('span', { class: 'ts-val' }, pct), h('button', { class: 'btn', title: 'Bigger (⌥+)', onclick: () => { stepText(1); openViewMenu(btn); } }, 'A+')),
+    row('Theme', seg([['dark', 'Dark'], ['light', 'Light']], state.theme, (v) => { document.documentElement.dataset.theme = v; set({ theme: v }); }))), { align: 'right', width: 320 });
+}
+
+// Refresh (R): only what's new. The days already loaded stay as they are; only sessions that started
+// since the last load (less 1 h, for runs that were still going) are queried, merged into the cached
+// day on the server, and added to or updated in the grid. Media is rebuilt for those runs only.
+// Shift-click (Shift+R): everything again, skipping every cache.
+async function refreshAll(e) {
+  if (refreshing) return;
+  if (e?.shiftKey || state.mode === 'user' || !loadedView || loadedView.key !== viewKey()) return refreshEverything();
+  refreshing = true;
+  const btn = $('#refresh');
+  btn.classList.add('busy');
+  const started = Date.now();
+  // Since the newest run on screen, not since the click: days can come from the cache, so that's
+  // how current the grid really is (the 1 h overlap covers runs that were still going).
+  const newest = allRuns.reduce((m, r) => Math.max(m, r.createdAt || 0), 0);
+  const since = Math.min(loadedView.at, newest || loadedView.at);
+  try {
+    // The UTC days that can hold new or still-running sessions: from 1 h before the last load to now.
+    // No index query: the last load's session counts are reused (a new day starts at 0).
+    const days = [];
+    for (let t = Date.parse(`${new Date(since - 3600000).toISOString().slice(0, 10)}T00:00:00Z`); t <= Date.now(); t += 86400000) {
+      const day = new Date(t).toISOString().slice(0, 10);
+      days.push({ day, sessions: loadedView.days?.[day] || 0 });
+    }
+    const byId = new Map(allRuns.map((r, i) => [r.id, i]));
+    let added = 0;
+    let updated = 0;
+    const touched = [];
+    // A run counts as updated only if something about it changed (it went on, or its outputs did).
+    const sig = (r) => `${r.lastAt}|${(r.allOutputs || r.outputs || []).map((o) => `${o.id}:${o.updated}`).join(',')}|${r.userDownloads}|${r.publishedUrl || ''}`;
+    for (const d of days) {
+      const rows = await getJson(`api/runs-day?skill=${encodeURIComponent(state.skill)}&day=${d.day}&n=${d.sessions}&fam=${encodeURIComponent(famParam())}&since=${since}`);
+      for (const r of rows) {
+        if (byId.has(r.id)) {
+          const i = byId.get(r.id);
+          if (sig(allRuns[i]) === sig(r)) continue;
+          allRuns[i] = r;
+          updated++;
+        } else {
+          byId.set(r.id, allRuns.push(r) - 1);
+          added++;
+        }
+        touched.push(r.id);
+      }
+    }
+    // Their review copies and exact mp4s are rebuilt (they may have finished since), their sessions re-read.
+    const stale = touched.filter((id) => mediaOf(id)?.kind !== 'render');
+    if (stale.length) await fetch('api/media-refresh', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ids: stale }) }).catch(() => {});
+    resetMedia(touched);
+    clearDetails(touched);
+    loadedView = { ...loadedView, at: started };
+    refreshView();
+    toast(added || updated ? `Refreshed in ${Math.round((Date.now() - started) / 1000)}s: ${fmtInt(added)} new run${added === 1 ? '' : 's'}, ${fmtInt(updated)} recent one${updated === 1 ? '' : 's'} updated` : 'Nothing new since the last load', { ms: 5000 });
+  } catch (err) {
+    toast(`Couldn't refresh: ${err.message}`, { ms: 6000 });
+  } finally {
+    refreshing = false;
+    btn.classList.remove('busy');
+  }
+}
+
+async function refreshEverything() {
+  if (state.mode === 'user') return loadRuns();
+  const ids = allRuns.filter((r) => mediaOf(r.id) && mediaOf(r.id).kind !== 'render').map((r) => r.id);
+  clearDetails();
+  if (ids.length) await fetch('api/media-refresh', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ids: ids.slice(0, 2000) }) }).catch(() => {});
+  resetMedia();
+  toast('Refreshing everything — querying every day again…', { ms: 3000 });
+  loadRuns({ fresh: true });
 }
 
 // ---------- boot ----------
+setModelNamer(modelName);
+pricesReady.then(() => allRuns.length && refreshView());
 document.documentElement.dataset.theme = state.theme;
 applyTextScale();
 initGrid($('#gridScroll'), $('#gridSizer'), {
@@ -89,15 +168,24 @@ loadRuns();
 pollLoad();
 
 onChange((patch) => {
+  // A new skill starts from its own view: only the result switch and the user type carry over.
+  if (('skill' in patch || 'mode' in patch) && !('filters' in patch)) {
+    const { outcome, user } = state.filters;
+    set({ filters: { ...(outcome ? { outcome } : {}), ...(user ? { user } : {}) } }, { silent: true });
+  }
   if ('skill' in patch || 'days' in patch || 'mode' in patch || 'user' in patch || 'families' in patch) {
     if ('open' in patch && !patch.open) closeInspect();
     syncTopbar();
     return loadRuns();
   }
   if ('filters' in patch || 'q' in patch || 'sort' in patch) refreshView();
+  else if ('filtersOpen' in patch) {
+    renderFilters();
+    relayout();
+  }
   if ('tab' in patch) applyTab();
   if ('aspect' in patch || 'size' in patch) relayout();
-  if ('sound' in patch) applySound();
+  if ('sound' in patch || 'open' in patch) applySound();
   if ('textScale' in patch) {
     applyTextScale();
     relayout();
@@ -117,8 +205,11 @@ async function loadSkills() {
 
 // Progressive: the index says which days have runs (seconds), then days stream in newest first,
 // three at a time, and the grid fills as each one lands. Empty days are never queried.
-async function loadRuns() {
+// `fresh` (Refresh): every query and session read again, skipping the caches.
+async function loadRuns({ fresh = false } = {}) {
   const token = ++loadToken;
+  loadedView = null;
+  const fq = fresh ? '&fresh=1' : '';
   // A new selection cancels the previous one's requests; the proxy then drops their queued queries.
   loadAbort?.abort();
   loadAbort = new AbortController();
@@ -150,10 +241,11 @@ async function loadRuns() {
   }
   if (state.mode === 'user') return loadUserRuns(token, signal);
   try {
-    const index = await getJson(`api/runs-index?skill=${encodeURIComponent(state.skill)}&days=${requestDays()}`, { signal });
+    const index = await getJson(`api/runs-index?skill=${encodeURIComponent(state.skill)}&days=${requestDays()}${fq}`, { signal });
     if (token !== loadToken) return;
     lastSeen = index.lastSeen;
     loading.total = index.dayList.length;
+    dayCounts = index.dayList;
     loading.sessions = index.total;
     loadedSessions = index.total;
     const queue = [...index.dayList];
@@ -162,7 +254,7 @@ async function loadRuns() {
       while (queue.length) {
         const { day, sessions } = queue.shift();
         try {
-          const runs = await getJson(`api/runs-day?skill=${encodeURIComponent(state.skill)}&day=${day}&n=${sessions}&fam=${encodeURIComponent(famParam())}`, { signal });
+          const runs = await getJson(`api/runs-day?skill=${encodeURIComponent(state.skill)}&day=${day}&n=${sessions}&fam=${encodeURIComponent(famParam())}${fq}`, { signal });
           if (token !== loadToken) return;
           for (const r of runs) if (!seen.has(r.id) && seen.add(r.id)) allRuns.push(r);
           // The run opened from a link shows its full row as soon as its day lands.
@@ -178,6 +270,7 @@ async function loadRuns() {
         // Don't leave the grid empty behind filters that don't fit this skill while the rest loads.
         if (loading.done === 1) {
           scope = allRuns.filter(inWindow);
+          applyExpected(allRuns, state.mode === 'user' ? null : expectedTypes(outputProfile(scope)));
           if (scope.length && !applyFilters(scope, state.filters, state.q).length) pruneFilters();
         }
         scheduleRefresh();
@@ -190,13 +283,17 @@ async function loadRuns() {
     loading = null;
     endProgress();
     status(`Failed to load runs: ${err.message}`);
-    $('#gridSizer').replaceChildren(h('div', { class: 'empty-state' }, h('h2', {}, 'Couldn’t load runs'), h('p', {}, err.message), h('button', { class: 'btn', onclick: loadRuns }, 'Retry')));
+    $('#gridSizer').replaceChildren(h('div', { class: 'empty-state' }, h('h2', {}, 'Couldn’t load runs'), h('p', {}, err.message), h('button', { class: 'btn', onclick: () => loadRuns() }, 'Retry')));
     return;
   }
   loading = null;
   endProgress();
+  // What Refresh tops up from: this view, as of when its load began, and its days' session counts
+  // (reused so a busy day keeps the same sample, and its cached rows can be topped up).
+  loadedView = { key: viewKey(), at: loadStart, days: Object.fromEntries((dayCounts || []).map((d) => [d.day, d.sessions])) };
   refreshView();
   pruneFilters();
+  if (fresh) toast(`Refreshed everything: ${fmtInt(allRuns.length)} runs queried again — changed videos rebuild as they come on screen`, { ms: 5000 });
   if (state.open && state.selected) {
     const r = allRuns.find((x) => x.id === state.selected);
     if (r) openInspect(r);
@@ -273,45 +370,16 @@ function endProgress() {
   setTimeout(() => !loading && bar.classList.remove('on', 'ind'), 250);
 }
 
-// After a skill/window change, drop filter values that match nothing in this skill's runs
-// (e.g. "Wixel team" when no team member ran it), so the view is never empty for no reason.
+// Filters that leave nothing to show in this skill's runs are cleared, with one note saying so,
+// rather than leaving an empty grid behind them.
 function pruneFilters() {
-  if (!scope.length) return;
-  const filters = { ...state.filters };
-  const removed = [];
-  for (const f of FACETS) {
-    const vals = filters[f.key];
-    if (!vals?.length) continue;
-    const opts = facetOptions(f, scope);
-    const keep = vals.filter((v) => {
-      const o = opts.find((x) => x.value === v);
-      return o && scope.some(o.test);
-    });
-    for (const v of vals) if (!keep.includes(v)) removed.push(`${f.label}: ${opts.find((x) => x.value === v)?.label || v}`);
-    if (keep.length) filters[f.key] = keep;
-    else delete filters[f.key];
-  }
-  // Still nothing? The combination contradicts this skill: drop whole filters, most restrictive
-  // first (the one whose removal brings back the most runs), until something shows.
-  const label = (key) => {
-    const f = FACETS.find((x) => x.key === key);
-    const opts = facetOptions(f, scope);
-    return `${f.label}: ${(filters[key] || []).map((v) => opts.find((o) => o.value === v)?.label || v).join(', ')}`;
-  };
-  for (let guard = 0; guard < 8 && !applyFilters(scope, filters, state.q).length && Object.keys(filters).length; guard++) {
-    let best = null;
-    for (const key of Object.keys(filters)) {
-      const { [key]: _, ...rest } = filters;
-      const n = applyFilters(scope, rest, state.q).length;
-      if (!best || n > best.n) best = { key, n };
-    }
-    removed.push(label(best.key));
-    delete filters[best.key];
-  }
-  if (removed.length) {
-    set({ filters });
-    toast(`Removed filters that don’t fit ${subject()}: ${removed.join(' · ')}`, { ms: 7000 });
-  }
+  if (!scope.length || applyFilters(scope, state.filters, state.q).length) return;
+  const { outcome } = state.filters;
+  const keepOutcome = outcome && applyFilters(scope, { outcome }, state.q).length;
+  const cleared = Object.keys(state.filters).filter((k) => !(k === 'outcome' && keepOutcome));
+  if (!cleared.length) return;
+  set({ filters: keepOutcome ? { outcome } : {} });
+  toast(`Nothing in ${subject()} matched those filters — cleared ${cleared.map((k) => FACETS.find((f) => f.key === k)?.label || k).join(', ')}`, { ms: 6000 });
 }
 
 function scheduleRefresh() {
@@ -339,11 +407,15 @@ function refreshView() {
   scope = allRuns.filter(inWindow);
   const profile = outputProfile(scope);
   setProfile(profile);
-  renderProfile(profile);
+  // What the skill is supposed to make (its main output type, and any other most of its runs make):
+  // runs are shown and judged by those only. User mode shows everything.
+  const expected = state.mode === 'user' ? null : expectedTypes(profile);
+  setExpected(expected);
+  applyExpected(allRuns, expected);
   // The first tab is named after what the skill makes (Logos, Slides, Videos…).
-  const main = profile[0]?.type;
-  const lbl = main ? typeLabel(main) : 'Runs';
-  $('#tabMain').textContent = /s$/.test(lbl) ? lbl : `${lbl}s`;
+  const lbl = expected?.length ? expected.slice(0, 2).map(typeLabel).map(pluralOf).join(' & ') : 'Runs';
+  $('#tabMain').textContent = lbl;
+  $('#tabMain').parentElement.title = expected?.length ? `What ${state.skill} makes, learned from its runs: ${profile.slice(0, 4).map((p) => `${typeLabel(p.type)} ${Math.round(p.share * 100)}%`).join(' · ')}. Runs are judged by ${expected.map(typeLabel).join(' / ')} only (V)` : 'Outputs (V)';
   view = applyFilters(scope, state.filters, state.q).sort(SORTS[state.sort] || SORTS.newest);
   const sizer = $('#gridSizer');
   const keepSkeleton = loading && !allRuns.length;
@@ -353,10 +425,13 @@ function refreshView() {
   if (!keepSkeleton && !view.length) sizer.append(emptyState());
   const counts = facetCounts(scope, state.filters, state.q);
   renderFilters(counts);
-  renderSummary(counts);
+  renderOutcome(counts);
   renderChips();
-  insights = computeInsights(view);
-  renderInsightViews();
+  // Insights are computed when they're on screen, or once the load is done (the headline uses them).
+  if (state.tab === 'insights' || !loading) {
+    insights = computeInsights(view);
+    renderInsightViews();
+  }
   refreshStatus();
 }
 
@@ -376,17 +451,6 @@ function scopeNote() {
   return mixed ? ` · ${fmtInt(mixed)} also used other skills (their turns not counted)` : '';
 }
 
-// "Makes: Logo 97% · Image 7%" — the skill's output types, each a one-click filter.
-function renderProfile(profile) {
-  const el = $('#profile');
-  if (!profile.length) return el.replaceChildren();
-  el.replaceChildren(h('span', { class: 'k' }, 'Makes'), ...profile.slice(0, 5).map((p) => {
-    const on = (state.filters.outputType || []).includes(p.type);
-    return h('button', { class: `pf${on ? ' on' : ''}`, title: `${fmtInt(p.runs)} runs produced a ${typeLabel(p.type).toLowerCase()} — click to filter`, onclick: () => toggleFilter('outputType', p.type) },
-      typeLabel(p.type), h('small', {}, `${Math.round(p.share * 100)}%`));
-  }));
-}
-
 // Why the grid is empty, and the one click that fixes it.
 function emptyState() {
   if (scope.length) {
@@ -395,7 +459,7 @@ function emptyState() {
   }
   if (missing.length) {
     return h('div', { class: 'empty-state' }, h('h2', {}, `Couldn’t load ${missing.length} day(s)`), h('p', {}, missing[0].error?.slice(0, 200) || ''),
-      h('button', { class: 'btn', onclick: loadRuns }, 'Retry'));
+      h('button', { class: 'btn', onclick: () => loadRuns() }, 'Retry'));
   }
   // Loaded runs exist but none inside a short window (e.g. 1h): suggest the next window up.
   const newest = allRuns.reduce((m, r) => Math.max(m, r.createdAt || 0), 0);
@@ -417,7 +481,9 @@ function emptyState() {
 }
 
 function status(text) {
-  $('#statusLine').replaceChildren(h('span', {}, text), h('span', { style: { marginLeft: 'auto' } }), loadEl, h('span', {}, 'Press ? for shortcuts'));
+  // One line at any width or text size: the summary truncates (full text on hover) and the readout's
+  // lesser parts drop out as the bar narrows (app.css).
+  $('#statusLine').replaceChildren(h('span', { class: 'summary', title: text }, text), loadEl, h('span', { class: 'hint' }, 'Press ? for shortcuts'));
 }
 
 // ---------- insights ----------
@@ -434,6 +500,15 @@ const insightActions = {
     select(id, { open: true });
   },
   label: () => `${state.mode === 'user' ? 'one user · all skills' : state.skill} · last ${windowLabel()} · ${fmtInt(view.length)} runs${Object.keys(state.filters).length || state.q ? ' (filtered)' : ''}`,
+  runs: () => view,
+  // A finding's click: its filter, its failing step, a pick of runs, or the card that explains it.
+  go: (g) => {
+    if (!g) return;
+    if (g.filter) return insightActions.filter(...g.filter);
+    if (g.filterStep) return insightActions.filterStep(g.filterStep, true);
+    if (g.ids) return set({ filters: { ...state.filters, ids: g.ids.slice(0, 400) }, tab: 'videos' });
+    if (g.section) document.querySelector(`#ins-${g.section}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  },
   share: (anchor) => shareInsights(anchor, insights, insightActions.label(), insightActions),
   rerender: () => renderInsightViews(),
   get expanded() {
@@ -453,7 +528,7 @@ function renderInsightViews() {
     $('#headlines').replaceChildren(...headlines(insights, (section) => {
       insightState.scrollTo = section;
       set({ tab: 'insights' });
-    }));
+    }, view));
   }
 }
 
@@ -471,7 +546,11 @@ function applyTab() {
   $('#insights').hidden = !ins;
   $('#gridScroll').hidden = ins;
   $('#headlines').hidden = ins;
-  if (ins) stopHover();
+  if (ins) {
+    stopHover();
+    // Not computed while days were still loading in the grid view.
+    if (allRuns.length) insights = computeInsights(view);
+  }
   renderInsightViews();
 }
 
@@ -504,15 +583,19 @@ async function pollLoad() {
     const l = await getJson('api/load');
     lastLoad = l;
     renderNet(l.net);
+    // Only the systems that did something (a row of zeros says nothing).
     const lane = (name, label) => {
       const x = l[name];
+      if (!x.last5m && !x.inflight && !x.queued && !x.backoffUntil) return null;
       return h('span', { title: `${label}: ${x.inflight} in flight, ${x.queued} queued${x.queuedBackground ? ` (+${x.queuedBackground} background)` : ''}, ${x.total} since start, ${x.errors} errors (max ${x.concurrency} concurrent)${x.backoffUntil ? ` — backing off after ${x.timeouts2m} timeouts` : ''}` },
         h('b', {}, label), ' ', h('span', { class: x.queued || x.backoffUntil ? 'busy' : '' }, `${x.last5m}${x.backoffUntil ? ' · easing off' : ''}`));
     };
-    loadEl.replaceChildren(h('span', { title: 'Requests to production-side systems in the last 5 minutes' }, 'Upstream, 5 min:'),
-      lane('trino', 'Trino'), lane('admin', 'Admin API'), lane('temporal', 'Temporal'),
-      h('span', { title: 'Review videos being prepared locally (ffmpeg; reads the CDN only)' }, h('b', {}, 'Media'), ` ${l.media.active + l.media.pending}`),
-      l.cache ? h('span', { title: `Local cache in .cache — capped at ${(l.cache.cap / 1024 ** 3).toFixed(1)} GB (CACHE_MAX_GB); least-recently-used entries are evicted` }, h('b', {}, 'Cache'), ` ${(l.cache.bytes / 1024 ** 3).toFixed(1)}/${(l.cache.cap / 1024 ** 3).toFixed(0)} GB`) : null);
+    const media = l.media.active + l.media.pending;
+    const lanes = [lane('trino', 'Trino'), lane('admin', 'Admin API'), lane('temporal', 'Temporal'),
+      media ? h('span', { title: 'Review videos being prepared locally (ffmpeg; reads the CDN only)' }, h('b', {}, 'Media'), ` ${media}`) : null].filter(Boolean);
+    loadEl.replaceChildren(h('span', { class: 'lbl', title: 'Requests to production-side systems in the last 5 minutes' }, lanes.length ? 'Upstream, 5 min:' : 'Upstream idle'),
+      ...lanes,
+      l.cache ? h('span', { class: 'cache', title: `Local cache in .cache — capped at ${(l.cache.cap / 1024 ** 3).toFixed(1)} GB (CACHE_MAX_GB); least-recently-used entries are evicted` }, h('b', {}, 'Cache'), ` ${(l.cache.bytes / 1024 ** 3).toFixed(1)}/${(l.cache.cap / 1024 ** 3).toFixed(0)} GB`) : null);
   } catch {}
   setTimeout(pollLoad, 5000);
 }
@@ -522,7 +605,11 @@ function renderFilters(counts = facetCounts(scope, state.filters, state.q)) {
   const panel = $('#filters');
   panel.hidden = !state.filtersOpen;
   const scroll = panel.scrollTop;
-  panel.replaceChildren(...FACETS.map((f) => {
+  $('#filtersBtn')?.setAttribute('aria-pressed', String(Boolean(state.filtersOpen)));
+  const n = Object.keys(state.filters).filter((k) => k !== 'outcome').reduce((a, k) => a + state.filters[k].length, 0);
+  if ($('#filtersCnt')) $('#filtersCnt').textContent = n ? String(n) : '';
+  if (!state.filtersOpen) return;
+  panel.replaceChildren(h('div', { class: 'filters-h' }, h('b', {}, 'Filters'), h('button', { class: 'linkish', onclick: () => set({ filtersOpen: false }) }, 'Hide')), ...FACETS.filter((f) => !f.hidden && counts[f.key].some((o) => o.count || (state.filters[f.key] || []).includes(o.value))).map((f) => {
     const active = state.filters[f.key] || [];
     let opts = counts[f.key];
     if (f.dynamic && !expanded.has(f.key) && opts.length > (f.limit || 6)) {
@@ -544,30 +631,35 @@ function renderFilters(counts = facetCounts(scope, state.filters, state.q)) {
   panel.scrollTop = scroll;
 }
 
-// ---------- summary + chips ----------
-// Each stat counts like its facet option does: everything else applied, its own facet not — so
-// "Generated, no video" still shows 30 while you're looking at finished videos.
-function renderSummary(counts) {
-  $('#summary').replaceChildren(...STATS.map((s) => {
-    const opt = s.filter && counts[s.filter[0]]?.find((o) => o.value === s.filter[1]);
-    const pool = s.filter ? counts[s.filter[0]]?.pool : view.length;
-    const n = s.filter ? opt?.count ?? 0 : view.length;
-    const on = s.filter && (state.filters[s.filter[0]] || []).includes(s.filter[1]);
-    const pct = s.filter && pool ? Math.round((n / pool) * 100) : null;
-    return h('button', { class: `stat${on ? ' on' : ''}`, title: s.filter ? `${fmtInt(n)} of ${fmtInt(pool)} — click to ${on ? 'remove' : 'add'} this filter` : 'Runs in view', onclick: () => (s.filter ? toggleFilter(...s.filter) : null) },
-      h('span', { class: 'v' }, fmtInt(n), pct != null ? h('span', { class: 'pct' }, `${pct}%`) : null),
-      h('span', { class: 'k' }, s.dot ? h('span', { class: 'dot', style: { background: s.dot } }) : null, s.label));
-  }));
+// ---------- result switch + chips ----------
+// One choice: every run, or the runs that made the skill's output, tried and didn't, or never
+// tried. Each count follows the other filters and the search.
+function renderOutcome(counts) {
+  const cur = state.filters.outcome?.[0] || null;
+  const opts = counts.outcome || [];
+  const pool = opts.pool ?? view.length;
+  const pick = (v) => {
+    const { outcome, ...rest } = state.filters;
+    set({ filters: v ? { ...rest, outcome: [v] } : rest });
+  };
+  $('#outcome').replaceChildren(
+    h('button', { 'aria-checked': String(!cur), title: 'Every run in the window', onclick: () => pick(null) }, 'All', h('small', {}, fmtInt(pool))),
+    ...OUTCOMES.map((o) => {
+      const n = opts.find((x) => x.value === o.value)?.count ?? 0;
+      return h('button', { 'aria-checked': String(cur === o.value), title: `${fmtInt(n)} of ${fmtInt(pool)} (${pool ? Math.round((n / pool) * 100) : 0}%)`, onclick: () => pick(cur === o.value ? null : o.value) },
+        h('span', { class: 'dot', style: { background: o.dot } }), o.label(), h('small', {}, fmtInt(n)));
+    }));
 }
 
 function renderChips() {
   const chips = [];
-  for (const f of FACETS) {
+  for (const f of FACETS.filter((x) => !x.hidden)) {
     for (const v of state.filters[f.key] || []) {
       const o = facetOptions(f, scope).find((x) => x.value === v);
       chips.push(h('button', { class: 'chip', title: 'Remove', onclick: () => toggleFilter(f.key, v) }, h('b', {}, `${f.label}:`), o?.label || v, icon('x')));
     }
   }
+  if (state.filters.ids?.length) chips.push(h('button', { class: 'chip', title: 'Runs picked from an insight — remove', onclick: () => { const { ids, ...rest } = state.filters; set({ filters: rest }); } }, h('b', {}, 'Picked:'), `${state.filters.ids.length} runs from Insights`, icon('x')));
   if (state.q) chips.push(h('button', { class: 'chip', onclick: () => set({ q: '' }) }, h('b', {}, 'Search:'), `“${state.q}”`, icon('x')));
   if (chips.length > 1) chips.push(h('button', { class: 'chip clear', onclick: () => { set({ q: '' }); clearFilter(); } }, 'Clear all'));
   $('#chips').replaceChildren(...chips);
@@ -579,6 +671,8 @@ function select(id, { open = false } = {}) {
   markSelected();
   const r = view.find((x) => x.id === id) || allRuns.find((x) => x.id === id);
   if (open || state.open) openInspect(r);
+  // The open run's player takes the sound from the hover preview (the state change above is silent).
+  applySound();
   syncTopbar();
 }
 
@@ -601,22 +695,12 @@ function bindTopbar() {
     const b = e.target.closest('button');
     if (b) set({ days: WINDOWS[b.dataset.win] });
   });
-  $('#aspect').addEventListener('click', (e) => {
-    const b = e.target.closest('button');
-    if (b) set({ aspect: b.dataset.aspect });
-  });
-  $('#size').addEventListener('input', (e) => set({ size: Number(e.target.value) }));
   const q = $('#q');
   q.value = state.q;
   q.addEventListener('input', debounce(() => set({ q: q.value.trim() }), 120));
-  $('#sort').addEventListener('change', (e) => set({ sort: e.target.value }));
-  $('#sound').addEventListener('click', () => set({ sound: !state.sound }));
-  $('#theme').addEventListener('click', () => {
-    const theme = state.theme === 'dark' ? 'light' : 'dark';
-    document.documentElement.dataset.theme = theme;
-    set({ theme });
-  });
-  $('#textSize').addEventListener('click', () => openTextSize($('#textSize')));
+  $('#refresh').addEventListener('click', (e) => refreshAll(e));
+  $('#viewBtn').addEventListener('click', () => openViewMenu($('#viewBtn')));
+  $('#filtersBtn').addEventListener('click', () => set({ filtersOpen: !state.filtersOpen }));
   $('#help').addEventListener('click', () => ($('#helpDialog').hidden = false));
   $('#helpDialog').addEventListener('click', () => ($('#helpDialog').hidden = true));
   // Hovering a card for a moment warms its detail, so opening it is instant.
@@ -638,14 +722,11 @@ function syncTopbar() {
     b.textContent = winName(b.dataset.win);
   }
   if (shared()) $('#days').title = `Built once a day: whole UTC days up to ${fmtDay(shared().through)}`;
-  for (const b of $('#aspect').children) b.setAttribute('aria-checked', String(b.dataset.aspect === state.aspect));
-  $('#size').value = state.size;
-  $('#sort').value = state.sort;
+  // Nothing newer than the daily build to fetch.
+  if (shared() && $('#refresh')) $('#refresh').hidden = true;
   if (document.activeElement !== $('#q')) $('#q').value = state.q;
-  const snd = $('#sound');
-  snd.setAttribute('aria-pressed', String(state.sound));
-  snd.replaceChildren(icon(state.sound ? 'volume' : 'mute'));
   $('#filters').hidden = !state.filtersOpen;
+  $('#filtersBtn')?.setAttribute('aria-pressed', String(Boolean(state.filtersOpen)));
   renderSkillButton($('#skillBtn'));
   renderScopeButton($('#scopeBtn'));
 }
@@ -670,12 +751,20 @@ document.addEventListener('keydown', (e) => {
     return stepText(/Equal|Add/.test(e.code) ? 1 : /Minus|Subtract/.test(e.code) ? -1 : 0);
   }
   if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+  // ~ (the key left of 1, by position: with or without Shift, in any keyboard layout): the run's player
+  // full screen and back, with the pointer over it.
+  if (e.code === 'Backquote' || e.key === '`' || e.key === '~') {
+    if (togglePlayerFullscreen()) e.preventDefault();
+    return;
+  }
   const p = inspectedPlayer();
   const k = e.key;
   const act = {
     '/': () => $('#q').focus(),
     '?': () => ($('#helpDialog').hidden = !$('#helpDialog').hidden),
     f: () => set({ filtersOpen: !state.filtersOpen }),
+    r: () => refreshAll(e),
+    R: () => refreshEverything(),
     v: () => set({ tab: 'videos' }),
     i: () => set({ tab: 'insights' }),
     s: () => set({ sound: !state.sound }),
@@ -694,8 +783,9 @@ document.addEventListener('keydown', (e) => {
     ',': () => p?.step(-1),
     '.': () => p?.step(1),
     e: () => toggleLive(),
+    c: () => p?.setCaptions?.(!p.captions),
     w: () => state.open && toggleWide(),
-    ...Object.fromEntries([1, 2, 3, 4, 5, 6].map((n) => [String(n), () => state.open && setInspectTabByIndex(n - 1)])),
+    ...Object.fromEntries([1, 2, 3, 4, 5].map((n) => [String(n), () => state.open && setInspectTabByIndex(n - 1)])),
     o: () => state.selected && window.open(`https://wix-bo.com/wixel-agent/admin/#/sessions/${state.selected}`, '_blank', 'noopener'),
     d: () => state.selected && downloadSelected(),
   }[k];
@@ -706,12 +796,14 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// Downloads are the exact output only: the user's own render, or the exact composition rendered
+// from the product's player (~2 min the first time); other output types as their own files.
 function downloadSelected() {
-  // With the run open, D is its Download button (the best version, e.g. the Exact composition).
   const main = state.open && document.querySelector('#inspect .dl-main');
   if (main) return main.click();
   const r = allRuns.find((x) => x.id === state.selected);
   if (!r) return;
   if (!isVideoRun(r)) return downloadOutput(r, primaryOutput(r), state.mode === 'user' ? null : state.skill) || toast('This run has no output to download');
-  if (!downloadRun(r, state.mode === 'user' ? null : state.skill)) toast('The video is still being prepared — try again in a moment');
+  if (!hasAd(r)) return toast('This run has no finished video to download');
+  downloadExactRun(r);
 }

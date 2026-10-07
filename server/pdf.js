@@ -57,16 +57,50 @@ export async function waitFor(send, expression, timeoutMs) {
   return null;
 }
 
-// A throwaway headless Chrome with one page; `fn({ send })` drives it over the DevTools protocol.
+// One DevTools connection (a page's or the browser's): send(method, params) resolves with the reply.
+async function connect(url) {
+  const ws = new WebSocket(url);
+  await new Promise((resolve, reject) => {
+    ws.addEventListener('open', resolve);
+    ws.addEventListener('error', reject);
+  });
+  let id = 0;
+  const pending = new Map();
+  ws.addEventListener('message', (e) => {
+    const m = JSON.parse(e.data);
+    if (m.id && pending.has(m.id)) {
+      pending.get(m.id)(m);
+      pending.delete(m.id);
+    }
+  });
+  const send = (method, params = {}) => new Promise((resolve) => {
+    const i = ++id;
+    pending.set(i, resolve);
+    ws.send(JSON.stringify({ id: i, method, params }));
+  });
+  const close = () => {
+    try {
+      ws.close();
+    } catch {}
+  };
+  return { send, close };
+}
+
+// A throwaway headless Chrome with one page; `fn({ send, newPage })` drives it over the DevTools
+// protocol. `newPage()` opens one more page in its own window (a background tab would be throttled:
+// no animation frames, so the player never settles) and resolves with its `send`.
 async function session(fn) {
   const bin = chromePath();
   if (!bin) throw Object.assign(new Error('Google Chrome not found (set CHROME_PATH)'), { status: 503 });
   // A fresh profile per session (a killed Chrome can still be writing to the last one).
   await fs.mkdir(path.join(config.cacheDir, 'chrome-pdf'), { recursive: true });
   const profile = await fs.mkdtemp(path.join(config.cacheDir, 'chrome-pdf', 'p-'));
-  const chrome = spawn(bin, ['--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--mute-audio',
-    '--autoplay-policy=no-user-gesture-required', `--user-data-dir=${profile}`, '--remote-debugging-port=0', '--window-size=1400,1000', 'about:blank'], { stdio: 'ignore' });
-  let ws;
+  // Software WebGL (SwiftShader): the product's image components draw with WebGL, and without a GPU
+  // headless Chrome has no WebGL context — those layers would come out blank in Exact captures.
+  const chrome = spawn(bin, ['--headless=new', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-first-run', '--no-default-browser-check', '--mute-audio',
+    '--autoplay-policy=no-user-gesture-required', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
+    `--user-data-dir=${profile}`, '--remote-debugging-port=0', '--window-size=1400,1000', 'about:blank'], { stdio: 'ignore' });
+  const conns = [];
   try {
     // Chrome writes the port it picked to DevToolsActivePort.
     let port;
@@ -76,31 +110,25 @@ async function session(fn) {
     }
     if (!port) throw new Error('headless Chrome did not start');
     const page = (await (await fetch(`http://127.0.0.1:${port}/json`)).json()).find((t) => t.type === 'page');
-    ws = new WebSocket(page.webSocketDebuggerUrl);
-    await new Promise((resolve, reject) => {
-      ws.addEventListener('open', resolve);
-      ws.addEventListener('error', reject);
-    });
-    let id = 0;
-    const pending = new Map();
-    ws.addEventListener('message', (e) => {
-      const m = JSON.parse(e.data);
-      if (m.id && pending.has(m.id)) {
-        pending.get(m.id)(m);
-        pending.delete(m.id);
+    const first = await connect(page.webSocketDebuggerUrl);
+    conns.push(first);
+    await first.send('Page.enable');
+    let browser = null;
+    const newPage = async () => {
+      if (!browser) {
+        browser = await connect((await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()).webSocketDebuggerUrl);
+        conns.push(browser);
       }
-    });
-    const send = (method, params = {}) => new Promise((resolve) => {
-      const i = ++id;
-      pending.set(i, resolve);
-      ws.send(JSON.stringify({ id: i, method, params }));
-    });
-    await send('Page.enable');
-    return await fn({ send });
+      const t = await browser.send('Target.createTarget', { url: 'about:blank', newWindow: true });
+      if (!t.result?.targetId) throw new Error(t.error?.message || 'could not open another page');
+      const c = await connect(`ws://127.0.0.1:${port}/devtools/page/${t.result.targetId}`);
+      conns.push(c);
+      await c.send('Page.enable');
+      return c.send;
+    };
+    return await fn({ send: first.send, newPage });
   } finally {
-    try {
-      ws?.close();
-    } catch {}
+    for (const c of conns) c.close();
     const exited = new Promise((r) => chrome.once('exit', r));
     chrome.kill();
     await Promise.race([exited, sleep(3000)]);

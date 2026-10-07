@@ -11,7 +11,7 @@ The Insights tab summarizes the skill as a whole: failure rates, timings, top er
 
 Built in three levels: a grid of runs → a run's deep dive → the Genix graph run behind a generation. Start with `npm start` or the **Autopsy** app on the Desktop.
 
-**Fleet** (the button next to the logo, or `/fleet.html`) looks at every major skill at once: what fails most, how much time each failure costs, which fixes are easy, how long each operation really takes (and the right timeout), and where the agent does work it doesn't need to. See [Fleet](#fleet-every-major-skill-at-once).
+**Fleet** (the button next to the logo, or `/fleet.html`) looks at every major skill at once: what fails most and how much time each failure costs, how long each operation really takes, patterns worth a look, and a fix per skill only where the cause is proven. See [Fleet](#fleet-every-major-skill-at-once).
 
 ## Install (new machine)
 
@@ -75,11 +75,20 @@ npm run shared                  # the reader: AUTOPSY_SNAPSHOT=1, serves .data/ 
 
 ## Any skill, any output
 
-Not every skill makes video. A run's **outputs** are the top-level assets its counted turns wrote (see below), taken from the `TURN_UPDATED_ASSETS` session events (asset id, type, name, snapshot) and joined to `v1_asset_crud` for thumbnails and publishes and to `users_193` for downloads.
-- **Output profile:** each skill gets one, learned from its runs and shown in the tab row, e.g. "Makes: Logo 97% · Image 11% · Video 3%". Each type is a filter.
-- **Cards** show the skill's main output type with a type badge and an "N outputs" count. Hovering plays video outputs; for other types it flips through the run's outputs. The card shape is **Auto** by default: logos and images 1:1, slides 16:9, docs 3:4, video 9:16.
+Not every skill makes video. A run's **outputs** are the top-level assets its counted turns made (see below), read from the session's own record, never from what else appeared in the project. Projects are shared: a campaign's sub-agents make a post, a story and a video side by side in one project, and an edit session works on assets made long before.
+
+- **What counts as made by the run** (`server/own-assets.js`, the same rule for the grid and the run view):
+  - every successful `write` tool result, which names the asset it created or edited (`Created project/assets/<name>--<id8>.json (type: …, id: <id>)`); this is the only record of a sub-agent's writes, because sub-agents don't log `WRITE_METERING`;
+  - the write steps inside a `sequence` result (generate → write in one call, as story sub-agents do), where only the `Created/Edited/Saved project/assets/… (type: …, id: …)` header counts;
+  - `WRITE_METERING` (every write in a main session: `project/assets/<name>--<id8>.json`), and the editor's per-turn `TURN_UPDATED_ASSETS` (logged 09-16 → 09-28, and again from 10-05);
+  - `AGENT_MENTIONED_ASSETS` (assets handed to the user), only when the asset was created or changed during the counted turns, since the agent also mentions older assets it only refers to;
+  - assets a server-side job builds without a write: a deck from `BuildPresentation` / `DeckFinish`, an icon set from `CreateIconsAsset` / `GenerateIconsAsset` (an asset of that type created during the counted turns of a run that called the job);
+  - a write to a page or scene credits its top-level asset (one small `v1_asset_crud` lookup per day).
+- Checked on 2026-10-06 across 15 skills: every skill keeps its main output (wixel-ads 226 → 227 videos, video-creation 262 → 258, stories-creation 263 → 259 stories, slides-creation 146 → 142 decks, logo-create 282 → 275 logos, video-regen 67 → 82), while other sessions' assets drop out (wixel-ads-lite: 18 runs showing someone else's image, 8 someone else's story → 0; video-creation 76 images → 9). The runs that lost an output were sub-agents or sessions that made nothing, next to a sibling that did.
+- **What the skill makes is learned, and runs are judged by it.** Its main output type, plus any other type at least a quarter of its producing runs make (brand-kit: image, logo, icons). The first tab is named after it (Videos, Stories, Logos…). A wixel-ads run that only made an image counts as "tried, no video", and its card says "made image instead". The run view lists what else it made as "not what the skill makes".
+- **Cards** show that output with a type badge and an "N outputs" count. Hovering plays videos and stories; for other types it flips through the run's outputs. The card shape is **Auto** by default: logos and images 1:1, slides 16:9, docs 3:4, video and stories 9:16.
 - **The details panel** shows non-video outputs as a gallery: the selected output, a strip of all outputs, and pages for docs and slides.
-- **Result filter:** Produced output / Tried, no output / Never tried. "Tried" means a media job, an image tool or an asset write.
+- **The result switch** above the grid: All / Made a video (or story, logo…) / Tried, no video / Never tried. "Tried" means a media job, an image tool or an asset write.
 - **Busy skills are sampled.** Above about 400 sessions a day, a deterministic sample is taken: sessions whose id starts with certain hex characters. The status bar shows the share. Heavy days are also split into hour windows when a query times out.
 - **Stale work is cancelled.** Switching skill or window drops the old selection's queued Trino queries.
 
@@ -112,23 +121,19 @@ The admin API lists sessions by user id only, so an email is found from sessions
 
 ## Downloads
 
-**Download** (or **D**) saves any output. Autopsy picks the best source available:
+**Download** (or **D**) saves the exact output only: a copy that doesn't show what the user got isn't offered.
 
 | Output | What you get |
 |---|---|
-| Video | the exact render the user got, at full quality, else the review copy |
-| Slides, doc, story (pages) | the user's own export when it's reachable; editor exports are private, so usually a PDF of the page previews (~1000px) |
+| Video | the user's own render when there is one; otherwise the **exact composition**: the product's own player rendered frame by frame in headless Chrome, with text overlays and music. Three pages of one Chrome capture a part each (fewer on a machine with under 12 cores; `EXACT_TABS` overrides), about 1.6× the video's length (a 14 s ad: 23 s against 58 s on one page, using ~2.5 cores and ~3 GB while it runs); cached after |
+| Story | the user's own story export when it's up to date with the story; otherwise the exact story, rendered the same way |
+| Slides, doc (pages) | the user's own export when it's reachable; editor exports are private, so usually a PDF of the page previews (~1000px) |
 | Logo, plain image | the original image file |
 | Composed design (text on an image) | the design as the user saw it |
 
-With more than one choice, **Download** (the button, the player's download icon, or **D**) opens a menu:
-- **Ads without a render:**
-  - **Full ad — regular:** the scenes joined with voice and music, no text overlays or captions.
-  - **Full ad — exact:** as the product plays it, with text overlays, captions and music. It's rendered from the product's own player: headless Chrome seeks it frame by frame, and the audio comes from the regular copy. It takes about 2 minutes the first time and is cached after that.
-- **Ads with a render:**
-  - **Full ad — exact:** the file the user got.
-  - **Full ad — small copy:** a 540p copy.
-- **Other outputs:** the run's other outputs (logos, slides…) are listed below.
+Runs with more than one output open a menu with the others. A run with only generated clips and no finished video has nothing exact to download.
+
+**Captions in downloads only when a person turned them on:** the user in the editor, or you with CC in the player for that run. The agent switching them on itself doesn't count (it writes `captionsEnabled: true` in 133 of 138 caption-on sessions checked; 4 had captions on with no such write, so a person did it). The two versions are cached separately (`exact.mp4`, `exact-cc.mp4`).
 
 ## Reports (PDF)
 
@@ -139,35 +144,50 @@ Both keep the dark UI's colours on A4 landscape, with type about 25% larger than
 
 ## UI
 
-- **Grid** (virtualized). The first tab is named after the skill's main output (Videos / Logos / Slides…).
-  - **Video outputs:** hovering a card plays it, with sound if S is on. Moving the mouse scrubs: the sprite frame shows instantly while the real frame seeks. Badges show the video source: Exact / Assembled / Clip / Preparing.
+- **Top bar:** the skill (⌘K; Counting next to it), the time window, search, **Refresh** and **View** (sort, card shape and size, sound on hover, text size, theme). That's all.
+- **Refresh** (or **R**) adds only what's new: the days already loaded stay as they are, and only sessions that started since the newest run on screen (less an hour, for runs that were still going) are queried, merged into the cached day on the server, and added to or updated in the grid. Only those runs get their videos rebuilt and their sessions re-read. About 20–40 s whatever the window (it reads a few hours of one day, not every day). **Shift-click** (or **Shift+R**) queries everything again, skipping every cache. The routine re-check of a recent day (every few minutes while it's looked at) tops up the same way instead of re-reading the whole day.
+- **Grid** (virtualized). The first tab is named after what the skill makes (Videos / Stories / Logos…).
+  - **Video and story outputs:** hovering a card plays it, with sound if S is on, except while a run is open: then the open run's player has the only sound and hover previews play muted. Moving the mouse scrubs: the sprite frame shows instantly while the real frame seeks. Badges show the source: Exact / Assembled / Clip / Preparing.
   - **Other outputs:** hovering flips through everything the run made, and a type badge and "N outputs" count sit on the card.
   - **Runs that tried but produced nothing** have a red top edge and show the first error. Hovering the error icon lists every failing step with its message.
-  - **Signals per card:** downloaded (editor or agent), published, worst mood across turns, thumbs up/down, issues, out of credits. The user type (Real / Employee / Team) sits next to the time.
+  - **Runs that made nothing say why**, on the card and in the run view: the reason, its key fact, and what the agent last said about it in its own words (any language). In order of precedence:
+    - **Still working.**
+    - **Not enough credits**, e.g. "Needs 88 · has 30 · over the 30/day plan limit". The agent checks the price and stops, usually without an OUT_OF_FUNDS event. The balance comes from ListCosts' `availableCredits`, the daily limit from the credit plan, and the price from the agent's reply.
+    - **Stopped by the user.**
+    - **Failed.**
+    - **Waiting for the user:** a question or a widget (video plan, brief…) that was never answered. When credits came up, the balance is shown too.
+    - **Never finished.**
+    - **Continued in** another skill.
+    - **Handed back to the main chat** (sub-agents).
+    - **Ended without making anything:** the agent's last words.
+
+    On 10-06/07, 81% of wixel-ads-lite's empty runs stopped at the credit wall, two-thirds of them over the free plan's daily limit. In wixel-ads, most waited on a plan the user never approved. **Why it made nothing** in Filters picks runs by reason.
+  - **Signals per card:** downloaded (editor or agent), published, worst mood across turns, thumbs up/down, issues, not enough credits. The user type (Real / Employee / Team) sits next to the time.
   - **"+N skills"** on a card: other skills also worked in that session. Hover it for which ones and how many turns were counted. In user mode, each card lists the skills its session used.
-- **Filters:** faceted, each option with its count. Summary tiles double as one-click filters.
+- **One result bar:** the Outputs / Insights tabs, the result switch with its counts, **Filters** (F) and the active filters as chips, and the top finding from Insights.
+- **Filters** (closed by default): what the user did (downloaded / published / neither), user type, how it went (frustrated, confused, thumbs), problems (tool errors, failed turn, not enough credits), why it made nothing, failed step, model, started from (chat / sub-agent / API) and the skills in the session. Each option has its count; groups with nothing to choose are hidden. A new skill starts from its own view: only the result switch and the user type carry over, and filters that would leave nothing are cleared with one note.
 - **Remembered state:** everything is saved in localStorage and mirrored in the URL (`#v=…`), so a reload restores the view and any view can be shared as a link.
 - **Inspect** (click or Enter):
-  - **Video runs:** a review player with a custom scrub bar (scene segments, sprite preview, `,`/`.` frame steps, speed). **E** switches to the exact live composition: the product's own Remotion player, vendored from `wixel-video-client` by `npm run build:player`.
+  - **Video and story runs:** the regular copy (a review mp4 with a custom scrub bar: scene segments, sprite preview, `,`/`.` frame steps, speed) starts at once, while the **exact composition** (the product's own player: text overlays, music, exact timing) loads hidden behind it. When every file is in memory it takes over at the same moment and keeps playing. There's no switch on screen (and no "exact" label anywhere: it's the only download); **E** still flips between the two; **~** (the key left of 1, any layout) with the pointer over the video makes it full screen and back; **C** turns captions on (they start off; the CC button only appears when the run has captions). Stories are drawn by the same player: each page becomes a scene for its duration, with the page's own clip, text and image components, plus the voice-over and music. Page transitions, music ducking and the story's caption style aren't reproduced. This needs a player build made after this change (`npm run build:player`); older builds keep the manual Exact toggle.
   - **Other runs:** an output gallery with a large view, a strip of all outputs, and pages for docs and slides. The arrow keys step through outputs.
   - **Header:** **Download** (any output type, see Downloads above), **Share** (see Sharing below). The user's email opens user mode.
   - **Skill mode:** a banner says which turns count for the skill ("Counting 1 of 7 turns…"). **Show them** includes the other skills' turns in every tab.
-  - Tabs (keys **1–6**; **W** widens the panel):
-    - **Overview:** outcome, mood by turn, the request (the user's own words, with injected `<HIDDEN>` context folded away) plus follow-ups, errors, scenes, identifiers.
+  - Tabs (keys **1–5**; **W** widens the panel):
+    - **Overview:** outcome (and what else the run made that isn't the skill's output), the request (the user's own words, with injected `<HIDDEN>` context folded away) plus follow-ups, **Models** (each model this run used: calls, time, cost, as bars), errors, mood by turn, scenes, and identifiers folded away.
     - **Timeline:** a waterfall of every step, with agent thinking time on its own row and user-message markers.
       - Idle gaps between turns are compressed, and agent plumbing (read / write / list) can be hidden.
       - Hovering a bar shows a tooltip; clicking a row shows the prompt, input and output media, arguments, output and error.
       - **Open graph run** opens the drawn Genix graph (below), and **Nodes table** shows the same data inline. Both read Temporal only when you click, and need a Temporal key.
     - **Scenes:** each shot next to the chain that made it, in a Picture lane (image → edit → video → voice merge) and a Voice & sound lane (TTS script → trim), with every step's prompt, model and time.
       - The chain is traced through media ids shared between one step's output and the next step's input.
-    - **Brand:** the scraped site (logo, colours, fonts, screenshot) next to what the ad's text actually used, with ✓ on matches and a verdict such as "2 of 4 site colours… 0 of 5 fonts".
-    - **Assets:** every piece of media in the run, grouped as uploads / website / generated images / clips / voice & music.
+    - **Brand & media:** the scraped site (logo, colours, fonts, screenshot) next to what the ad's text actually used, with ✓ on matches and a verdict such as "2 of 4 site colours… 0 of 5 fonts".
+      Below it, every piece of media in the run, grouped as uploads / website / generated images / clips / voice & music.
     - **Raw:** the normalized record per key, plus a link to the raw admin bundle.
-- **Insights** (tab, or **I**): computed in the browser from the runs in view, so they follow the skill, window, filters and search, and cost nothing upstream. Per-session step stats come from one extra Trino query per day (`stepsDayQuery`), cached like the day rows.
-  - Overview: output rate (produced output ÷ tried), request → final output / first generation (median, p90), average generation call, download and publish rates, frustration, cost per run with output, main output type.
-  - Tools & methods, sortable: calls, failures, fail rate, average and slowest time, runs hit. Clicking a row filters to the runs where that step failed.
-  - Generation models; funnel; where the time goes; top error signatures; what users asked for (classified intent plus title subjects); most repeated prompts (many users = template, one user = retrying); mood and feedback quotes; runs per day; skill versions.
-  - A headline strip above the grid summarizes the top insights, and each one links to its card. Cards pack into masonry columns to keep scrolling to a minimum.
+- **Insights** (tab, or **I**): computed in the browser from the runs in view, so they follow the skill, window, filters and search, and cost nothing upstream. Per-session step stats come from one extra Trino query per day (`stepsDayQuery`), cached like the day rows. After a query-version change, a day serves the previous version's step stats while the new ones load in the background, so days never wait on that query (it runs close to Trino's 30 s limit when the cluster is busy).
+  - **What the numbers say:** findings in plain words, each with its evidence and a click to the runs behind it: how often a run that tried made the output; who the runs that never tried are (sub-agents, credit limit, one message); the model that takes the most time and the one that costs the most; the failure that costs the most output (runs it hit vs the rest); frustration with vs without tool errors; the credit wall; runs that went 3+ messages with nothing made and no error (in a review of 18 such chats, about 7 in 10 were the request itself: beyond what the skill can do, missing material, content policy, undecided); how much was used; time to result; a newer skill version doing better or worse.
+  - **Where a run's time goes:** one coloured bar, from the first message to the end of the last counted turn, split into video, image, music, voice & sound, text & vision (image analysis, video description), sub-agents, errors, waiting on the user and the agent's own time. Every moment counts once (`server/time-split.js`): two videos generating at the same time are one stretch of video time, and when several things run at once the first in that order wins. A call blocks until its job is done, so its span is its duration up to its result (from the call's own timestamp when the result has no duration, as `ask_user`'s). Errors are failed calls, and calls that gave up with their job still running: 12 of 65 `generateMusic` calls on 10-06/07 waited the full 15 minutes and came back `IN_PROGRESS` with no file. Waiting on the user is a question (`ask_user`, e.g. a plan to approve) until it's answered, plus the gaps between turns. Each run counts the same in the average. The run view shows the same bar for one run (Overview), from its own steps, so it doesn't depend on the day's step query.
+  - **Models: time and cost:** every generation model, by its price-list name (Seedance 2 Mini, Kling Standard, gpt-image-2.5-flare…): time a call and cost a call as bars, its share of time and spend, and its failure rate. Cost is the product's own list price (`/api/prices`): media jobs by the Genix graph they ran (ListCosts: per second of video asked for, or per generation), images by Wix's average cost per call from the credits log. Failed calls count as free.
+  - Then the funnel, top errors, mood and quotes, and what users asked for. Everything else (overview tiles, every tool, where the time goes, repeated requests, runs per day, skill versions) is folded under **All the numbers** (printed in full in the PDF).
 - **Genix graph run** (level 3: "Open graph run" on a timeline step, or click a step card in Scenes). A full-screen view of that generation's graph, read from Temporal only when you open it.
   - Layered left-to-right layout (longest-path layers plus barycenter ordering), with graph inputs on the left and outputs on the right.
   - Each node shows its status, a mini timing bar of when it queued and ran inside the graph, time, cost, provider and an output thumbnail. Nodes that didn't run are dashed.
@@ -197,7 +217,7 @@ Both keep the dark UI's colours on A4 landscape, with type about 25% larger than
 
 `/fleet.html` (or **Fleet** in the top bar). Pick a period (Today, 1 / 7 / 14 / 30 / 90 complete UTC days) and whose sessions count (**Real users** by default; Everyone; Internal). Changes are against the previous period of the same length, once that period is mostly built.
 
-- **Overview:** sessions, failing tool calls (out of credits excluded), time lost to failures per week, hidden timeouts, frustrated turns, model iterations per turn, input tokens per iteration, agent thinking time, outputs kept, sessions with no skill. **Do these first** puts issues, timeouts and agent-design changes on one scale: hours a week given back. Plus failures per day, time lost by fix difficulty, and the major-skills leaderboard.
+- **Overview:** sessions, failing tool calls (out of credits excluded), time lost to failures per week, hidden timeouts, frustrated turns, model iterations per turn, input tokens per iteration, agent thinking time, outputs kept, sessions with no skill. **Biggest problems** ranks issues by measured time lost (not "hours given back": that's only known once a fix is proven). Plus failures per day, time lost by fix difficulty, and the major-skills leaderboard.
 - **Issues:** one row per error signature × operation, across every skill it happens in, ranked by priority.
   - **Priority** = impact (time lost: failed calls + one recovery per run of failures + 10 min per session it ended + 5 min per user upset afterwards) × how fixable the class is × how concentrated it is, boosted when new or rising.
   - **Kind / fix / owner:** missing file or skill, agent misuse of a tool, rejected parameters, output failed validation, content filter, permission, interrupted by restart, hidden timeout, transient/upstream, out of credits (not a bug, hidden by default).
@@ -211,21 +231,17 @@ Both keep the dark UI's colours on A4 landscape, with type about 25% larger than
     - **Copy prompt for Claude Code**: a ready-to-paste prompt for the wixel-agent-codex checkout, limited to that skill's files ("don't change tools, agent configs or system prompts"), with a redacted failing call and an eval case to add;
     - **Ask Claude for a suggestion** (optional, local `claude` CLI, read-only): the answer is saved in `FLEET_DIR/suggestions/` for everyone sharing the folder, tagged with the codex commit it read.
 
-    Only kinds of error a skill can fix get suggestions (missing file, agent misuse of a tool, failed validation, content filter, rejected parameters, unclassified). Timeouts, restarts, upstream failures, permissions and credits are platform or tool work: shown as parked.
+    **A change is suggested only when the cause is proven** (`proveFix` in `server/fleet-skillfix.js`):
+    - a missing file: absent at the runtime path, present only under references/ (inlined at build time), and named bare in the codex text the skill uses;
+    - an image the provider couldn't fetch: one query compares every call of that operation over the last day by the input image's host, and a host class must fail ≥5× the Wix-hosted rate (non-overlapping 95% intervals) and hold ≥70% of ≥20 failures;
+    - a made-up tool name: only if the codex itself writes it.
+
+    Everything else (rejected parameters, which is the gateway's wrapper on every provider error; content filters, mostly the user's own content; invalid JSON; validation slips the agent fixes itself) shows what the failing calls show, **"No proven fix"**, and what would prove one, with no change and no prompt. Timeouts, restarts, upstream failures, permissions and credits are platform or tool work: shown as parked. Wait-time recommendations are labelled model estimates: they assume a free, independent restart, and restarts cost credits.
   - **Fix brief** (on demand, the whole issue): reads up to 3 example sessions (what was called, the error, what the agent did next), the Genix root cause of failed generations (Temporal, with a key), and the codex (below), then writes what's wrong, how big, where to look (exact files with GitHub links), a suggested fix, how to verify it (the rate per codex version; the eval sets mapped to the skill) and a redacted repro. Copy it as Markdown, email it, or **Draft the fix with Claude**: the local `claude` CLI, read-only tools, in the codex checkout, asked for the smallest change as a diff. Nothing is edited. The brief is redacted (no emails or phone numbers) but includes users' requests (shortened); check that's fine before sending it to Claude.
 - **Wait times:** per tool · method · model · input size (clip length, resolution), across all skills: calls, failures, p50 / p90 / p99 of successes, hidden timeouts and the cap they hit, how often a retry works and how long the agent waited before retrying.
   - **Recommended wait:** the cap τ that minimizes the expected time to a success, E(τ) = E[min(T, τ)] ÷ P(T ≤ τ), over the measured durations, treating a retry as an independent fresh try and hidden timeouts as jobs that wouldn't have finished. Never below 1.5× the p95 of successes. The detail shows the histogram with p50 / p99 / today's cap / the recommendation and the E(τ) curve.
   - **Re-attach, don't restart:** a hidden timeout means the job was still running; poll the same job id instead of starting a new one (a fresh job pays again).
-- **Opportunities:** where the agent works harder than it needs to, each with evidence and an estimate per week (iterations, hours, input tokens) and a guard when it could backfire:
-  - **Scripted pipeline:** the same chain of ≥3 tool steps in ≥15% of a skill's turns → one deterministic step where the agent only picks the inputs.
-  - **Same call every time:** an operation called ≥100 times a week with ≤5 distinct argument sets a day (e.g. `ListCosts`, `list_rpc_methods`, `GetBrandByProjectId`) → put the answer in the context.
-  - **Always loaded together:** skill A loads B in ≥85% of its turns → preload or merge.
-  - **File busywork:** many read/list/write calls per turn, the same file re-read.
-  - **Let the tool fix it:** a validation slip the agent fixes itself on the next try ≥60% of the time → auto-correct inside the tool.
-  - **Rubber-stamp approval:** ≥5% of a skill's turns are just "yes / ok" → proceed by default.
-  - **Heavy context:** input tokens per iteration ≥1.4× the fleet median.
-  - **Trial and error:** generations per kept output ≥1.8× the fleet median.
-  - **Re-attach:** hidden timeouts (see Wait times).
+- **Patterns** (was Opportunities): observations worth a look, each with what was measured and what would prove a change helps. No hours are claimed. Same chain every turn (chains that wait on the user or a sub-agent excluded), rubber-stamp approvals, heavy context, trial and error. An audit against the codex and the raw calls (2026-10-07) removed the kinds whose premise was wrong: "same call every time" (ListCosts: 313 calls, 4 argument sets, 50 different answers, because it returns each user's credits), "file busywork" (most re-reads are project state that has to be re-read), "let the tool fix it" (the retries changed the inputs), "re-attach" (the agent already re-polls the same job) and "always loaded together" (co-loads changed with preloading).
 - **Skills:** every skill side by side: sessions, turns, failing calls (±95% interval), failed turns, time lost, hidden timeouts, frustration, iterations per turn, tokens per iteration, thinking time, **outputs kept** (sessions whose asset was downloaded, by the editor or the agent) and generations per kept output, "yes" replies. **Pin** a skill to treat it as major.
 - **Data:** each day's state (final / filling in / missing), build time, internal accounts, problems; every shift in the period; the definitions; and what Fleet can't see (rendering/export/player failures, output quality, the inside of generation graphs, client-side errors).
 - **Share:** a link to the exact view, a text summary, an email, or a **PDF digest** (headless Chrome, saved to Downloads).
@@ -243,7 +259,7 @@ Both keep the dark UI's colours on A4 landscape, with type about 25% larger than
 - **Cost:** about a minute of Trino per day, one query at a time, at background priority (on-screen work always goes first, and it pauses while Trino is busy). A day is final 6 hours after it ends and is never queried again; today refreshes at most every 30 minutes. A week or month is the day files added up locally: no extra queries. Each query part has its own version, so a changed query re-runs only itself on days already built.
 - **When Trino is busy:** after a timeout, the rest of that day's queries are skipped (the day is retried later) and the next day waits out the limiter's backoff; `npm run fleet` stops after 3 busy days in a row. Finished days are always kept.
 - **Backfill:** opening a period queues its missing days (and the previous period's, for trends), newest first; the view fills in as they land. Or from the command line: `npm run fleet` (last 30 days), `npm run fleet -- --days 90`, `npm run fleet -- --day 2026-10-02 --force`.
-- **The knowledge is in the repo.** `.fleet/` is committed: the day rollups (`.fleet/days/`, ~800 KB a day; example error texts have emails, phone numbers and URL query strings stripped), the decisions (`.fleet/state.json`) and saved Claude suggestions (`.fleet/suggestions/`). `npm run fleet:snapshot` writes a readable summary to `knowledge/`: `README.md` (the findings in plain words: numbers, what we learned about the data, what changed, top issues with the fix per skill, wait times, opportunities, asks that end badly, major skills, decisions) plus `fleet-7d.json`, `fleet-30d.json` and `skill-fixes.json`. It never queries Trino (the fixes per skill read a few cached sessions and the codex). Commit both after a rebuild.
+- **The knowledge is in the repo.** `.fleet/` is committed: the day rollups (`.fleet/days/`, ~800 KB a day; example error texts have emails, phone numbers and URL query strings stripped), the decisions (`.fleet/state.json`) and saved Claude suggestions (`.fleet/suggestions/`). `npm run fleet:snapshot` writes a readable summary to `knowledge/`: `README.md` (the findings in plain words: numbers, what we learned about the data, what changed, top issues with the proven fixes per skill (or what would prove one), wait times, patterns, asks that end badly, major skills, decisions) plus `fleet-7d.json`, `fleet-30d.json` and `skill-fixes.json`. It never builds days; the fixes per skill read a few cached sessions and the codex, and proving an image-fetch fix runs one small host-comparison query per such issue (cached 6 h). Commit both after a rebuild.
 - **One producer for a team.** Point everyone's `FLEET_DIR` at a shared folder. One machine builds the days (`npm run fleet:nightly` installs a macOS LaunchAgent that runs at 06:15; `-- --remove` uninstalls it); the others set `FLEET_READONLY=1` and only read. Issue statuses and pins (`FLEET_DIR/state.json`) are shared the same way.
 - **Briefs** are the only per-session reads: ≤3 session bundles (admin API, cached) and ≤2 job traces (Temporal, cached) per brief, only when someone asks for it.
 - **The codex** (`CODEX_DIR`, default `~/dev/wixel-agent-codex`): skills by their `name:`, files, RPC schemas, agent configs and eval mappings, read with `git show / grep / ls-tree` from the latest fetched commit (`origin/HEAD`). The working tree is never touched, so a stale checkout still reads the newest fetch (`git fetch` it now and then).
@@ -257,6 +273,7 @@ Both keep the dark UI's colours on A4 landscape, with type about 25% larger than
 | `server/runs.js` | Day loading, caching, sampling, per-run outputs and signals, employee detection, skill families, user runs |
 | `server/snapshot.js` · `server/build.js` · `server/store.js` · `scripts/build-data.js` · `scripts/data-nightly.sh` | The daily build: its layout and reader (`AUTOPSY_SNAPSHOT=1`), its steps (shared with the cloud tasks), its storage (a folder or a key-value store), the producer (`npm run build:data`), and its nightly schedule |
 | `server/app.js` · `serverless/` | Every route the server answers (shared by `server/server.js` and the cloud copy); the Wix Serverless app |
+| `server/own-assets.js` · `server/prices.js` | What a session made (its writes, reports, hand-overs, asset-building jobs); model prices (ListCosts per Genix graph, image costs from the credits log) |
 | `server/pdf.js` · `server/exact.js` · `server/connectivity.js` | Headless Chrome sessions (PDF reports); Exact composition → mp4; the Wix network / VPN check |
 | `web/js/report.js` · `web/player/capture.html` · `scripts/player/capture-entry.tsx` | Printable reports; the frame-by-frame player page and its bundle entry (built by `build:player`) |
 | `server/users.js` · `server/asset-download.js` | Email → user index for user mode; downloads for non-video outputs (export, original image, or a PDF of the page previews) |
@@ -266,6 +283,7 @@ Both keep the dark UI's colours on A4 landscape, with type about 25% larger than
 | `server/limits.js` · `server/context.js` · `server/cache.js` · `server/cache-gc.js` | Upstream limiters and load counters, request cancellation, disk cache, size cap |
 | `web/js/app.js` | Boot, loading, filters panel, summary, keyboard |
 | `web/js/grid.js` · `inspect.js` · `timeline.js` · `deep.js` · `graph.js` | Grid, details panel, timeline, scenes / brand / assets / raw, graph run |
+| `web/js/models.js` · `web/player/live.html` | Model names, time and cost per model (a run, Insights); the run view's Exact player page |
 | `web/js/insights.js` · `share.js` · `skillpicker.js` · `family.js` · `ui.js` · `filters.js` · `state.js` | Insights, sharing, skill / user picker, what counts as a skill (Counting editor), tooltips / toasts / popovers, facets, persisted state |
 | `server/fleet.js` · `server/fleet-queries.js` · `server/fleet-analyze.js` | Fleet: day files, backfill queue, the all-skill rollup SQL, and the analysis (issues, wait times, opportunities, skills) |
 | `server/fleet-skillfix.js` | Fix per skill: evidence from that skill's failures, the change to its instructions, the Claude Code prompt, saved Claude suggestions |
@@ -276,7 +294,7 @@ Both keep the dark UI's colours on A4 landscape, with type about 25% larger than
 
 ## Load on production systems
 
-Every upstream call goes through `server/limits.js`: a concurrency cap and minimum spacing per system, plus rolling counters shown live in the status bar ("Upstream, 5 min").
+Every upstream call goes through `server/limits.js`: a concurrency cap and minimum spacing per system, plus rolling counters shown live in the status bar ("Upstream, 5 min"). The status bar stays one line at any width and text size: the summary truncates (full text on hover), systems with no recent calls are left out, and the shortcut hint, labels and cache size drop out as the bar narrows.
 
 - **On-screen work first.** Work nobody is waiting on (background refreshes of cached recent days) runs at background priority: at most one slot, and only when nothing on screen is queued. It's skipped while Trino is busy; the next view of that data tries again.
 - **Backoff.** Three Trino timeouts within 2 minutes put the lane at 2 queries at a time, 1.2 s apart, for 3 minutes. The status bar says so ("easing off") instead of looking stuck.
@@ -297,8 +315,8 @@ With `AUTOPSY_SNAPSHOT=1`, every route marked Trino below reads the daily build 
 | Route | What | Source |
 |---|---|---|
 | `GET /api/skills?days=30` | skills with ≥5 sessions | Trino |
-| `GET /api/runs-index?skill=…&days=…` | which UTC days have runs (plus when the skill last ran, if none) | Trino (cheap: skill calls only) |
-| `GET /api/runs-day?skill=…&day=YYYY-MM-DD&n=<sessions>&fam=` | one day's runs, counting the skill's turns only; the UI loads these 3 at a time, newest first. `n` (from the index) turns on sampling for busy days. `fam`: `default` (computed family), `all` (whole sessions) or a comma list | Trino |
+| `GET /api/runs-index?skill=…&days=…&fresh=1` | which UTC days have runs (plus when the skill last ran, if none); `fresh=1` skips the cache (Refresh) | Trino (cheap: skill calls only) |
+| `GET /api/runs-day?skill=…&day=YYYY-MM-DD&n=<sessions>&fam=` | one day's runs, counting the skill's turns only; the UI loads these 3 at a time, newest first. `n` (from the index) turns on sampling for busy days. `fam`: `default` (computed family), `all` (whole sessions) or a comma list. `since=<ms>` (Refresh): only the sessions that started after it (less an hour) are queried, merged into the cached day, and returned; `fresh=1` re-reads the whole day | Trino |
 | `GET /api/family?skill=` | the skill's family (helpers counted with it) and why each is in it | Trino (cached) |
 | `GET /api/resolve-user?q=` | email / user id / session link → user | local index, admin API |
 | `GET /api/user-runs?user=&days=` | every session one user ran, any skill | admin API, Trino |
@@ -309,14 +327,16 @@ With `AUTOPSY_SNAPSHOT=1`, every route marked Trino below reads the daily build 
 | `GET /media/:runId/review.mp4 \| poster.jpg \| sprite.jpg` | review media (Range requests supported) | local cache |
 | `GET /download/:runId?name=` | save the video: the full-quality exact render when there is one (streamed through), else the review copy | render CDN / local cache |
 | `GET /download/:runId?src=review\|exact` | the 540p review copy, or the rendered Exact composition | local cache |
-| `GET /api/exact/:runId?start=1` | Exact composition status; `start=1` renders it (headless Chrome + ffmpeg) | local, Wix CDN |
+| `GET /api/exact/:runId?start=1&cc=1` | Exact composition status; `start=1` renders it (headless Chrome + ffmpeg); `cc=1` the version with captions | local, Wix CDN |
 | `GET /api/report.pdf?kind=run\|insights&view=#v=…&name=` | a report as a PDF download, rendered by headless Chrome from the app's own report view | local |
 | `GET /api/connectivity?fresh=1` | whether bo.wix.com answers (Wix network / VPN) | admin API |
 | `GET /api/frame?url=` | one still from a clip, for printed reports | Wix CDN, ffmpeg |
 | `GET /download-asset/:runId/:assetId?name=` | save any other output: the user's export if reachable, the original image, or a PDF of its page previews | Wix CDN, ffmpeg |
 | `GET /api/trace-job/:jobId?at=<ms>` | the same trace, for a **failed** generation (only a jobId) | Temporal Cloud |
 | `GET /api/media-batch?ids=a,b,…` | review-media status for the cards on screen | local |
-| `GET /api/player-input/:runId?root=<assetId>` | the live product player's input, built from the asset tree | admin API |
+| `GET /api/player-input/:runId?root=<assetId>&captions=0\|1\|user` | the product player's input, built from the asset tree (a story's pages become timed scenes); captions: `0` off, `1` as the asset has them, `user` (default) only if a person turned them on | admin API |
+| `GET /api/prices` | per Genix graph its price-list name, unit and USD per unit (ListCosts); image models' average cost per call (credits log) | Trino (2 small queries a day) |
+| `POST /api/media-refresh` `{ids}` | Refresh: forget these runs' review copies and exact mp4s (not the user's own renders) so they rebuild | local |
 | `GET /_api/wixel-viewer-bundle-server/bundles?…` | same-origin pass-through for the player's component bundles | manage.wix.com (public) |
 | `GET /api/fleet?days=7&today=0&aud=real\|all\|internal&end=` | the Fleet view for a period (and the previous one, for trends); queues missing days | day files (Trino when building) |
 | `GET /api/fleet/status?days=` · `GET /api/fleet/build?days=` | which days are built; queue days for building | local |
@@ -350,8 +370,12 @@ With `AUTOPSY_SNAPSHOT=1`, every route marked Trino below reads the daily build 
   A typical trace is about 60 KB and takes about 2.5 s cold.
 - **Failed generations.** Their tool result has only a `jobId`. The parent workflow's input carries `job_id`, so `/api/trace-job` searches failed `StartGraphExecutionWorkflow` runs started within 3 minutes of the tool call and matches on it (about 3 s). The node's `rootCause` is the bottom of the failure chain, e.g. `MiniMax H3 Max does not accept settings`.
 - **Matching nodes to the spec.** Temporal child events don't carry the Genix node id, so nodes are matched on workflow type. Ties are broken by params (`matchConfidence`).
-- **Employee flag.** `prod.wt_accounts.base.mail_domain` doesn't identify employees. The vizion rule is used instead: an account missing from `prod.wt_accounts.base` is an employee. The Wixel team list (`sandbox.www.slides_employees_team`) wins over that, and results are cached per account.
+- **Employee flag.** `prod.wt_accounts.base.mail_domain` doesn't identify employees. The vizion rule is used instead: an account missing from `prod.wt_accounts.base` is an employee. The Wixel team list (`sandbox.www.slides_employees_team`) wins over that, and results are cached per account. Only new accounts are looked up, and a day never waits more than 3 s for them: when Trino is busy that scan times out even for a few ids, so those runs show no user type until the day is next loaded, and a failed lookup rests 2 minutes before the next try.
 - **Turn scoping in SQL.** Trino inlines each CTE every time it's referenced, so a second reference re-scans the entries table. The runs query therefore works out turn ownership with window functions over its single scan. The events query returns each event's turn, and `runs.js` keeps the counted ones (`owned_turns`).
+- **Sub-agents don't log `WRITE_METERING`.** A campaign's sub-agent (`v1_session_crud.session_type` SUB, with a `parent_session_id`) writes its story or video with no metering event, so outputs are also read from the write tool's own results. The session dimension table lags a day, so "started from: sub-agent" comes from the session stream.
+- **Paged results must be ordered.** The SQL endpoint re-runs a query for every 500-row page; without an ORDER BY on a unique key, pages repeat some rows and miss others (one story showed up 10 times). Every query that can pass 500 rows orders by its key, and the asset rows are de-duplicated.
+- **Where an ad's voice-over lives.** The root voice-over (`7572e63a…`, older `7eebe4f0…`) and music (`80e9c773…`) components keep their url, volume, trims and shift in the component's `externalConfig` (24 fps frames), as the product's player reads them. Regular copies used to read `data.props` and dropped the voice.
+- **Stories.** A STORY root's visible pages (children in order, minus `externalConfig.hidden`) each show for `durationMs` (else the root's `defaultPageDurationMs`): the product exports exactly Σ floor(durationMs · fps / 1000) frames at the root's `fps`. Voice-over and music are in the root's `externalConfig` (ms). The user's story export (`…/exports/story-<epoch ms>.mp4`) is used when it's newer than the story's last content change. Some story audio URLs use the bare `wixstatic.com` host, which doesn't resolve (`static.wixstatic.com` does); provider clip links (fal.media) can expire.
 - **Asset events are unreliable per turn.** A deck built in turn 1 is often reported only by a later edit turn. Outputs are therefore credited by creation time within the counted turns as well as by the events.
 - **Users.** The admin API lists sessions by `userId` only; there is no email filter, and no warehouse table this app reads has emails. Emails resolve from session metadata Autopsy has already fetched (`.cache/meta`, local only).
 - **Exports.** A user's own export (`users_193` `asset_url` for slides and docs) is private (403). Only renders are public, so page outputs download as a PDF of their previews.
@@ -363,6 +387,7 @@ With `AUTOPSY_SNAPSHOT=1`, every route marked Trino below reads the daily build 
      - each scene plays `frameDuration − trim_start − trim_end` frames at **24 fps**, starting at `trim_start`
      - voice comes from clips with volume > 0, plus any root voiceover (`tts`) and music (`audio-timeline`) tracks, mixed with their shift, trim and volume
      - the music bed gets its trims, shift, volume and fades
+     - the video runs until the last of the scenes, the music and the voice-over ends, as the product's renderer does (`durationInFrames = max(scenes, music end, TTS ends)`, white background): music that outlasts the scenes plays on over white. So the copy is as long as the Exact composition, and Exact downloads take their whole soundtrack from it. About 3% of wixel-ads-lite videos have such a tail (2 of 75 on 10-06/07, 2.5–4.8 s).
      - **text overlays and captions are missing** from assembled media
   4. Otherwise, the last generated clip.
 

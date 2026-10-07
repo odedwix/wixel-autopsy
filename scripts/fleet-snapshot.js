@@ -1,7 +1,8 @@
 // Write what Fleet knows into the repo as a readable snapshot: knowledge/README.md (the findings,
 // in plain words) plus trimmed JSON of the last 7 and 30 days and the fix per skill for the top
-// issues. Built from the day files in FLEET_DIR (no Trino); fixes per skill read a few example
-// sessions (admin API, cached) and the codex checkout (git, read-only).
+// issues. Built from the day files in FLEET_DIR (no Trino for the days); fixes per skill read a few
+// example sessions (admin API, cached) and the codex checkout (git, read-only), and proving an
+// image-fetch fix runs one small host-comparison query per such issue (cached 6 h).
 //
 //   npm run fleet:snapshot                # 7 and 30 days ending yesterday, real users
 //   npm run fleet:snapshot -- --no-fixes  # skip the per-skill fixes (no admin API calls)
@@ -13,7 +14,7 @@ import { fleetView } from '../server/fleet.js';
 import { skillFix } from '../server/fleet-skillfix.js';
 import { codexSummary } from '../server/codex.js';
 
-process.env.FLEET_READONLY = '1'; // a snapshot never queries Trino
+process.env.FLEET_READONLY = '1'; // a snapshot never builds days
 const args = process.argv.slice(2);
 const withFixes = !args.includes('--no-fixes');
 const OUT = path.join(config.root, 'knowledge');
@@ -62,8 +63,9 @@ function digest(v7, v30, fixes, codex, state) {
   L.push(`- ${P(t.noSkillSessions / Math.max(1, t.sessions), 1)} of sessions used no skill`);
   L.push('');
   L.push('## Things we learned about the data');
-  L.push('- **Skills are preloaded since 2026-09-30.** The platform puts skills into the session\'s first message (`metadata.preloadedSkillBodies`) instead of the agent calling the `skill` tool: sessions with a skill-tool call fell from ~85% to ~40% overnight, across every agent. Fleet counts both; Autopsy\'s per-skill views only counted tool calls (being fixed separately).');
-  L.push('- **`TURN_UPDATED_ASSETS` was only logged 2026-09-16 → 09-28.** Asset writes are in `WRITE_METERING` (path, asset type, outcome) and handed-over assets in `AGENT_MENTIONED_ASSETS`.');
+  L.push('- **Skills are preloaded since 2026-09-30.** The platform puts skills into the session\'s first message (`metadata.preloadedSkillBodies`) instead of the agent calling the `skill` tool: sessions with a skill-tool call fell from ~85% to ~40% overnight, across every agent. Fleet and Autopsy\'s per-skill views count both.');
+  L.push('- **What a session made:** `TURN_UPDATED_ASSETS` was logged 2026-09-16 → 09-28 and again from 10-05. Main sessions\' writes are in `WRITE_METERING`; sub-agents (campaigns: `session_type` SUB) don\'t log it, so the `write` tool\'s own results (they name the asset id) are the reliable record. Assets that merely appear in a shared project are not a session\'s output.');
+  L.push('- **Fix suggestions are shown only when proven** (an audit on 2026-10-07 found most generated ones were guesses): a missing file traced in the codex, or an image host failing ≥5× the Wix rate across every call. "Same call every time" was wrong for ListCosts (it returns each user\'s credits: 313 calls, 50 different answers).');
   L.push('- **Hidden timeouts:** several tools (`generateMusic`, `poll_process_job`, `Generate*Async`, `BuildPresentation`) report success after ~15 minutes while the job is still `IN_PROGRESS`.');
   L.push('- **`ask_user` "User cancelled the question"** is how questions normally resolve — not a failure.');
   L.push('- **The admin SQL endpoint** re-runs a query for every 500-row page and can repeat rows across pages: every Fleet query stays under 500 rows.');
@@ -76,10 +78,12 @@ function digest(v7, v30, fixes, codex, state) {
     }
   }
   L.push('');
-  L.push('## Do these first (hours a week given back)');
-  v7.actions.forEach((a, k) => L.push(`${k + 1}. ${a.title.slice(0, 160)} — **${H(a.hPerWeek)}/week** · ${a.owner}${a.kind === 'opportunity' ? ' (estimate)' : ''}`));
+  L.push('## Biggest problems (measured time lost a week)');
+  L.push('A fix is suggested only where the cause is proven (see "Top issues"); time lost is measured, not time a fix would give back.');
+  v7.actions.forEach((a, k) => L.push(`${k + 1}. ${a.title.slice(0, 160)} — **${H(a.hPerWeek)}/week lost** · ${a.owner}`));
   L.push('');
-  L.push('## Top issues and how to fix them in the skills');
+  L.push('## Top issues, and the fixes that are proven');
+  L.push('A "Change" is listed only where the cause is proven (a missing file traced in the codex, a failing image host that fails ≥5× the Wix rate…). Otherwise the issue shows what was observed and what would prove a fix.');
   for (const i of v7.issues.filter((x) => x.score > 0).slice(0, 15)) {
     const st = state.issues?.[i.key];
     L.push('');
@@ -89,21 +93,26 @@ function digest(v7, v30, fixes, codex, state) {
     const fx = fixes.filter((f) => f.issue === i.key);
     if (!i.skillFix) L.push(`- Not a skill fix (${i.cls.owner}) — parked. ${i.cls.hint}`);
     for (const f of fx) {
-      if (f.parked || f.error) continue;
+      if (f.error) continue;
+      if (f.unproven) {
+        L.push(`- **${f.skill}** (${N(f.n)}, ${P(f.share)}) — no proven fix: ${f.reason}${f.prove ? ` What would prove one: ${f.prove}` : ''}`);
+        continue;
+      }
+      if (f.parked) continue;
       L.push(`- **${f.skill}** (${N(f.n)}, ${P(f.share)}) — ${f.skillPath ? `\`${f.skillPath}\`` : 'skill file not found'}${f.files.filter((x) => x.line).length ? ` lines ${f.files.filter((x) => x.line).map((x) => x.line).join(', ')}` : ''}`);
       for (const n of f.notes) L.push(`  - Seen: ${n}`);
       for (const c of f.fix) L.push(`  - Change: ${c}`);
     }
-    if (i.skillFix && !fx.length) L.push(`- ${i.cls.hint}`);
+    if (i.skillFix && !fx.length) L.push('- Not checked per skill yet.');
   }
   L.push('');
   L.push('## Wait times');
   for (const w of v7.waits.filter((x) => x.recommend || x.hidden).slice(0, 12)) {
-    L.push(`- \`${op(w)}\`${w.size ? ` (${w.size})` : ''}: p50 ${S(w.p50)}, p99 ${S(w.p99)}${w.hidden ? `, ${w.hidden} hidden timeouts${w.cap ? ` at ${S(w.cap)}` : ''}` : ''}${w.recommend ? ` → wait at most **${S(w.recommend.tau)}** (~${H(w.recommend.savedHPerWeek)}/week)` : ''}${w.hidden ? '; re-attach to the job instead of restarting' : ''}`);
+    L.push(`- \`${op(w)}\`${w.size ? ` (${w.size})` : ''}: p50 ${S(w.p50)}, p99 ${S(w.p99)}${w.hidden ? `, ${w.hidden} hidden timeouts${w.cap ? ` at ${S(w.cap)}` : ''}` : ''}${w.recommend ? ` → model estimate: wait at most ${S(w.recommend.tau)} (unproven: assumes a free, independent restart)` : ''}`);
   }
   L.push('');
-  L.push('## Where the agent works harder than it needs to (estimates)');
-  for (const o of v7.opportunities.slice(0, 12)) L.push(`- ${o.title}${o.savings.hPerWeek ? ` — ~${H(o.savings.hPerWeek)}/week` : ''}${o.savings.tokensPerWeek ? `, ~${N(o.savings.tokensPerWeek / 1e6)}M input tokens/week` : ''}${o.guard ? ` (caution: ${o.guard})` : ''}`);
+  L.push('## Patterns worth a look (observations, not proven fixes)');
+  for (const o of v7.opportunities.slice(0, 12)) L.push(`- ${o.title}${o.unproven ? ` — not proven: ${o.unproven}` : ''}`);
   const asks = (v7.intents || []).filter((y) => y.flags.length && y.intent !== '(unknown)');
   if (asks.length) {
     L.push('');
