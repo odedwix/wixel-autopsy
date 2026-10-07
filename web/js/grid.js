@@ -1,6 +1,6 @@
 import { h, icon, ago, dur } from './util.js';
 import { state } from './state.js';
-import { hasAd, failedRun, attempted, worstMood, MOOD, primaryOutput, typeLabel, getProfile } from './filters.js';
+import { hasAd, failedRun, attempted, worstMood, MOOD, primaryOutput, typeLabel, getProfile, STOPS, stopFact } from './filters.js';
 import { mediaOf, isReady, want, onMedia, prioritize, videoUrl, spriteUrl, placeSprite } from './media.js';
 import { richTip } from './ui.js';
 import { stepKey } from './filters.js';
@@ -244,6 +244,18 @@ function buildCard(r) {
   return c;
 }
 
+// A run that made nothing says why: the reason, its key fact (credits needed against what it had,
+// the question left unanswered), and what the agent last said about it, in its own words.
+function stopView(st) {
+  const d = STOPS[st.kind] || STOPS.ended;
+  const fact = stopFact(st);
+  return h('div', { class: `empty stop${d.tone ? ` ${d.tone}` : ''}`, title: [d.title ? d.title(st) : d.label, fact, st.text].filter(Boolean).join('\n') },
+    icon(d.icon),
+    h('b', {}, d.title ? d.title(st) : d.label),
+    fact ? h('div', { class: 'fact' }, fact) : null,
+    st.text ? h('div', { class: 'msg' }, st.text) : null);
+}
+
 function fillThumb(c, r) {
   const thumb = c._thumb;
   const p = primary(r);
@@ -255,6 +267,7 @@ function fillThumb(c, r) {
   const other = !p ? r.otherOutputs?.find((o) => o.thumb) : null;
   const poster = isReady(m) ? `/media/${r.id}/poster.jpg` : p?.thumb || (p || !r.otherOutputs?.length ? r.thumbnail : null) || other?.thumb;
   if (poster) thumb.append(h('img', { class: `poster${other ? ' other' : ''}`, src: poster, loading: 'lazy', decoding: 'async', alt: '' }));
+  else if (r.stop) thumb.append(stopView(r.stop));
   else if (failedRun(r)) {
     thumb.append(h('div', { class: 'empty err' }, icon('alert'), h('b', {}, 'Tried, no output'), r.firstError ? h('div', { class: 'msg' }, r.firstError) : null));
   } else if (!attempted(r)) {
@@ -285,6 +298,8 @@ function fillThumb(c, r) {
 
 // ---------- hover: rest = play, move = scrub ----------
 const hover = { card: null, video: null, restTimer: 0, lastX: null, frac: 0, seekPending: null };
+// One sound at a time: while a run is open its player owns the audio, so hover previews play muted.
+const hoverSound = () => state.sound && !state.open;
 
 function hoverVideo() {
   if (!hover.video) {
@@ -324,7 +339,7 @@ function startHover(c, e) {
     return;
   }
   const v = hoverVideo();
-  v.muted = !state.sound;
+  v.muted = !hoverSound();
   const src = videoUrl(r.id);
   if (!v.src.endsWith(src)) v.src = src;
   c._thumb.append(v);
@@ -339,18 +354,18 @@ for (const ev of ['pointerdown', 'keydown']) {
   window.addEventListener(ev, () => {
     soundUnlocked = true;
     document.querySelectorAll('.sound-hint').forEach((n) => n.remove());
-    if (hover.video && state.sound && hover.video.muted) hover.video.muted = false;
+    if (hover.video && hoverSound() && hover.video.muted) hover.video.muted = false;
   }, { capture: true, passive: true });
 }
 
 function play() {
   const v = hover.video;
   if (!v || !hover.card) return;
-  v.muted = !state.sound;
+  v.muted = !hoverSound();
   v.play().catch(() => {
     v.muted = true;
     v.play().catch(() => {});
-    if (state.sound && !soundUnlocked && hover.card && !hover.card._thumb.querySelector('.sound-hint')) {
+    if (hoverSound() && !soundUnlocked && hover.card && !hover.card._thumb.querySelector('.sound-hint')) {
       hover.card._thumb.append(h('span', { class: 'badge sound-hint' }, icon('mute', 'sm'), 'Sound blocked — click anywhere once'));
     }
   });
@@ -416,6 +431,7 @@ export function stopHover() {
   hover.seekPending = null;
 }
 
+// Also called when a run opens or closes (see hoverSound).
 export function applySound() {
-  if (hover.video) hover.video.muted = !state.sound;
+  if (hover.video) hover.video.muted = !hoverSound();
 }

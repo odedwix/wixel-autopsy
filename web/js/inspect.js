@@ -7,7 +7,7 @@ import { printReport, downloadReport, section as rpSection } from './report.js';
 import { CAT_COLOR, CAT_LABEL } from './insights.js';
 import { caps, capsReady, HINT } from './caps.js';
 import { toast, popover, closePopover } from './ui.js';
-import { MOOD, worstMood, failedRun, hasAd, primaryOutput, typeLabel, getExpected } from './filters.js';
+import { MOOD, worstMood, failedRun, hasAd, primaryOutput, typeLabel, getExpected, STOPS, stopFact } from './filters.js';
 import { isVideoRun } from './grid.js';
 import { mediaOf, isReady, prioritize, onMedia, videoUrl, spriteUrl, posterUrl, placeSprite, downloadRun, downloadOutput } from './media.js';
 import { showUser } from './skillpicker.js';
@@ -531,8 +531,16 @@ function mountPlayer(r) {
   // Behind a showing Exact player the regular copy waits paused.
   current.review = isReady(m) ? new ReviewPlayer(main, r, m, { autoplay: !current.exact?.shown }) : null;
   if (!current.review) {
-    const why = !r.generations ? 'This run never reached generation.' : m?.state === 'failed' ? `Couldn't prepare video: ${m.reason}` : m?.state === 'unavailable' ? m.reason : 'Preparing the video…';
-    main.replaceChildren(h('div', { class: 'stage' }, h('div', { class: 'note' }, why)));
+    // A run that made nothing says why, as its card does (server/runs.js stopReason).
+    if (r.stop && !hasAd(r)) {
+      const d = STOPS[r.stop.kind] || STOPS.ended;
+      const fact = stopFact(r.stop);
+      main.replaceChildren(h('div', { class: 'stage' }, h('div', { class: `stop-note${d.tone ? ` ${d.tone}` : ''}` },
+        icon(d.icon), h('b', {}, d.title ? d.title(r.stop) : d.label), fact ? h('div', { class: 'fact' }, fact) : null, r.stop.text ? h('q', {}, r.stop.text) : null)));
+    } else {
+      const why = !r.generations ? 'This run never reached generation.' : m?.state === 'failed' ? `Couldn't prepare video: ${m.reason}` : m?.state === 'unavailable' ? m.reason : 'Preparing the video…';
+      main.replaceChildren(h('div', { class: 'stage' }, h('div', { class: 'note' }, why)));
+    }
   }
   if (current.detail) current.review?.setScenes?.(current.detail.outputs?.scenes || []);
   startExact(r);

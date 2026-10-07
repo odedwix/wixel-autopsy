@@ -96,6 +96,36 @@ export const OUTCOMES = [
   { value: 'none', label: () => 'Never tried', dot: 'var(--text-3)', test: (r) => !hasAd(r) && !attempted(r) },
 ];
 
+// Why a run made nothing (server/runs.js stopReason): the card's headline and the filter's option.
+export const STOPS = {
+  credits: { label: 'Not enough credits', icon: 'coins', tone: 'warn' },
+  waiting: { label: 'Waiting for the user', icon: 'chat' },
+  running: { label: 'Still working', icon: 'clock' },
+  cancelled: { label: 'Stopped by the user', icon: 'stop' },
+  failed: { label: 'Failed', icon: 'alert', tone: 'err' },
+  cutoff: { label: 'Never finished', icon: 'clock' },
+  continued: { label: 'Continued in another skill', icon: 'forward', title: (s) => `Continued in ${s.skill}` },
+  handoff: { label: 'Handed back to the main chat', icon: 'back' },
+  ended: { label: 'Ended without making anything', icon: 'dash' },
+  never: { label: 'Never tried to make anything', icon: 'dash' },
+};
+// The one fact that says most: what it needed against what it had, what it was waiting on.
+export function stopFact(s) {
+  if (s.kind === 'credits') {
+    const parts = [];
+    if (s.needed && s.available != null) parts.push(`Needs ${s.needed} · has ${s.available}`);
+    else if (s.available != null) parts.push(`${s.available} credit${s.available === 1 ? '' : 's'} left`);
+    else if (s.needed) parts.push(`Needs ${s.needed} credits`);
+    if (s.dayCap) parts.push(`over the ${s.dayCap}/day plan limit`);
+    return parts.join(' · ') || null;
+  }
+  if (s.kind === 'waiting') {
+    const asked = s.widget ? `${s.widget[0].toUpperCase()}${s.widget.slice(1)} shown, no answer` : 'Asked, no answer';
+    return s.available != null ? `${asked} · ${s.available} credit${s.available === 1 ? '' : 's'} left` : asked;
+  }
+  return null;
+}
+
 export const FACETS = [
   { key: 'outcome', label: 'Result', hidden: true, options: OUTCOMES.map((o) => ({ value: o.value, dot: o.dot, test: o.test, get label() { return o.label(); } })) },
   {
@@ -132,10 +162,12 @@ export const FACETS = [
     options: [
       { value: 'errors', label: 'Tool errors', dot: 'var(--err)', test: (r) => r.errors > 0 },
       { value: 'failed-turn', label: 'Failed turn', dot: 'var(--err)', test: (r) => r.failedTurns > 0 },
-      { value: 'credits', label: 'Out of credits', dot: 'var(--warn)', test: (r) => r.outOfFunds > 0 },
+      // The agent usually checks the price and stops without an OUT_OF_FUNDS event (see STOPS).
+      { value: 'credits', label: 'Not enough credits', dot: 'var(--warn)', test: (r) => r.outOfFunds > 0 || r.stop?.kind === 'credits' },
       { value: 'clean', label: 'No problems', dot: 'var(--ok)', test: (r) => !r.errors && !r.failedTurns && !r.outOfFunds && !r.streamErrors },
     ],
   },
+  { key: 'stop', label: 'Why it made nothing', options: Object.entries(STOPS).map(([value, d]) => ({ value, label: d.label, test: (r) => !hasAd(r) && r.stop?.kind === value })) },
   { key: 'failedStep', label: 'Failed step', dynamic: (r) => [...new Set((r.steps || []).filter((x) => x[4] > 0).map((x) => stepKey(x[0], x[1])))], limit: 5 },
   { key: 'model', label: 'Model', dynamic: (r) => modelsOfRun(r), limit: 6 },
   { key: 'source', label: 'Started from', dynamic: (r) => (r.source ? [r.source] : []), labelOf: (v) => SOURCE_LABEL[v] || v },

@@ -59,6 +59,7 @@ Not every skill makes video. A run's **outputs** are the top-level assets its co
 
 - **What counts as made by the run** (`server/own-assets.js`, the same rule for the grid and the run view):
   - every successful `write` tool result, which names the asset it created or edited (`Created project/assets/<name>--<id8>.json (type: …, id: <id>)`); this is the only record of a sub-agent's writes, because sub-agents don't log `WRITE_METERING`;
+  - the write steps inside a `sequence` result (generate → write in one call, as story sub-agents do), where only the `Created/Edited/Saved project/assets/… (type: …, id: …)` header counts;
   - `WRITE_METERING` (every write in a main session: `project/assets/<name>--<id8>.json`), and the editor's per-turn `TURN_UPDATED_ASSETS` (logged 09-16 → 09-28, and again from 10-05);
   - `AGENT_MENTIONED_ASSETS` (assets handed to the user), only when the asset was created or changed during the counted turns, since the agent also mentions older assets it only refers to;
   - assets a server-side job builds without a write: a deck from `BuildPresentation` / `DeckFinish`, an icon set from `CreateIconsAsset` / `GenerateIconsAsset` (an asset of that type created during the counted turns of a run that called the job);
@@ -104,7 +105,7 @@ The admin API lists sessions by user id only, so an email is found from sessions
 
 | Output | What you get |
 |---|---|
-| Video | the user's own render when there is one; otherwise the **exact composition**: the product's own player rendered frame by frame in headless Chrome, with text overlays and music (about 30 s – 2 min the first time, cached after) |
+| Video | the user's own render when there is one; otherwise the **exact composition**: the product's own player rendered frame by frame in headless Chrome, with text overlays and music. Three pages of one Chrome capture a part each (fewer on a machine with under 12 cores; `EXACT_TABS` overrides), about 1.6× the video's length (a 14 s ad: 23 s against 58 s on one page, using ~2.5 cores and ~3 GB while it runs); cached after |
 | Story | the user's own story export when it's up to date with the story; otherwise the exact story, rendered the same way |
 | Slides, doc (pages) | the user's own export when it's reachable; editor exports are private, so usually a PDF of the page previews (~1000px) |
 | Logo, plain image | the original image file |
@@ -126,13 +127,25 @@ Both keep the dark UI's colours on A4 landscape, with type about 25% larger than
 - **Top bar:** the skill (⌘K; Counting next to it), the time window, search, **Refresh** and **View** (sort, card shape and size, sound on hover, text size, theme). That's all.
 - **Refresh** (or **R**) adds only what's new: the days already loaded stay as they are, and only sessions that started since the newest run on screen (less an hour, for runs that were still going) are queried, merged into the cached day on the server, and added to or updated in the grid. Only those runs get their videos rebuilt and their sessions re-read. About 20–40 s whatever the window (it reads a few hours of one day, not every day). **Shift-click** (or **Shift+R**) queries everything again, skipping every cache. The routine re-check of a recent day (every few minutes while it's looked at) tops up the same way instead of re-reading the whole day.
 - **Grid** (virtualized). The first tab is named after what the skill makes (Videos / Stories / Logos…).
-  - **Video and story outputs:** hovering a card plays it, with sound if S is on. Moving the mouse scrubs: the sprite frame shows instantly while the real frame seeks. Badges show the source: Exact / Assembled / Clip / Preparing.
+  - **Video and story outputs:** hovering a card plays it, with sound if S is on, except while a run is open: then the open run's player has the only sound and hover previews play muted. Moving the mouse scrubs: the sprite frame shows instantly while the real frame seeks. Badges show the source: Exact / Assembled / Clip / Preparing.
   - **Other outputs:** hovering flips through everything the run made, and a type badge and "N outputs" count sit on the card.
   - **Runs that tried but produced nothing** have a red top edge and show the first error. Hovering the error icon lists every failing step with its message.
-  - **Signals per card:** downloaded (editor or agent), published, worst mood across turns, thumbs up/down, issues, out of credits. The user type (Real / Employee / Team) sits next to the time.
+  - **Runs that made nothing say why**, on the card and in the run view: the reason, its key fact, and what the agent last said about it in its own words (any language). In order of precedence:
+    - **Still working.**
+    - **Not enough credits**, e.g. "Needs 88 · has 30 · over the 30/day plan limit". The agent checks the price and stops, usually without an OUT_OF_FUNDS event. The balance comes from ListCosts' `availableCredits`, the daily limit from the credit plan, and the price from the agent's reply.
+    - **Stopped by the user.**
+    - **Failed.**
+    - **Waiting for the user:** a question or a widget (video plan, brief…) that was never answered. When credits came up, the balance is shown too.
+    - **Never finished.**
+    - **Continued in** another skill.
+    - **Handed back to the main chat** (sub-agents).
+    - **Ended without making anything:** the agent's last words.
+
+    On 10-06/07, 81% of wixel-ads-lite's empty runs stopped at the credit wall, two-thirds of them over the free plan's daily limit. In wixel-ads, most waited on a plan the user never approved. **Why it made nothing** in Filters picks runs by reason.
+  - **Signals per card:** downloaded (editor or agent), published, worst mood across turns, thumbs up/down, issues, not enough credits. The user type (Real / Employee / Team) sits next to the time.
   - **"+N skills"** on a card: other skills also worked in that session. Hover it for which ones and how many turns were counted. In user mode, each card lists the skills its session used.
 - **One result bar:** the Outputs / Insights tabs, the result switch with its counts, **Filters** (F) and the active filters as chips, and the top finding from Insights.
-- **Filters** (closed by default): what the user did (downloaded / published / neither), user type, how it went (frustrated, confused, thumbs), problems (tool errors, failed turn, out of credits), failed step, model, started from (chat / sub-agent / API) and the skills in the session. Each option has its count; groups with nothing to choose are hidden. A new skill starts from its own view: only the result switch and the user type carry over, and filters that would leave nothing are cleared with one note.
+- **Filters** (closed by default): what the user did (downloaded / published / neither), user type, how it went (frustrated, confused, thumbs), problems (tool errors, failed turn, not enough credits), why it made nothing, failed step, model, started from (chat / sub-agent / API) and the skills in the session. Each option has its count; groups with nothing to choose are hidden. A new skill starts from its own view: only the result switch and the user type carry over, and filters that would leave nothing are cleared with one note.
 - **Remembered state:** everything is saved in localStorage and mirrored in the URL (`#v=…`), so a reload restores the view and any view can be shared as a link.
 - **Inspect** (click or Enter):
   - **Video and story runs:** the regular copy (a review mp4 with a custom scrub bar: scene segments, sprite preview, `,`/`.` frame steps, speed) starts at once, while the **exact composition** (the product's own player: text overlays, music, exact timing) loads hidden behind it. When every file is in memory it takes over at the same moment and keeps playing. **E** switches back and forth; **C** turns captions on (they start off; the CC button only appears when the run has captions). Stories are drawn by the same player: each page becomes a scene for its duration, with the page's own clip, text and image components, plus the voice-over and music. Page transitions, music ducking and the story's caption style aren't reproduced. This needs a player build made after this change (`npm run build:player`); older builds keep the manual Exact toggle.
@@ -258,7 +271,7 @@ Both keep the dark UI's colours on A4 landscape, with type about 25% larger than
 
 ## Load on production systems
 
-Every upstream call goes through `server/limits.js`: a concurrency cap and minimum spacing per system, plus rolling counters shown live in the status bar ("Upstream, 5 min").
+Every upstream call goes through `server/limits.js`: a concurrency cap and minimum spacing per system, plus rolling counters shown live in the status bar ("Upstream, 5 min"). The status bar stays one line at any width and text size: the summary truncates (full text on hover), systems with no recent calls are left out, and the shortcut hint, labels and cache size drop out as the bar narrows.
 
 - **On-screen work first.** Work nobody is waiting on (background refreshes of cached recent days) runs at background priority: at most one slot, and only when nothing on screen is queued. It's skipped while Trino is busy; the next view of that data tries again.
 - **Backoff.** Three Trino timeouts within 2 minutes put the lane at 2 queries at a time, 1.2 s apart, for 3 minutes. The status bar says so ("easing off") instead of looking stuck.

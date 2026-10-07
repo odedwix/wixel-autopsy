@@ -172,7 +172,7 @@ e AS (SELECT m.*, (lc IS NOT NULL AND (lo IS NULL OR lc > lo)) AS owned FROM m),
 const ownJoin = (sc) => (turnScoped(sc) ? '\n  JOIN own ON own.session_id = x.session_id AND own.turn_id = x.turn_id' : '');
 
 // Bump when runsDayQuery's output changes, so cached days are re-queried.
-export const RUNS_QUERY_VERSION = 14;
+export const RUNS_QUERY_VERSION = 16;
 
 export function runsDayQuery({ scope, day, hours = [0, 24] }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error(`bad day ${day}`);
@@ -226,8 +226,32 @@ agg AS (
     -- The assets the counted turns wrote: every successful write names them ("Created
     -- project/assets/<name>--<id8>.json (type: …, id: <id>…", batch writes list "id":"<id>"). The
     -- one record of a sub-agent's writes, which WRITE_METERING doesn't log.
-    array_distinct(flatten(array_agg(regexp_extract_all(substr(out, 1, 20000), 'id(?:: |":")([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 1))
-      FILTER (WHERE owned AND entry_type = 'TOOL_RESULT' AND tool_result.tool_name = 'write' AND out NOT LIKE 'Error%'))) AS written_ids
+    -- A sequence (generate → write in one call) holds its write steps' results; there only the
+    -- write header counts, since other steps' output is in there too.
+    -- (array_agg of no rows is NULL, and concat with a NULL is NULL: hence the coalesces.)
+    array_distinct(concat(
+      coalesce(flatten(array_agg(regexp_extract_all(substr(out, 1, 20000), 'id(?:: |":")([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 1))
+        FILTER (WHERE owned AND entry_type = 'TOOL_RESULT' AND tool_result.tool_name = 'write' AND out NOT LIKE 'Error%')), CAST(ARRAY[] AS array(varchar))),
+      coalesce(flatten(array_agg(regexp_extract_all(substr(out, 1, 40000), '(?:Created|Edited|Saved) project/assets/[^(]{0,300}\\(type: [^,]{1,60}, id: ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', 1))
+        FILTER (WHERE owned AND entry_type = 'TOOL_RESULT' AND tool_result.tool_name = 'sequence')), CAST(ARRAY[] AS array(varchar))))) AS written_ids,
+    -- Why a run made nothing (toRun reads these only then): the end of what the counted turns last
+    -- said, the sentences in it that put a number on credits ("needs about 88 credits"), how the last
+    -- turn ended (STARTED = still open, e.g. on a question), the last tool called, the last question
+    -- put to the user (a widget's name, or the question's subtitle), and the credits the agent saw:
+    -- ListCosts' availableCredits and the plan's daily cap.
+    max_by(substr(assistant_message.text, greatest(1, length(assistant_message.text) - 399)), sequence)
+      FILTER (WHERE owned AND entry_type = 'ASSISTANT_MESSAGE' AND length(assistant_message.text) > 0) AS last_reply,
+    max_by(slice(regexp_extract_all(assistant_message.text, '[^.!?;\\n。]*\\d\\s*\\**\\s*(?i:credit|crédit|crédito|crediti|kredi|kredyt|קרדיט|кредит|クレジット|크레딧|积分)[^.!?\\n。]*'), 1, 2), sequence)
+      FILTER (WHERE owned AND entry_type = 'ASSISTANT_MESSAGE' AND length(assistant_message.text) > 0) AS credit_notes,
+    bool_or(assistant_message.text LIKE '%wixel-plans%') FILTER (WHERE owned AND entry_type = 'ASSISTANT_MESSAGE') AS upgrade_link,
+    max_by(turn_boundary.kind, sequence) FILTER (WHERE owned AND entry_type = 'TURN_BOUNDARY') AS last_turn_kind,
+    max_by(tool_call.tool_name, sequence) FILTER (WHERE owned AND entry_type = 'TOOL_CALL') AS last_tool,
+    max_by(coalesce(regexp_extract(element_at(tool_call.arguments, 'questions'), '"componentName":"([\\w-]+)"', 1), ''), sequence)
+      FILTER (WHERE owned AND entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'ask_user') AS ask_widget,
+    max_by(substr(coalesce(json_extract_scalar(element_at(tool_call.arguments, 'questions'), '$[0].subtitle'), json_extract_scalar(element_at(tool_call.arguments, 'questions'), '$[0].title'), ''), 1, 200), sequence)
+      FILTER (WHERE owned AND entry_type = 'TOOL_CALL' AND tool_call.tool_name = 'ask_user') AS ask_text,
+    max_by(json_extract_scalar(out, '$.availableCredits'), sequence) FILTER (WHERE owned AND entry_type = 'TOOL_RESULT' AND out LIKE '{"availableCredits"%') AS credits_available,
+    max_by(json_extract_scalar(out, '$.dailyLimit.cap'), sequence) FILTER (WHERE owned AND entry_type = 'TOOL_RESULT' AND out LIKE '%"dailyLimit"%') AS credits_day_cap
   FROM e
   GROUP BY session_id
 )

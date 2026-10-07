@@ -178,7 +178,7 @@ onChange((patch) => {
   }
   if ('tab' in patch) applyTab();
   if ('aspect' in patch || 'size' in patch) relayout();
-  if ('sound' in patch) applySound();
+  if ('sound' in patch || 'open' in patch) applySound();
   if ('textScale' in patch) {
     applyTextScale();
     relayout();
@@ -461,7 +461,9 @@ function emptyState() {
 }
 
 function status(text) {
-  $('#statusLine').replaceChildren(h('span', {}, text), h('span', { style: { marginLeft: 'auto' } }), loadEl, h('span', {}, 'Press ? for shortcuts'));
+  // One line at any width or text size: the summary truncates (full text on hover) and the readout's
+  // lesser parts drop out as the bar narrows (app.css).
+  $('#statusLine').replaceChildren(h('span', { class: 'summary', title: text }, text), loadEl, h('span', { class: 'hint' }, 'Press ? for shortcuts'));
 }
 
 // ---------- insights ----------
@@ -561,15 +563,19 @@ async function pollLoad() {
     const l = await getJson('/api/load');
     lastLoad = l;
     renderNet(l.net);
+    // Only the systems that did something (a row of zeros says nothing).
     const lane = (name, label) => {
       const x = l[name];
+      if (!x.last5m && !x.inflight && !x.queued && !x.backoffUntil) return null;
       return h('span', { title: `${label}: ${x.inflight} in flight, ${x.queued} queued${x.queuedBackground ? ` (+${x.queuedBackground} background)` : ''}, ${x.total} since start, ${x.errors} errors (max ${x.concurrency} concurrent)${x.backoffUntil ? ` — backing off after ${x.timeouts2m} timeouts` : ''}` },
         h('b', {}, label), ' ', h('span', { class: x.queued || x.backoffUntil ? 'busy' : '' }, `${x.last5m}${x.backoffUntil ? ' · easing off' : ''}`));
     };
-    loadEl.replaceChildren(h('span', { title: 'Requests to production-side systems in the last 5 minutes' }, 'Upstream, 5 min:'),
-      lane('trino', 'Trino'), lane('admin', 'Admin API'), lane('temporal', 'Temporal'),
-      h('span', { title: 'Review videos being prepared locally (ffmpeg; reads the CDN only)' }, h('b', {}, 'Media'), ` ${l.media.active + l.media.pending}`),
-      l.cache ? h('span', { title: `Local cache in .cache — capped at ${(l.cache.cap / 1024 ** 3).toFixed(1)} GB (CACHE_MAX_GB); least-recently-used entries are evicted` }, h('b', {}, 'Cache'), ` ${(l.cache.bytes / 1024 ** 3).toFixed(1)}/${(l.cache.cap / 1024 ** 3).toFixed(0)} GB`) : null);
+    const media = l.media.active + l.media.pending;
+    const lanes = [lane('trino', 'Trino'), lane('admin', 'Admin API'), lane('temporal', 'Temporal'),
+      media ? h('span', { title: 'Review videos being prepared locally (ffmpeg; reads the CDN only)' }, h('b', {}, 'Media'), ` ${media}`) : null].filter(Boolean);
+    loadEl.replaceChildren(h('span', { class: 'lbl', title: 'Requests to production-side systems in the last 5 minutes' }, lanes.length ? 'Upstream, 5 min:' : 'Upstream idle'),
+      ...lanes,
+      l.cache ? h('span', { class: 'cache', title: `Local cache in .cache — capped at ${(l.cache.cap / 1024 ** 3).toFixed(1)} GB (CACHE_MAX_GB); least-recently-used entries are evicted` }, h('b', {}, 'Cache'), ` ${(l.cache.bytes / 1024 ** 3).toFixed(1)}/${(l.cache.cap / 1024 ** 3).toFixed(0)} GB`) : null);
   } catch {}
   setTimeout(pollLoad, 5000);
 }
@@ -645,6 +651,8 @@ function select(id, { open = false } = {}) {
   markSelected();
   const r = view.find((x) => x.id === id) || allRuns.find((x) => x.id === id);
   if (open || state.open) openInspect(r);
+  // The open run's player takes the sound from the hover preview (the state change above is silent).
+  applySound();
   syncTopbar();
 }
 

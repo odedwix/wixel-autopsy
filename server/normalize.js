@@ -105,13 +105,18 @@ function parseScrape(text) {
 // tool results, which name every asset written ("Created project/assets/…, id: <id>") — the only
 // record of a sub-agent's writes, which aren't metered.
 const WRITTEN_ID = /id(?:: |":")([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/g;
+// A `sequence` (generate → write in one call, as story sub-agents do) carries its write steps' results
+// inside its own, which also hold other steps' output, so only the write header counts there.
+const SEQUENCE_WRITTEN = /(?:Created|Edited|Saved) project\/assets\/[^(]{0,300}\(type: [^,]{1,60}, id: ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/g;
 function sessionAssetEvidence(events, entries) {
   const writes = [];
   const reported = [];
   const mentioned = [];
   for (const e of entries || []) {
-    const out = e.entryType === 'TOOL_RESULT' && e.toolResult?.toolName === 'write' ? e.toolResult.result?.output : null;
-    if (typeof out === 'string' && !out.startsWith('Error')) for (const m of out.slice(0, 20000).matchAll(WRITTEN_ID)) reported.push(m[1]);
+    const tool = e.entryType === 'TOOL_RESULT' ? e.toolResult?.toolName : null;
+    const out = tool === 'write' || tool === 'sequence' ? e.toolResult.result?.output : null;
+    if (typeof out !== 'string' || out.startsWith('Error')) continue;
+    for (const m of out.slice(0, 40000).matchAll(tool === 'write' ? WRITTEN_ID : SEQUENCE_WRITTEN)) reported.push(m[1]);
   }
   for (const ev of events || []) {
     const p = ev.payload || {};

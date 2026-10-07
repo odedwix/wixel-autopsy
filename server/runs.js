@@ -504,6 +504,96 @@ function toRun(r, userType) {
   };
 }
 
+// ---- why a run made nothing ----
+// The first that holds, for the card of a run with no output (measured on 770 such runs of
+// wixel-ads-lite, wixel-ads and stories-creation, 10-04 → 10-07: the credit wall was 76% of
+// wixel-ads-lite's and 44% of the stories'; most of the rest asked the user something and got no answer):
+//   running    its last turn is still open and it was active in the last 20 minutes
+//   credits    the agent stopped at the credit wall: OUT_OF_FUNDS, an "insufficient credits" error, a
+//              link to the plans page, or a reply needing more credits than it had (agents check the
+//              price and stop, in the user's language, without OUT_OF_FUNDS)
+//   cancelled  the user stopped the turn
+//   failed     the last turn failed, or it tried to make something and its calls errored
+//   waiting    it asked the user something (a question, or a widget such as the video plan) and got no answer
+//   cutoff     its last turn never ended (no question pending)
+//   continued  the session's later turns went to another skill
+//   handoff    a sub-agent that handed back to its parent
+//   ended      anything else: what it last said
+//   never      it never said or made anything
+const CREDIT_WORD = '(?:credit|crédit|crédito|crediti|kredi|kredyt|קרדיט|кредит|クレジット|크레딧|积分)';
+const CREDIT_NUM = new RegExp(`(\\d[\\d,.]*)\\s*\\**\\s*${CREDIT_WORD}`, 'giu');
+const MENTIONS_CREDITS = new RegExp(CREDIT_WORD, 'iu');
+const MAKER_TOOLS = new Set(['generate_image', 'edit_image', 'convert_image_format', 'write', 'sequence']);
+const plainText = (s) => String(s || '')
+  .replace(/<!--[\s\S]*?-->/g, ' ')
+  .replace(/^\s*\|.*\|\s*$/gm, ' ') // table rows
+  .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+  .replace(/[*_`#>]+/g, '')
+  .replace(/\s+/g, ' ')
+  .replace(/^[\s"“”'‘’,;:.)\]–—-]+/, '')
+  .trim();
+// The last sentence or two, up to ~180 characters; a short last line (a footnote, a sign-off) brings
+// the one before it.
+function lastWords(s) {
+  const t = plainText(s);
+  const parts = (t.match(/[^.!?。؟？]+[.!?。؟？]*/g) || [t]).map((x) => x.trim()).filter(Boolean);
+  let out = '';
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const next = parts[i] + (out ? ` ${out}` : '');
+    if (out && next.length > 180 && out.length >= 60) break;
+    out = next;
+    if (out.length >= 180) break;
+  }
+  return out.length > 220 ? `…${out.slice(-219)}` : out;
+}
+// A widget's name as words: wixel-video-plan → "video plan", wixel-brand-site-brief → "brand site brief".
+const widgetLabel = (w) => String(w || '').replace(/^wixel-/, '').replace(/-widget$/, '').split('-').filter((x) => !['bm', 'components'].includes(x)).join(' ');
+const numOf = (s) => {
+  const n = Number(String(s ?? '').replace(/,/g, ''));
+  return Number.isFinite(n) && String(s ?? '') !== '' ? n : null;
+};
+
+function stopReason(r, run) {
+  const kind = String(r.last_turn_kind || '').replace('TURN_BOUNDARY_KIND_', '');
+  const open = kind === 'STARTED';
+  const asked = r.last_tool === 'ask_user';
+  const reply = r.last_reply || '';
+  if (open && !asked && run.lastAt && Date.now() - run.lastAt < 20 * 60000) return { kind: 'running', text: lastWords(reply) || null };
+
+  const notes = (r.credit_notes || []).map(plainText).filter(Boolean);
+  const nums = notes.flatMap((n) => [...n.matchAll(CREDIT_NUM)].map((m) => numOf(m[1]))).filter((n) => n != null);
+  const available = numOf(r.credits_available) ?? (nums.length > 1 ? Math.min(...nums) : null);
+  const needed = nums.length ? Math.max(...nums) : null;
+  const dayCap = numOf(r.credits_day_cap);
+  const short = needed != null && available != null && needed > available;
+  const credits = () => ({
+    kind: 'credits',
+    needed: short || (needed != null && available == null) ? Math.round(needed) : null,
+    available: available != null ? Math.round(available) : null,
+    dayCap: dayCap != null && needed != null && needed > dayCap ? dayCap : null,
+    // The agent's own words about it; a last reply about something else isn't the reason.
+    text: notes.join('. ') || (MENTIONS_CREDITS.test(reply) ? lastWords(reply) : null),
+  });
+  if (run.outOfFunds || /insufficient credits|not enough credits/i.test(r.first_error || '') || r.upgrade_link || short) return credits();
+  if (kind === 'CANCELLED') return { kind: 'cancelled', text: lastWords(reply) || null };
+  const tried = run.generations > 0 || (run.steps || []).some((s) => MAKER_TOOLS.has(s[0]) && s[3] > 0);
+  if (kind === 'FAILED' || (tried && run.errors > 0)) return { kind: 'failed', text: run.firstError || lastWords(reply) || null };
+  const question = /[?؟？]\s*$/.test(plainText(reply));
+  if (asked || question) {
+    const w = asked && r.ask_widget ? widgetLabel(r.ask_widget) : null;
+    // Often the agent offering a cheaper version after a price check: the balance it saw goes with it.
+    return { kind: 'waiting', widget: w || null, available: notes.length && available != null ? Math.round(available) : null, text: (asked && !w ? plainText(r.ask_text) : '') || lastWords(reply) || null };
+  }
+  if (open) return { kind: 'cutoff', text: lastWords(reply) || null };
+  // Stopped on a price it named ("You need at least 19 credits to make this story"), with no balance
+  // to compare it to: it made nothing and isn't waiting on a question, so that's why.
+  if (notes.length && !tried) return credits();
+  if (run.otherSkills?.length && run.allTurns > run.turns) return { kind: 'continued', skill: run.otherSkills[0], text: lastWords(reply) || null };
+  if (run.source === 'sub-agent') return { kind: 'handoff', text: lastWords(reply) || null };
+  if (reply) return { kind: 'ended', text: lastWords(reply) };
+  return { kind: 'never', text: null };
+}
+
 // Last listed rows by id, so media and detail routes can find a run's render links without
 // re-running the list.
 const runIndex = new Map();
@@ -593,7 +683,11 @@ async function scopedDay(scope, day, sampleRate = 1, { fresh = false, fromHour =
   // instant unless a lookup failed earlier.
   const userType = await userTypesWithin(rows.map((r) => r.account_id), 3000);
   const bySession = new Map(stepRows.map((r) => [r.session_id, r]));
-  const runs = rows.map((r) => ({ ...toRun(r, userType), ...stepFields(bySession.get(r.session_id)), sampleRate }));
+  const runs = rows.map((r) => {
+    const run = { ...toRun(r, userType), ...stepFields(bySession.get(r.session_id)), sampleRate };
+    if (!run.outputs?.length) run.stop = stopReason(r, run);
+    return run;
+  });
   for (const r of runs) runIndex.set(r.id, r);
   return runs;
 }

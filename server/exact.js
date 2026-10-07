@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
+import os from 'node:os';
 import { config } from './config.js';
 import { withChrome, waitFor } from './pdf.js';
 import { mediaFile } from './media.js';
@@ -9,7 +10,12 @@ import { mediaFile } from './media.js';
 // overlays, captions, music) in headless Chrome, sized to the composition, seeked frame by frame and
 // screenshotted (web/player/capture.html + the capture bundle from build-player.sh). ffmpeg joins
 // the frames with the audio of our assembled copy (the same clips, voiceover and music, mixed by
-// media.js). Cached in the run's media folder; a few minutes per ad, one at a time.
+// media.js). Cached in the run's media folder; one capture at a time.
+//
+// Each frame waits for its clips to decode that exact frame and the page to settle, then a full-size
+// screenshot drawn without a GPU: ~190 ms a frame (median of 17 captures; ~4.6× the video's length in
+// one page). So a few pages of one Chrome share the frames, each a contiguous part (stepping forward
+// a frame at a time is the cheap direction for the decoders).
 
 const jobs = new Map(); // runId → { state, done, total, error, startedAt }
 const dirFor = (id) => path.join(config.cacheDir, 'media', id);
@@ -55,33 +61,58 @@ export async function startExact(run0, { cc = false } = {}) {
   return job;
 }
 
+// Pages capturing at once: 3 at most, fewer on a smaller machine (each is a renderer drawing in
+// software); EXACT_TABS overrides. A short video doesn't spread thinner than ~2 s a page.
+const TABS = Math.max(1, Math.min(Number(process.env.EXACT_TABS) || 3, Math.floor(os.availableParallelism() / 4)));
+const MIN_FRAMES_PER_TAB = 48;
+
+// Open the capture page in one Chrome page, sized to the composition; resolves with { fps, frames, width, height }.
+async function openCapture(send, url) {
+  await send('Page.navigate', { url });
+  const got = await waitFor(send, 'window.__captureMeta || (window.__captureError && { error: window.__captureError }) || null', 180000);
+  if (!got) throw new Error('the player did not load in 3 minutes');
+  if (got.error) throw new Error(got.error);
+  // The viewport is the composition, so a screenshot is one frame at full size.
+  await send('Emulation.setDeviceMetricsOverride', { width: got.width, height: got.height, deviceScaleFactor: 1, mobile: false });
+  return got;
+}
+
 async function capture(r, job, cc = false) {
   const frames = path.join(dirFor(r.id), cc ? 'exact-frames-cc' : 'exact-frames');
   await fs.rm(frames, { recursive: true, force: true });
   await fs.mkdir(frames, { recursive: true });
   let meta;
-  await withChrome(async ({ send }) => {
+  await withChrome(async ({ send, newPage }) => {
     job.state = 'loading';
     // The run's video, or its story (drawn as timed scenes by the same player; see player.js).
     const root = r.videoAssetId || r.storyAssetId;
-    await send('Page.navigate', { url: `http://127.0.0.1:${config.port}/player/capture.html?run=${r.id}${root ? `&root=${root}` : ''}&captions=${cc ? '1' : 'user'}` });
-    const got = await waitFor(send, 'window.__captureMeta || (window.__captureError && { error: window.__captureError }) || null', 180000);
-    if (!got) throw new Error('the player did not load in 3 minutes');
-    if (got.error) throw new Error(got.error);
-    meta = got;
-    // The viewport is the composition, so a screenshot is one frame at full size.
-    await send('Emulation.setDeviceMetricsOverride', { width: meta.width, height: meta.height, deviceScaleFactor: 1, mobile: false });
-    await send('Runtime.evaluate', { expression: 'window.AutopsyCapture.seek(0)', awaitPromise: true });
+    const url = `http://127.0.0.1:${config.port}/player/capture.html?run=${r.id}${root ? `&root=${root}` : ''}&captions=${cc ? '1' : 'user'}`;
+    // All pages load together (the second and later find the media in Chrome's cache). The first must
+    // load; a helper page that doesn't just leaves its share to the others.
+    // (Settled from the start: a helper failing while the first page loads must not go unhandled.)
+    const helpers = Promise.allSettled(Array.from({ length: TABS - 1 }, async () => {
+      const s = await newPage();
+      await openCapture(s, url);
+      return s;
+    }));
+    meta = await openCapture(send, url);
+    const extra = (await helpers).filter((x) => x.status === 'fulfilled').map((x) => x.value);
+    const pages = [send, ...extra].slice(0, Math.max(1, Math.floor(meta.frames / MIN_FRAMES_PER_TAB)));
     job.state = 'rendering';
     job.total = meta.frames;
-    for (let f = 0; f < meta.frames; f++) {
-      const s = await send('Runtime.evaluate', { expression: `window.AutopsyCapture.seek(${f})`, awaitPromise: true, returnByValue: true });
-      if (s.result?.exceptionDetails) throw new Error(`seek ${f}: ${s.result.exceptionDetails.text}`);
-      const shot = await send('Page.captureScreenshot', { format: 'jpeg', quality: 92, fromSurface: true });
-      if (!shot.result?.data) throw new Error(`screenshot ${f} failed`);
-      await fs.writeFile(path.join(frames, `f${String(f).padStart(5, '0')}.jpg`), Buffer.from(shot.result.data, 'base64'));
-      job.done = f + 1;
-    }
+    job.pages = pages.length;
+    const per = Math.ceil(meta.frames / pages.length);
+    let done = 0;
+    await Promise.all(pages.map(async (page, i) => {
+      for (let f = i * per; f < Math.min(meta.frames, (i + 1) * per); f++) {
+        const s = await page('Runtime.evaluate', { expression: `window.AutopsyCapture.seek(${f})`, awaitPromise: true, returnByValue: true });
+        if (s.result?.exceptionDetails) throw new Error(`seek ${f}: ${s.result.exceptionDetails.text}`);
+        const shot = await page('Page.captureScreenshot', { format: 'jpeg', quality: 92, fromSurface: true });
+        if (!shot.result?.data) throw new Error(`screenshot ${f} failed`);
+        await fs.writeFile(path.join(frames, `f${String(f).padStart(5, '0')}.jpg`), Buffer.from(shot.result.data, 'base64'));
+        job.done = ++done;
+      }
+    }));
   });
   job.state = 'encoding';
   const audio = mediaFile(r.id, 'review.mp4');
@@ -93,5 +124,5 @@ async function capture(r, job, cc = false) {
     '-t', String(meta.frames / meta.fps), `${out}.tmp.mp4`]);
   await fs.rename(`${out}.tmp.mp4`, out);
   await fs.rm(frames, { recursive: true, force: true });
-  await fs.writeFile(path.join(dirFor(r.id), cc ? 'exact-cc.json' : 'exact.json'), JSON.stringify({ ...meta, v: EXACT_VERSION, captions: cc ? 'on' : 'only if a person turned them on', builtMs: Date.now() - job.startedAt, audio: hasAudio ? 'assembled copy' : 'none', at: Date.now() }));
+  await fs.writeFile(path.join(dirFor(r.id), cc ? 'exact-cc.json' : 'exact.json'), JSON.stringify({ ...meta, v: EXACT_VERSION, pages: job.pages, captions: cc ? 'on' : 'only if a person turned them on', builtMs: Date.now() - job.startedAt, audio: hasAudio ? 'assembled copy' : 'none', at: Date.now() }));
 }

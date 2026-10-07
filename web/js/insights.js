@@ -1,5 +1,5 @@
 import { h, icon, dur, fmtInt, ago } from './util.js';
-import { hasAd, failedRun, attempted, downloaded, worstMood, MOOD, stepKey, getProfile, typeLabel, madeLabel } from './filters.js';
+import { hasAd, failedRun, attempted, downloaded, worstMood, MOOD, stepKey, getProfile, typeLabel, madeLabel, STOPS } from './filters.js';
 import { modelStats, money } from './models.js';
 
 // Insights over the runs in view (skill + window + filters + search). Everything is computed in
@@ -237,11 +237,12 @@ export function learn(ins, runs) {
   // 2. Runs that never tried: who they are.
   const never = runs.filter((r) => !hasAd(r) && !attempted(r));
   if (enough(never.length) && never.length / n >= 0.15) {
-    const sub = never.filter((r) => r.source === 'sub-agent').length;
-    const broke = never.filter((r) => r.outOfFunds).length;
-    const oneMsg = never.filter((r) => (r.userMessages || 0) <= 1).length;
-    const why = [sub / never.length >= 0.25 ? `${P(sub / never.length)} are sub-agents (campaigns making several assets at once)` : null, broke / never.length >= 0.15 ? `${P(broke / never.length)} ran out of credits` : null, oneMsg / never.length >= 0.5 ? `${P(oneMsg / never.length)} ended after one message` : null].filter(Boolean);
-    add(70 + (never.length / n) * 40, 'bad', [h('b', {}, P(never.length / n)), ' of runs never tried to make anything'], why.length ? `Of those, ${why.join(', ')}.` : `${never.length} runs: they only planned, asked or answered.`, { filter: ['outcome', 'none'] });
+    // Why, as the cards say it (server/runs.js stopReason): the reasons that cover at least a tenth.
+    const kinds = new Map();
+    for (const r of never) if (r.stop) kinds.set(r.stop.kind, (kinds.get(r.stop.kind) || 0) + 1);
+    const why = [...kinds].filter(([, c]) => c / never.length >= 0.1).sort((a, b) => b[1] - a[1]).slice(0, 3)
+      .map(([k, c]) => `${P(c / never.length)} ${(STOPS[k]?.label || k).toLowerCase()}`);
+    add(70 + (never.length / n) * 40, 'bad', [h('b', {}, P(never.length / n)), ' of runs never tried to make anything'], why.length ? `Of those: ${why.join(', ')}.` : `${never.length} runs: they only planned, asked or answered.`, { filter: ['outcome', 'none'] });
   }
   // 3. Models: where the time and the money go.
   const gen = ins.modelRows.filter((m) => m.calls >= 3);
@@ -268,13 +269,26 @@ export function learn(ins, runs) {
   const clean = runs.filter((r) => !r.errors);
   const fr = (xs) => xs.filter((r) => r.sentiments?.includes('frustrated')).length / Math.max(1, xs.length);
   if (enough(err.length) && enough(clean.length) && fr(err) >= 0.08 && fr(err) >= 1.5 * fr(clean)) add(55, 'bad', ['Users are ', h('b', {}, `${(fr(err) / Math.max(0.005, fr(clean))).toFixed(1)}×`), ' as likely to be frustrated when a tool fails'], `${P(fr(err))} frustrated in runs with tool errors, ${P(fr(clean))} without.`, { filter: ['issues', 'errors'] });
-  // 6. The credit wall.
-  const broke = runs.filter((r) => r.outOfFunds > 0);
-  if (enough(broke.length) && broke.length / n >= 0.08) add(65, 'bad', [h('b', {}, P(broke.length / n)), ' of runs hit the credit limit'], `Of those, ${P(broke.filter(hasAd).length / broke.length)} still made ${/^[aeiou]/.test(made) ? 'an' : 'a'} ${made} (often a cut-down one); ${P(runs.filter((r) => !r.outOfFunds && hasAd(r)).length / Math.max(1, n - broke.length))} of the others did.`, { filter: ['issues', 'credits'] });
+  // 6. The credit wall. Agents check the price and stop, mostly without an OUT_OF_FUNDS event, so the
+  // runs that stopped there (stop.kind 'credits') count too. Some need more than the plan's daily limit:
+  // for those, waiting until tomorrow wouldn't help either.
+  const walled = (r) => r.outOfFunds > 0 || r.stop?.kind === 'credits';
+  const broke = runs.filter(walled);
+  if (enough(broke.length) && broke.length / n >= 0.08) {
+    const capped = broke.filter((r) => r.stop?.dayCap);
+    const cap = capped.length ? [...capped.reduce((m, r) => m.set(r.stop.dayCap, (m.get(r.stop.dayCap) || 0) + 1), new Map())].sort((a, b) => b[1] - a[1])[0][0] : null;
+    const need = broke.map((r) => r.stop?.needed).filter(Boolean).sort((a, b) => a - b);
+    const still = broke.filter(hasAd).length;
+    add(65 + (broke.length / n) * 30, 'bad', [h('b', {}, P(broke.length / n)), ' of runs hit the credit wall'], [
+      capped.length >= 3 ? `${P(capped.length / broke.length)} needed more than the plan's ${cap}-credit daily limit, so waiting a day wouldn't help.` : null,
+      need.length >= 3 ? `They needed ${need[Math.floor(need.length / 2)]} credits (median).` : null,
+      still ? `${still / broke.length < 0.05 ? `Only ${still}` : P(still / broke.length)} still made ${/^[aeiou]/.test(made) ? 'an' : 'a'} ${made} (often a cut-down one).` : 'None of them made anything.',
+    ].filter(Boolean).join(' '), { filter: ['issues', 'credits'] });
+  }
   // 7. Stalled on the request (the chat review's tested rule: ≥3 user messages, nothing made, no
   // credit wall, no tool error — about 7 in 10 of those were the request itself: beyond what the
   // skill can do, missing material, content policy, undecided).
-  const stalled = runs.filter((r) => (r.userMessages || 0) >= 3 && !hasAd(r) && !r.outOfFunds && !r.errors);
+  const stalled = runs.filter((r) => (r.userMessages || 0) >= 3 && !hasAd(r) && !walled(r) && !r.errors);
   if (stalled.length >= 3) add(45, 'info', [h('b', {}, String(stalled.length)), ` runs went ${Math.round(stalled.reduce((a, r) => a + r.userMessages, 0) / stalled.length)} messages without making anything, with no error or credit wall`], 'Usually the request itself (asks beyond the skill, missing material, content policy, undecided users) — about 7 in 10 such runs in a review of 18. Open them to read the conversation.', { search: null, ids: stalled.map((r) => r.id) });
   // 8. Used or not.
   if (enough(ins.finished.length)) {
