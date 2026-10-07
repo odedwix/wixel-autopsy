@@ -206,7 +206,7 @@ export async function openGraphView({ title, step }) {
   document.body.append(overlay);
   document.addEventListener('keydown', onKey, true);
   try {
-    const tr = step.workflowId ? await getJson(`/api/trace/${step.workflowId}`) : await getJson(`/api/trace-job/${step.jobId}?at=${step.startedAt}`);
+    const tr = step.workflowId ? await getJson(`api/trace/${step.workflowId}`) : await getJson(`api/trace-job/${step.jobId}?at=${step.startedAt}`);
     if (!overlay) return;
     const runs = (tr.graphRuns || []).filter((g) => g.graph);
     if (!runs.length) {

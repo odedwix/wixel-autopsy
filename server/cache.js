@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { config } from './config.js';
-import { inBackground } from './context.js';
+import { inBackground, wantFresh } from './context.js';
 import { laneBusy } from './limits.js';
 
 // Disk cache: one JSON file per key. `ttlMs: Infinity` for immutable data (finished runs).
@@ -9,6 +9,24 @@ const inflight = new Map();
 
 function fileFor(ns, key) {
   return path.join(config.cacheDir, ns, `${key.replace(/[^a-zA-Z0-9._-]/g, '_')}.json`);
+}
+
+// A hosted copy keeps some namespaces in its shared store instead (its instances share no disk):
+// the slow lookups, like which accounts are employees, families, and the email index.
+let shared = null;
+export function useSharedCache(store, namespaces) {
+  shared = { store, namespaces: new Set(namespaces) };
+}
+const sharedKey = (ns, key) => (shared?.namespaces.has(ns) ? `cache/${ns}/${key.replace(/[^a-zA-Z0-9._-]/g, '_')}.json` : null);
+async function readRaw(ns, key) {
+  const sk = sharedKey(ns, key);
+  if (sk) return (await shared.store.get(sk).catch(() => null))?.value;
+  // Disk entries go through the in-memory copy (mem, below).
+  const f = fileFor(ns, key);
+  let raw = mem.get(f);
+  if (raw) remember(f, raw);
+  else remember(f, (raw = JSON.parse(await fs.readFile(f, 'utf8'))));
+  return raw;
 }
 
 // A hit bumps the file's mtime so the size-cap sweep (cache-gc.js) treats it as recently used.
@@ -35,13 +53,10 @@ function remember(f, raw) {
 // while younger than both its own ttl and the caller's maxAgeMs.
 export async function readCache(ns, key, maxAgeMs) {
   try {
-    const f = fileFor(ns, key);
-    let raw = mem.get(f);
-    if (raw) remember(f, raw);
-    else remember(f, (raw = JSON.parse(await fs.readFile(f, 'utf8'))));
+    const raw = await readRaw(ns, key);
     const age = Date.now() - raw.savedAt;
     if (raw.ttlMs === null || (age < raw.ttlMs && age < maxAgeMs)) {
-      touch(f);
+      if (!sharedKey(ns, key)) touch(fileFor(ns, key));
       return raw.value;
     }
   } catch {}
@@ -49,10 +64,12 @@ export async function readCache(ns, key, maxAgeMs) {
 }
 
 export async function writeCache(ns, key, value, ttlMs) {
-  const f = fileFor(ns, key);
-  await fs.mkdir(path.dirname(f), { recursive: true });
   // JSON has no Infinity; store null to mean "forever".
   const raw = { savedAt: Date.now(), ttlMs: ttlMs === Infinity ? null : ttlMs, value };
+  const sk = sharedKey(ns, key);
+  if (sk) return shared.store.put(sk, raw);
+  const f = fileFor(ns, key);
+  await fs.mkdir(path.dirname(f), { recursive: true });
   await fs.writeFile(f, JSON.stringify(raw));
   remember(f, raw);
 }
@@ -70,7 +87,7 @@ export async function cached(ns, key, maxAgeMs, produce, { staleWhileRevalidate 
   const hit = maxAgeMs > 0 ? await readCache(ns, key, maxAgeMs) : undefined;
   if (hit !== undefined) return hit;
   const id = `${ns}/${key}`;
-  if (staleWhileRevalidate && maxAgeMs > 0) {
+  if (staleWhileRevalidate && maxAgeMs > 0 && !wantFresh()) {
     const stale = await readStale(ns, key);
     if (stale !== undefined) {
       if (!inflight.has(id) && !laneBusy('trino')) inBackground(() => refresh(ns, key, id, produce)).catch((err) => console.error(`refresh ${id}: ${err.message}`));
@@ -85,9 +102,7 @@ export async function cached(ns, key, maxAgeMs, produce, { staleWhileRevalidate 
 // Whatever is cached under the key, however old (the Refresh top-up merges into it).
 export async function readStale(ns, key) {
   try {
-    const f = fileFor(ns, key);
-    if (mem.has(f)) return mem.get(f).value;
-    return JSON.parse(await fs.readFile(f, 'utf8')).value;
+    return (await readRaw(ns, key)).value;
   } catch {
     return undefined;
   }

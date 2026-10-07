@@ -2,7 +2,7 @@ import { noteNetworkFailure, noteSession } from './connectivity.js';
 import { config } from './config.js';
 import { cached } from './cache.js';
 import { limited } from './limits.js';
-import { currentSignal, currentPriority } from './context.js';
+import { currentSignal, currentPriority, fromSnapshot } from './context.js';
 
 // Wixel Agent admin API. Reachable from the Wix network without a cookie.
 
@@ -30,6 +30,8 @@ export async function getJson(url, { timeoutMs = 60000, retries = 2, body } = {}
 // Runs Trino SQL through the admin analytics endpoint. It caps each call at 500 rows and
 // 30s of Trino time, so page with offset until a short page comes back.
 export async function sql(query, { maxRows = 5000, signal = currentSignal() } = {}) {
+  // The shared copy never adds load to the shared cluster: everything comes from the daily build.
+  if (fromSnapshot(config)) throw Object.assign(new Error('Not in the daily build (this copy reads the daily build only and never queries Trino)'), { status: 404 });
   const rows = [];
   for (let offset = 0; offset < maxRows; offset += 500) {
     const res = await limited('trino', () => getJson(`${config.adminBase}/analytics/session-entries`, { timeoutMs: 90000, body: { mode: 'sql', sql: query, limit: 500, offset } }), { signal, priority: currentPriority() });

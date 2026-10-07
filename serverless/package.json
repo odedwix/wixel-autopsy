@@ -1,0 +1,20 @@
+{
+  "name": "wixel-autopsy-serverless",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "description": "Autopsy's shared copy as a Wix Serverless app: the read-only server behind back-office sign-in, reading the daily build from cloudStore",
+  "scripts": {
+    "build": "node --check index.js",
+    "start": "AUTOPSY_BUILD_ADMINS=dev.tester@wix.com yarn dlx @wix/serverless-cli@latest start --watchMode false -p 8091",
+    "dev:cookie": "node dev-cookie.cjs"
+  },
+  "dependencies": {
+    "@wix/serverless-api": "^1.335.0",
+    "@wix/serverless-runtime": "^1.585.0"
+  },
+  "devDependencies": {
+    "@wix/serverless-testkit": "^1.1263.0"
+  },
+  "packageManager": "yarn@4.9.1"
+}

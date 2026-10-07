@@ -12,13 +12,13 @@
 <body>
   <div id="root"><div class="loading">Loading live player…</div></div>
   <!-- The product's standalone player (React 18 + Remotion + federation), vendored by `npm run build:player`. -->
-  <script src="/player/iframe-bootstrap.js"></script>
+  <script src="iframe-bootstrap.js"></script>
   <script>
 
     // The product's platform font CSS (Wix, Madefor, Google, Helvetica @font-face rules), which its
     // own hosts load before any text renders — without it text falls back to system fonts.
     function loadPlatformFonts() {
-      return fetch('/player/fonts.json').then(function (r) { return r.json(); }).catch(function () { return []; }).then(function (urls) {
+      return fetch('fonts.json').then(function (r) { return r.json(); }).catch(function () { return []; }).then(function (urls) {
         return Promise.all(urls.map(function (href) {
           return new Promise(function (resolve) {
             var l = document.createElement('link');

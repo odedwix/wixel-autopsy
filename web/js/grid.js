@@ -265,7 +265,7 @@ function fillThumb(c, r) {
   thumb.replaceChildren();
   // A run that only made other things (an image where the skill makes videos) shows that, dimmed.
   const other = !p ? r.otherOutputs?.find((o) => o.thumb) : null;
-  const poster = isReady(m) ? `/media/${r.id}/poster.jpg` : p?.thumb || (p || !r.otherOutputs?.length ? r.thumbnail : null) || other?.thumb;
+  const poster = isReady(m) ? `media/${r.id}/poster.jpg` : p?.thumb || (p || !r.otherOutputs?.length ? r.thumbnail : null) || other?.thumb;
   if (poster) thumb.append(h('img', { class: `poster${other ? ' other' : ''}`, src: poster, loading: 'lazy', decoding: 'async', alt: '' }));
   else if (r.stop) thumb.append(stopView(r.stop));
   else if (failedRun(r)) {

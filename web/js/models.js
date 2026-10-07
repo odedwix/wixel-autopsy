@@ -5,7 +5,7 @@ import { getJson } from './util.js';
 // list (ListCosts: per graph a unit, SECOND or GENERATION, and usdPerUnit); image tools by their
 // model, at Wix's average cost per call from the credits log. List prices: failed calls count as free.
 let prices = { graphs: {}, images: {} };
-export const pricesReady = getJson('/api/prices').then((p) => (prices = p)).catch(() => prices);
+export const pricesReady = getJson('api/prices').then((p) => (prices = p)).catch(() => prices);
 
 const GEN = /^generate|^holdStill|^transformVideo|LogoShot|Animation$|^StartAnimation/;
 export const isGeneration = (tool, method) => tool === 'generate_image' || tool === 'edit_image' || (tool === 'invoke_rpc' && GEN.test(method || '') && !/^generateContentByProject/.test(method || ''));

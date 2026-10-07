@@ -1,5 +1,8 @@
 import { sql } from './admin.js';
 import { cached } from './cache.js';
+import { config } from './config.js';
+import { fromSnapshot } from './context.js';
+import { snapPrices } from './snapshot.js';
 
 // What a generation costs, from the product's own numbers (two small Trino queries a day):
 //   media jobs (video, music, voice…)  the ListCosts price list the agent reads: per Genix graph
@@ -13,6 +16,8 @@ const DAY = 86400000;
 const ENTRIES = 'domain_events.www_wixel_agent.v1_session_entry_crud';
 
 export function prices() {
+  // A read-only copy shows the prices the daily build saved.
+  if (fromSnapshot(config)) return snapPrices();
   return cached('meta', 'prices-v1', DAY, async () => {
     const [list] = await sql(`SELECT max_by(element_at(tool_result.result, 'output'), created_date) AS out
       FROM ${ENTRIES}

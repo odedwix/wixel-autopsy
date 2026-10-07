@@ -14,7 +14,7 @@ const pct = (a, b) => (b ? `${Math.round((a / b) * 100)}%` : '–');
 
 function appLink(view) {
   const link = { skill: state.skill, days: state.days, q: '', sort: state.sort, filters: {}, selected: null, open: false, tab: 'videos', ...view };
-  return `${location.origin}/#v=${encodeURIComponent(JSON.stringify(link))}`;
+  return `${new URL('.', location.href).href}#v=${encodeURIComponent(JSON.stringify(link))}`;
 }
 
 // The output's own URL, if it has a public one.

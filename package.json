@@ -6,11 +6,14 @@
     "setup": "zsh scripts/setup.sh",
     "start": "node server/server.js --open",
     "proxy": "node server/server.js",
+    "shared": "AUTOPSY_SNAPSHOT=1 node server/server.js",
     "pull": "node scripts/pull-sample.js",
     "build:player": "sh scripts/build-player.sh",
     "fleet": "node scripts/fleet-rollup.js",
     "fleet:nightly": "zsh scripts/fleet-nightly.sh",
-    "fleet:snapshot": "node scripts/fleet-snapshot.js"
+    "fleet:snapshot": "node scripts/fleet-snapshot.js",
+    "build:data": "node scripts/build-data.js",
+    "build:data:nightly": "zsh scripts/data-nightly.sh"
   },
   "dependencies": {
     "@temporalio/client": "^1.13.2"
@@ -18,5 +21,5 @@
   "engines": {
     "node": ">=22"
   },
-  "description": "Autopsy — browse and dissect any Wixel agent skill's runs, insights and Genix graph runs"
+  "description": "Autopsy \u2014 browse and dissect any Wixel agent skill's runs, insights and Genix graph runs"
 }

@@ -51,7 +51,7 @@ function usersPane() {
   const go = async (q) => {
     msg.textContent = 'Looking up…';
     try {
-      const user = await getJson(`/api/resolve-user?q=${encodeURIComponent(q)}`);
+      const user = await getJson(`api/resolve-user?q=${encodeURIComponent(q)}`);
       closePopover();
       showUser(user);
     } catch (err) {
@@ -106,7 +106,7 @@ function skillsPane() {
     // An email, user id or session link typed here means a person, not a skill.
     if (skill && !skills.some((s) => s.skill === skill) && (/@/.test(skill) || /[0-9a-f]{8}-[0-9a-f]{4}-/i.test(skill))) {
       list.replaceChildren(h('div', { class: 'sk-empty' }, 'Looking up this user…'));
-      getJson(`/api/resolve-user?q=${encodeURIComponent(skill)}`).then((user) => { closePopover(); showUser(user); }, (err) => list.replaceChildren(h('div', { class: 'sk-empty' }, err.message)));
+      getJson(`api/resolve-user?q=${encodeURIComponent(skill)}`).then((user) => { closePopover(); showUser(user); }, (err) => list.replaceChildren(h('div', { class: 'sk-empty' }, err.message)));
       return;
     }
     closePopover();

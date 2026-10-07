@@ -633,7 +633,7 @@ function issueDetail(i, view, fs, act) {
     briefs.set(i.key, { loading: true });
     act.set({});
     try {
-      briefs.set(i.key, await getJson(`/api/fleet/brief/${i.key}?${qs}&traces=${traces ? 1 : 0}`));
+      briefs.set(i.key, await getJson(`api/fleet/brief/${i.key}?${qs}&traces=${traces ? 1 : 0}`));
     } catch (err) {
       briefs.set(i.key, { error: err.message });
     }
@@ -643,7 +643,7 @@ function issueDetail(i, view, fs, act) {
     if (!brief?.markdown) return;
     if (!confirm('Send this brief to Claude (your local claude CLI, read-only, in the wixel-agent-codex checkout)?\n\nThe brief is redacted (no emails or phone numbers) but includes users\' requests, shortened. Check this is fine for your data policy.')) return;
     try {
-      await fetch(`/api/fleet/draft/${i.key}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ markdown: brief.markdown }) }).then(async (r) => {
+      await fetch(`api/fleet/draft/${i.key}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ markdown: brief.markdown }) }).then(async (r) => {
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
       });
       brief.draft = { state: 'running', startedAt: Date.now() };
@@ -719,7 +719,7 @@ function skillFixSection(i, view, fs, act, qs) {
     skillFixes.set(id, { loading: true });
     act.set({});
     try {
-      skillFixes.set(id, await getJson(`/api/fleet/skillfix/${i.key}?${qs}&skill=${encodeURIComponent(pick)}`));
+      skillFixes.set(id, await getJson(`api/fleet/skillfix/${i.key}?${qs}&skill=${encodeURIComponent(pick)}`));
     } catch (err) {
       skillFixes.set(id, { error: err.message });
     }
@@ -758,7 +758,7 @@ function skillFixCard(i, f, qs, act) {
   const ask = async () => {
     if (!confirm(`Ask Claude (your local claude CLI, read-only, in the wixel-agent-codex checkout) for a change to ${f.skill}?\n\nIt reads the codex and this evidence (redacted, but with users' requests shortened). The answer is saved for everyone using this Fleet folder.`)) return;
     try {
-      const r = await fetch(`/api/fleet/skillfix/${i.key}/claude?${qs}&skill=${encodeURIComponent(f.skill)}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+      const r = await fetch(`api/fleet/skillfix/${i.key}/claude?${qs}&skill=${encodeURIComponent(f.skill)}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
       pollSkillClaude(i.key, f.skill, slot, Date.now());
     } catch (err) {
@@ -798,7 +798,7 @@ function pollSkillClaude(key, skill, slot, started) {
   skillPolls.set(id, setTimeout(async () => {
     const el = document.getElementById(slot);
     try {
-      const st = await getJson(`/api/fleet/skillfix/${key}/claude?skill=${encodeURIComponent(skill)}`);
+      const st = await getJson(`api/fleet/skillfix/${key}/claude?skill=${encodeURIComponent(skill)}`);
       if (st.state === 'running') {
         el?.replaceChildren(h('div', { class: 'fl-draft' }, h('div', { class: 'state' }, icon('sparkle'), `Claude is reading the codex… ${Math.round((Date.now() - started) / 1000)}s`)));
         return pollSkillClaude(key, skill, slot, started);
@@ -826,7 +826,7 @@ function pollDraft(key, act) {
     const b = briefs.get(key);
     if (!b) return;
     try {
-      const d = await getJson(`/api/fleet/draft/${key}`);
+      const d = await getJson(`api/fleet/draft/${key}`);
       b.draft = { ...b.draft, ...d };
       // Update just the draft block: redrawing the panel would reset scroll and the status inputs.
       const slot = document.getElementById(`draft-${key}`);

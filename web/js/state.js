@@ -1,3 +1,4 @@
+import { caps } from './caps.js';
 // View state: persisted to localStorage (restored on reload) and mirrored into the URL hash
 // (so any view is a shareable link). The hash wins when both are present.
 
@@ -117,6 +118,8 @@ export function clearFilter(key) {
 
 // The `fam` query value for the current skill: 'default' (computed), 'all', or a comma list.
 export function famParam(skill = state.skill) {
+  // The daily build counts each skill with its computed helpers only.
+  if (caps.snapshot) return 'default';
   const f = state.families?.[skill];
   return f === undefined ? 'default' : f === 'all' ? 'all' : f.join(',');
 }

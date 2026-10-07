@@ -6,9 +6,9 @@ const listeners = new Set();
 export const onMedia = (fn) => listeners.add(fn);
 export const mediaOf = (id) => status.get(id) || null;
 export const isReady = (m) => m?.state === 'ready';
-export const videoUrl = (id) => `/media/${id}/review.mp4`;
-export const spriteUrl = (id) => `/media/${id}/sprite.jpg`;
-export const posterUrl = (id) => `/media/${id}/poster.jpg`;
+export const videoUrl = (id) => `media/${id}/review.mp4`;
+export const spriteUrl = (id) => `media/${id}/sprite.jpg`;
+export const posterUrl = (id) => `media/${id}/poster.jpg`;
 
 // Save a run's video: /download streams the exact render when there is one, else the review copy,
 // as <skill>-<title>-<date>-<id8>.mp4.
@@ -31,7 +31,7 @@ const save = (href) => {
 export function downloadRun(run, skill, which, { cc = false } = {}) {
   if (!isReady(mediaOf(run.id))) return false;
   const src = which === 'review' || which === 'exact' ? which : null;
-  save(`/download/${run.id}?name=${encodeURIComponent(downloadName(run, skill) + (src ? `-${src}` : '') + (cc ? '-captions' : ''))}${src ? `&src=${src}` : ''}${cc ? '&cc=1' : ''}`);
+  save(`download/${run.id}?name=${encodeURIComponent(downloadName(run, skill) + (src ? `-${src}` : '') + (cc ? '-captions' : ''))}${src ? `&src=${src}` : ''}${cc ? '&cc=1' : ''}`);
   return true;
 }
 
@@ -40,7 +40,7 @@ export function downloadRun(run, skill, which, { cc = false } = {}) {
 export function downloadOutput(run, output, skill) {
   if (!output?.id) return false;
   if (output.type === 'video') return downloadRun(run, skill);
-  save(`/download-asset/${run.id}/${output.id}?name=${encodeURIComponent(downloadName({ ...run, adName: output.name || run.adName }, skill || output.type))}`);
+  save(`download-asset/${run.id}/${output.id}?name=${encodeURIComponent(downloadName({ ...run, adName: output.name || run.adName }, skill || output.type))}`);
   return true;
 }
 
@@ -67,7 +67,7 @@ async function poll() {
   const ids = wanted.slice(0, 60);
   if (!ids.length) return;
   try {
-    const res = await getJson(`/api/media-batch?ids=${ids.join(',')}`);
+    const res = await getJson(`api/media-batch?ids=${ids.join(',')}`);
     const changed = [];
     for (const [id, s] of Object.entries(res)) {
       const prev = status.get(id);
@@ -84,7 +84,7 @@ async function poll() {
 // Jump the build queue for a run the user is looking at right now.
 export async function prioritize(id) {
   if (FINAL.has(status.get(id)?.state)) return status.get(id);
-  const s = await getJson(`/api/media/${id}?priority=1`).catch(() => null);
+  const s = await getJson(`api/media/${id}?priority=1`).catch(() => null);
   if (s) {
     status.set(id, s);
     for (const fn of listeners) fn([id]);

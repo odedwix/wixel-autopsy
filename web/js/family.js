@@ -1,6 +1,7 @@
 import { h, icon, getJson } from './util.js';
 import { state, set } from './state.js';
 import { popover, closePopover } from './ui.js';
+import { caps } from './caps.js';
 
 const their = (skill) => (skill.endsWith('s') ? `${skill}'` : `${skill}'s`);
 
@@ -11,13 +12,14 @@ const their = (skill) => (skill.endsWith('s') ? `${skill}'` : `${skill}'s`);
 
 const families = new Map(); // skill → /api/family result
 export async function familyInfo(skill) {
-  if (!families.has(skill)) families.set(skill, await getJson(`/api/family?skill=${encodeURIComponent(skill)}`));
+  if (!families.has(skill)) families.set(skill, await getJson(`api/family?skill=${encodeURIComponent(skill)}`));
   return families.get(skill);
 }
 
 // The family in effect for the current skill: { mode: 'default' | 'custom' | 'all', list }.
 export function currentFamily(info) {
-  const f = state.families?.[state.skill];
+  // The daily build is counted with the computed helpers only.
+  const f = caps.snapshot ? undefined : state.families?.[state.skill];
   if (f === 'all') return { mode: 'all', list: [] };
   if (Array.isArray(f)) return { mode: 'custom', list: f };
   return { mode: 'default', list: info?.family || [] };
@@ -53,29 +55,31 @@ export async function openFamilyEditor(btn) {
   const detail = new Map(info.detail.map((d) => [d.skill, d]));
   for (const s of chosen) if (!detail.has(s)) detail.set(s, { skill: s, share: null, added: true });
 
+  // The shared copy shows the computed helpers but can't recount with others (built once a day).
+  const ro = Boolean(caps.snapshot);
   const body = h('div', { class: 'fam-body' });
   const pct = (x) => `${Math.round(x * 100)}%`;
   const draw = () => {
     const rows = [...detail.values()];
     body.replaceChildren(...[
       h('label', { class: `fam-mode${mode === 'turns' ? ' on' : ''}` },
-        h('input', { type: 'radio', name: 'fam-mode', checked: mode === 'turns', onchange: () => { mode = 'turns'; draw(); } }),
+        h('input', { type: 'radio', name: 'fam-mode', checked: mode === 'turns', disabled: ro, onchange: () => { mode = 'turns'; draw(); } }),
         h('span', {}, h('b', {}, `${their(skill)} turns`), h('small', {}, `From the turn that loads ${skill}. Later turns stay with it until one loads a skill not listed below — those are other skills' work and are left out.`))),
       mode === 'turns' && info.hub ? h('p', { class: 'fam-note' }, `${skill} is a helper that loads alongside many skills, so only the turns that load it count (its partners would pull every product in).`) : null,
       mode === 'turns' && !info.hub ? h('div', { class: 'fam-list' },
         rows.length ? null : h('p', { class: 'fam-note' }, `No helpers: any other skill loaded in a later turn ends ${their(skill)} part of the session.`),
         ...rows.map((d) => h('label', { class: 'fam-row' },
-          h('input', { type: 'checkbox', checked: chosen.has(d.skill), onchange: (e) => { e.target.checked ? chosen.add(d.skill) : chosen.delete(d.skill); } }),
+          h('input', { type: 'checkbox', checked: chosen.has(d.skill), disabled: ro, onchange: (e) => { e.target.checked ? chosen.add(d.skill) : chosen.delete(d.skill); } }),
           h('span', { class: 'n' }, d.skill),
           d.hub ? h('span', { class: 'tag', title: 'Loaded alongside many skills (a shared helper)' }, 'shared') : null,
           h('span', { class: 'why' }, d.added ? 'added by you' : d.shared ? 'shared helper (any skill)' : d.via ? `sub-step of ${d.via} (${pct(d.share)} of its turns)` : `loaded with it in ${pct(d.share)} of its turns`))),
-        addRow(),
+        ro ? null : addRow(),
       ) : null,
       h('label', { class: `fam-mode${mode === 'all' ? ' on' : ''}` },
-        h('input', { type: 'radio', name: 'fam-mode', checked: mode === 'all', onchange: () => { mode = 'all'; draw(); } }),
+        h('input', { type: 'radio', name: 'fam-mode', checked: mode === 'all', disabled: ro, onchange: () => { mode = 'all'; draw(); } }),
         h('span', {}, h('b', {}, 'Whole sessions'), h('small', {}, `Everything in any session that used ${skill} at some point, including other skills' work.`))),
       info.error ? h('p', { class: 'fam-note err' }, `Couldn't load the computed helpers: ${info.error}`) : null,
-      h('div', { class: 'fam-actions' },
+      ro ? h('p', { class: 'fam-note' }, 'This shared copy is built once a day with the computed helpers. To count other helpers or whole sessions, run Autopsy locally.') : h('div', { class: 'fam-actions' },
         h('button', { class: 'btn ghost', onclick: () => apply('default') }, 'Reset to computed'),
         h('span', { style: { flex: 1 } }),
         h('button', { class: 'btn', onclick: () => apply(mode === 'all' ? 'all' : [...chosen].sort()) }, 'Apply')),

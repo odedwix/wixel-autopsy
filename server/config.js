@@ -32,10 +32,20 @@ function readTemporalKey() {
   }
 }
 
+// Shared copy: AUTOPSY_SNAPSHOT=1 serves runs, insights, families, skills and user mode only from
+// the daily build in DATA_DIR (npm run build:data) and never queries Trino, so any number of
+// people can read it at once. Fleet reads its own day files the same way (FLEET_READONLY).
+const snapshot = process.env.AUTOPSY_SNAPSHOT === '1';
+if (snapshot) process.env.FLEET_READONLY = '1';
+
 export const config = {
   root: ROOT,
-  cacheDir: path.join(ROOT, '.cache'),
+  cacheDir: path.resolve(ROOT, process.env.CACHE_DIR || '.cache'),
+  dataDir: path.resolve(ROOT, process.env.DATA_DIR || '.data'),
+  snapshot,
   port: Number(process.env.PORT || 5178),
+  // 127.0.0.1 unless hosted: anything else must sit behind the back office's staff sign-in.
+  host: process.env.HOST || '127.0.0.1',
   adminBase: 'https://bo.wix.com/_api/wixel-agent-admin/api',
   adminUi: 'https://wix-bo.com/wixel-agent/admin/#/sessions/',
   temporal: {

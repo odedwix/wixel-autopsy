@@ -55,7 +55,7 @@ function save() {
   history.replaceState(null, '', `${location.pathname}${location.search}#f=${encodeURIComponent(JSON.stringify(linkState()))}`);
 }
 export const linkState = () => ({ tab: fs.tab, days: fs.days, today: fs.today, aud: fs.aud, major: fs.major, q: fs.q, sel: fs.sel, cls: fs.cls, fix: fs.fix, status: fs.status, oppKind: fs.oppKind });
-export const fleetLink = (patch = {}) => `${location.origin}/fleet.html#f=${encodeURIComponent(JSON.stringify({ ...linkState(), ...patch }))}`;
+export const fleetLink = (patch = {}) => `${new URL('fleet.html', location.href).href}#f=${encodeURIComponent(JSON.stringify({ ...linkState(), ...patch }))}`;
 window.addEventListener('hashchange', () => {
   const v = fromHash();
   if (v) setFs(v);
@@ -76,10 +76,11 @@ async function load() {
   const t0 = Date.now();
   const tick = setInterval(() => status(`Loading ${periodText()}… ${Math.round((Date.now() - t0) / 1000)}s`), 1000);
   try {
-    const v = await getJson(`/api/fleet?${params()}`);
+    const v = await getJson(`api/fleet?${params()}`);
     if (seq !== loadSeq) return;
     view = v;
     window.__fleet = v;
+    if (v.backfill?.readOnly && fs.today) return setFs({ today: false, days: 1 });
   } catch (err) {
     if (seq !== loadSeq) return;
     toast(`Couldn't load the Fleet: ${err.message}`, { ms: 6000 });
@@ -105,7 +106,7 @@ function watchBuild() {
   if (!pending && !building) return;
   progressTimer = setTimeout(async () => {
     try {
-      const st = await getJson(`/api/fleet/status?${fs.today ? 'today=1' : `days=${fs.days}`}`);
+      const st = await getJson(`api/fleet/status?${fs.today ? 'today=1' : `days=${fs.days}`}`);
       view.backfill = st;
       const have = st.days.filter((d) => d.present).map((d) => `${d.day}:${d.builtAt}:${JSON.stringify(d.parts)}`).join(',');
       if (have !== lastHave && lastHave) {
@@ -154,6 +155,9 @@ const audLabel = () => ({ real: 'real users', all: 'everyone', internal: 'employ
 
 function draw() {
   for (const b of $('#period').querySelectorAll('button')) b.setAttribute('aria-checked', String(fs.today ? b.dataset.p === 'today' : b.dataset.p === String(fs.days)));
+  // A read-only copy only has the complete days another machine built: no "today so far".
+  const today = $('#period').querySelector('[data-p="today"]');
+  if (today) today.hidden = Boolean(view?.backfill?.readOnly);
   for (const b of $('#aud').querySelectorAll('button')) b.setAttribute('aria-checked', String(b.dataset.a === fs.aud));
   for (const b of $('#tabs').querySelectorAll('button')) b.setAttribute('aria-selected', String(b.dataset.tab === fs.tab));
   $('#major').checked = fs.major;
@@ -225,7 +229,7 @@ export const act = {
   },
   async saveState(kind, id, patch) {
     try {
-      const st = await fetch('/api/fleet/state', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind, id, patch }) }).then((r) => r.json());
+      const st = await fetch('api/fleet/state', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind, id, patch }) }).then((r) => r.json());
       if (st.error) throw new Error(st.error);
       view.state = st;
       if (kind === 'issue') for (const i of view.issues) if (i.key === id) i.status = st.issues[id] || null;
@@ -238,7 +242,7 @@ export const act = {
     }
   },
   build: async (days) => {
-    await getJson(`/api/fleet/build?days=${days}`);
+    await getJson(`api/fleet/build?days=${days}`);
     toast(`Queued the last ${days} days — they build one at a time in the background`);
     load();
   },
@@ -264,7 +268,7 @@ async function exportPdf(name) {
   const started = Date.now();
   const tick = setInterval(() => toast(`Building the PDF… ${Math.round((Date.now() - started) / 1000)}s`, { ms: 120000 }), 1000);
   try {
-    const res = await fetch(`/api/report.pdf?kind=fleet&name=${encodeURIComponent(file)}&view=${encodeURIComponent(`#f=${encodeURIComponent(JSON.stringify(linkState()))}`)}`);
+    const res = await fetch(`api/report.pdf?kind=fleet&name=${encodeURIComponent(file)}&view=${encodeURIComponent(`#f=${encodeURIComponent(JSON.stringify(linkState()))}`)}`);
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
     const blob = await res.blob();
     const a = h('a', { href: URL.createObjectURL(blob), download: `${file}.pdf` });
@@ -274,7 +278,7 @@ async function exportPdf(name) {
     toast(`Saved to Downloads: ${a.download}`, { ms: 5000 });
   } catch (err) {
     toast(`No headless Chrome (${err.message}) — opening the print dialog`, { ms: 4000 });
-    location.href = `/fleet.html?report=fleet#f=${encodeURIComponent(JSON.stringify(linkState()))}`;
+    location.href = `fleet.html?report=fleet#f=${encodeURIComponent(JSON.stringify(linkState()))}`;
   } finally {
     clearInterval(tick);
   }

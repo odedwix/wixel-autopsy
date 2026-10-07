@@ -13,10 +13,10 @@
        built by npm run build:player), loaded hidden by web/js/inspect.js while the regular copy
        plays. Same origin, so the parent drives it directly through window.autopsyLive. -->
   <div id="root"></div>
-  <script src="/player/capture-bootstrap.js"></script>
+  <script src="capture-bootstrap.js"></script>
   <script>
     // The product's platform font CSS, which its own hosts load before any text renders.
-    var fontsReady = fetch('/player/fonts.json').then(function (r) { return r.json(); }).catch(function () { return []; }).then(function (urls) {
+    var fontsReady = fetch('fonts.json').then(function (r) { return r.json(); }).catch(function () { return []; }).then(function (urls) {
       return Promise.all(urls.map(function (href) {
         return new Promise(function (resolve) {
           var l = document.createElement('link');

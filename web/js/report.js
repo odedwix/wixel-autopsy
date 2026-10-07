@@ -21,7 +21,7 @@ export async function printReport({ title, titleMeta, subtitle, fileName, links 
   const body = h('div', { class: 'rp-body' });
   root.append(
     h('header', { class: 'rp-head' },
-      h('div', { class: 'rp-brand' }, h('img', { src: '/icon.png', alt: '' }), 'Autopsy'),
+      h('div', { class: 'rp-brand' }, h('img', { src: 'icon.png', alt: '' }), 'Autopsy'),
       h('h1', {}, title, titleMeta ? h('span', { class: 'rp-meta' }, titleMeta) : null),
       subtitle ? h('p', { class: 'rp-sub' }, subtitle) : null,
       links.length ? h('div', { class: 'rp-links' }, ...links.filter(Boolean).map((l) => h('a', { href: l.href, target: '_blank', rel: 'noopener' }, l.label))) : null,
@@ -64,7 +64,7 @@ async function settle(root) {
   for (const v of root.querySelectorAll('video')) {
     // No poster: a frame grabbed from the clip by the proxy (ffmpeg, cached).
     const src = (v.getAttribute('src') || '').replace(/#.*$/, '');
-    const poster = v.getAttribute('poster') || (/^https:/.test(src) ? `/api/frame?url=${encodeURIComponent(src)}` : null);
+    const poster = v.getAttribute('poster') || (/^https:/.test(src) ? `api/frame?url=${encodeURIComponent(src)}` : null);
     if (poster) v.replaceWith(h('img', { class: v.className, src: poster, alt: '' }));
     else v.remove();
   }
@@ -98,7 +98,7 @@ export async function downloadReport({ kind, fileName, inPage }) {
   toast('Building the PDF…', { ms: 120000 });
   const tick = setInterval(() => toast(`Building the PDF… ${Math.round((Date.now() - started) / 1000)}s`, { ms: 120000 }), 1000);
   try {
-    const res = await fetch(`/api/report.pdf?kind=${kind}&name=${encodeURIComponent(fileName)}&view=${encodeURIComponent(location.hash)}`);
+    const res = await fetch(`api/report.pdf?kind=${kind}&name=${encodeURIComponent(fileName)}&view=${encodeURIComponent(location.hash)}`);
     if (res.status === 503) return inPage();
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
     const blob = await res.blob();
