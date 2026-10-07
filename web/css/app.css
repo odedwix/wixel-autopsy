@@ -474,7 +474,7 @@ input[type='range'] { width: 90px; accent-color: var(--accent); }
 .bar-row .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(12.5px * var(--fs)); }
 .bar-row .lbl small { color: var(--text-3); margin-left: 6px; }
 .bar-row .track { height: 8px; background: var(--surface-3); border-radius: 0 4px 4px 0; overflow: hidden; }
-.bar-row .fill { height: 100%; border-radius: 0 4px 4px 0; background: var(--viz-seq); }
+.bar-row .fill { display: block; height: 100%; border-radius: 0 4px 4px 0; background: var(--viz-seq); }
 .bar-row .val { text-align: right; font-variant-numeric: tabular-nums; color: var(--text-2); font-size: calc(12px * var(--fs)); }
 table.ins { width: 100%; border-collapse: collapse; font-size: calc(12.5px * var(--fs)); }
 table.ins th { text-align: right; font-weight: 500; color: var(--text-3); font-size: calc(11px * var(--fs)); padding: 0 6px 6px; cursor: pointer; white-space: nowrap; user-select: none; }
@@ -912,12 +912,39 @@ body.printing-report > :not(#report) { display: none !important; }
 #report .tl-filters, #report button.btn, #report .seg-btn, #report .ins-top, #report .scope-banner button, #report .tl-check, #report .dz-actions { display: none !important; }
 #report .tl-detail, #report .tip { display: none !important; }
 @media print {
+  /* No paper margins, so the dark background runs to the edge; the report's own padding is
+     repeated on every page instead (clone), so no page starts or ends flush against the edge. */
   @page { size: A4 landscape; margin: 0; }
   body.printing-report *, html:has(body.printing-report) { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-  #report { margin: 0; }
+  #report { margin: 0; width: auto; padding: 24px 30px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+  #report .ins-card { -webkit-box-decoration-break: clone; box-decoration-break: clone; }
   #report .rp-sec > h2, #report h3 { break-after: avoid; }
   #report .ins-card, #report .rp-fact, #report .tl-row, #report .rp-steps tr, #report .scene, #report .dz-lane, #report .err-row, #report .kv, #report .pills { break-inside: avoid; }
+  #report table.ins tr, #report .bar-row, #report .quote, #report .rep, #report .model-row, #report .headline { break-inside: avoid; }
+  /* Tall cards (report.js markBreakable) may continue on the next page, row by row. */
+  #report .ins-card.rp-breakable, #report .rp-sec.rp-breakable { break-inside: auto; }
 }
+/* One column of cards in a report: two masonry columns flow page by page on paper, so a tall card
+   that doesn't fit leaves a hole beside it and the order jumps around; full width also gives wide
+   tables (tools & methods) the room they need. On screen too, so report.js measures printed heights. */
+#report .ins-masonry { column-width: auto; column-count: 1; }
+#report .ins-wide { grid-template-columns: minmax(0, 1fr); }
+/* Everything in full on paper: labels wrap instead of being cut off with an ellipsis. */
+#report .bar-row { align-items: start; padding-top: 3px; padding-bottom: 3px; }
+#report .bar-row .track { margin-top: 0.45em; }
+#report .bar-row .lbl, #report .model-row .mn b, #report table.ins td:first-child, #report .rep .t { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; max-width: none; -webkit-line-clamp: unset; display: block; }
+#report .model-row .mn { align-items: baseline; }
+#report .model-row .mn b { min-width: 0; }
+#report .model-row .mn small { white-space: nowrap; }
+#report .bar-row .lbl small { margin-left: 6px; }
+#report .rp-note { display: block; margin-top: 2px; color: var(--text-3); font-size: calc(11px * var(--fs)); white-space: pre-wrap; overflow-wrap: anywhere; }
+#report .rp-runs { display: inline-flex; flex-wrap: wrap; gap: 8px; margin-left: 10px; }
+#report .rp-runs a.run-link { display: inline; color: var(--accent); font-size: calc(11px * var(--fs)); text-decoration: underline; text-underline-offset: 2px; }
+/* Links on paper: the item itself is the link; a dotted underline says it's clickable. */
+#report a.rp-go { color: inherit; text-decoration: underline dotted; text-decoration-color: var(--text-3); text-underline-offset: 3px; }
+#report a.finding { display: block; text-decoration: none; color: var(--text); }
+#report .chips-cloud a.chip { display: inline-flex; align-items: center; height: calc(24px * var(--fs)); padding: 0 9px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: calc(12px * var(--fs)); text-decoration: none; }
+#report .chips-cloud a.chip small { color: var(--text-3); margin-left: 5px; font-variant-numeric: tabular-nums; }
 a.run-link { color: inherit; text-decoration: none; display: block; }
 .rp-examples a.run-link { display: inline; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
 .rep a.run-link { display: inline; color: var(--accent); font-size: calc(11px * var(--fs)); margin-left: 8px; }

@@ -117,6 +117,21 @@ export function exportPdf(ins, label, act) {
   downloadReport({ kind: 'insights', fileName, inPage: () => buildInsightsPdf(ins, label, act, fileName) });
 }
 
+// Links in the PDF to the view each item opens on screen (insights.js paperHref): a search, a filter
+// added to the current ones, a failing step, a finding. In the app, so only for people running Autopsy.
+function paperHref(kind, a, b) {
+  const filters = state.filters || {};
+  const withFilter = (key, value) => appLink({ q: state.q, filters: { ...filters, [key]: [...new Set([...(filters[key] || []), value])] } });
+  if (kind === 'search') return a ? appLink({ q: a, filters }) : null;
+  if (kind === 'filter') return withFilter(a, b);
+  if (kind === 'step') return b ? withFilter('failedStep', a) : appLink({ q: a, filters });
+  if (kind === 'go') {
+    if (a?.filter) return withFilter(...a.filter);
+    if (a?.filterStep) return withFilter('failedStep', a.filterStep);
+  }
+  return null;
+}
+
 function buildInsightsPdf(ins, label, act, fileName) {
   const subject = state.mode === 'user' ? `${state.user?.email || 'user'} (all skills)` : state.skill;
   const filters = Object.entries(state.filters || {}).map(([k, v]) => `${k}: ${v.join(', ')}`).join(' · ');
@@ -128,7 +143,7 @@ function buildInsightsPdf(ins, label, act, fileName) {
     build: (body) => {
       const box = h('div', { class: 'insights rp-insights' });
       body.append(box);
-      renderInsights(box, ins, { ...act, label: act.label, share: () => {}, print: true, expanded: { tools: true }, scrollTo: null });
+      renderInsights(box, ins, { ...act, label: act.label, share: () => {}, print: true, expanded: { tools: true, models: true, all: true }, href: paperHref, scrollTo: null });
     },
   }).catch((err) => console.error(err));
 }

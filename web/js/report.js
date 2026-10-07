@@ -60,6 +60,16 @@ export async function printReport({ title, titleMeta, subtitle, fileName, links 
 
 // Media for paper: videos become their poster (or go), every image loads eagerly, and the print
 // waits (up to 15s) for them so pages don't come out with blank boxes.
+// Cards stay whole on paper unless they're tall: one over ~half a printed page may continue onto the
+// next (its border repeats there), so it doesn't leave the rest of its page empty. The report is
+// laid out at its printed width, so heights measured now are the printed ones.
+const PAGE_PX = (210 / 25.4) * 96 / ZOOM; // A4 landscape height, in the report's unzoomed pixels
+function markBreakable(root) {
+  for (const card of root.querySelectorAll('.ins-card, .rp-sec')) {
+    card.classList.toggle('rp-breakable', card.getBoundingClientRect().height / ZOOM > PAGE_PX * 0.5);
+  }
+}
+
 async function settle(root) {
   for (const v of root.querySelectorAll('video')) {
     // No poster: a frame grabbed from the clip by the proxy (ffmpeg, cached).
@@ -86,6 +96,7 @@ async function settle(root) {
     new Promise((r) => setTimeout(r, 15000)),
   ]);
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  markBreakable(root);
 }
 
 // Save a report straight to Downloads: the proxy renders it with headless Chrome (server/pdf.js)
