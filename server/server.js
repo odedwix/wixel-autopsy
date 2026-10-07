@@ -4,7 +4,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { config } from './config.js';
 import { getSessionBundle } from './admin.js';
-import { normalizeSession, turnOwnership } from './normalize.js';
+import { normalizeSession, turnOwnership, detailTimeSplit } from './normalize.js';
 import { getGenerationTrace, getJobTrace } from './temporal.js';
 import { listRuns, listSkills, getIndexedRun, runsIndex, runsForDay, familyFor, resolveFamily, listUserRuns } from './runs.js';
 import { rememberUser, resolveUser } from './users.js';
@@ -140,6 +140,7 @@ const routes = [
     // With a skill: which turns count for it (the rest are other skills' work).
     const skill = q.get('skill');
     if (skill) rec.scope = turnOwnership(rec, skill, await resolveFamily(skill, q.get('fam')));
+    rec.timeSplit = detailTimeSplit(rec);
     return rec;
   }],
   [/^\/api\/trace\/([\w-]{36})$/, async ([, wid], q) => getGenerationTrace(wid, { fresh: q.get('fresh') === '1' })],

@@ -16,9 +16,10 @@ const SPRITE_FRAMES = 60;
 const SHORT_SIDE = 540;
 const CONCURRENCY = 2;
 // Recorded in each build's meta (v2 = root voiceover/music tracks mixed in; v4 = the run's own video,
-// not the project's root asset, and the root voiceover read from where the product keeps it). Older
-// assembled copies are rebuilt when next asked for.
-const ASSEMBLY_VERSION = 4;
+// not the project's root asset, and the root voiceover read from where the product keeps it; v5 = as
+// long as the product's video: music or voice-over that outlasts the scenes plays on over white).
+// Older assembled copies are rebuilt when next asked for.
+const ASSEMBLY_VERSION = 5;
 
 const dirFor = (id) => path.join(MEDIA, id);
 const exists = (f) => fs.access(f).then(() => true, () => false);
@@ -112,14 +113,30 @@ async function assemble(src, out) {
       ? `[${i}:a]atrim=start=${start}:duration=${len},asetpts=PTS-STARTPTS,volume=${s.clipVolume},aresample=48000,aformat=channel_layouts=stereo,apad=whole_dur=${len}[a${i}]`
       : `anullsrc=r=48000:cl=stereo,atrim=duration=${len}[a${i}]`);
   });
-  const n = src.scenes.length;
-  parts.push(`${src.scenes.map((_, i) => `[v${i}][a${i}]`).join('')}concat=n=${n}:v=1:a=1[v][clips]`);
-  let aout = '[clips]';
   // Root audio tracks (voiceover / music components). When a music component exists, the legacy
   // background_music setting describes the same track — use one, not both.
   const tracks = (src.rootAudio || []).filter((t) => t.volume > 0);
   const hasMusicTrack = tracks.some((t) => t.kind === 'music');
-  let next = n;
+  const m = hasMusicTrack ? null : src.music;
+  const musicOn = Boolean(m?.url && m.enabled !== false);
+  // The product's video runs until the last of the scenes, the music and the voice-over ends
+  // (wixel-video-bm RemotionRoot: durationInFrames = max(scenes, music end, every TTS end), on a white
+  // background), so a 30 s music bed under 9 s of scenes plays on over white. This copy does the same,
+  // so it's as long as the Exact composition and Exact downloads get the whole soundtrack from it.
+  // A track's end counts whatever its volume, as the product's does.
+  const trackEnd = (t) => (t.durationSec ? t.shiftSec + t.durationSec - t.trimStartSec - (t.trimEndSec || 0) : 0);
+  const musicEnd = musicOn && m.duration ? Number(m.shift || 0) + Number(m.duration) - Number(m.trim_start || 0) - Number(m.trim_end || 0) : 0;
+  const end = Math.max(total, musicEnd, ...(src.rootAudio || []).map(trackEnd));
+  const tail = end - total >= 0.05 ? end - total : 0;
+  let n = src.scenes.length;
+  if (tail) {
+    parts.push(`color=c=white:s=${W}x${H}:r=24:d=${tail},setsar=1[v${n}]`, `anullsrc=r=48000:cl=stereo,atrim=duration=${tail}[a${n}]`);
+    n++;
+    total = end;
+  }
+  parts.push(`${Array.from({ length: n }, (_, i) => `[v${i}][a${i}]`).join('')}concat=n=${n}:v=1:a=1[v][clips]`);
+  let aout = '[clips]';
+  let next = src.scenes.length;
   const mixIns = [];
   for (const t of tracks) {
     args.push('-i', t.url);
@@ -132,8 +149,7 @@ async function assemble(src, out) {
     parts.push(`[clips]${mixIns.join('')}amix=inputs=${mixIns.length + 1}:duration=first:normalize=0[withroot]`);
     aout = '[withroot]';
   }
-  const m = hasMusicTrack ? null : src.music;
-  if (m?.url && m.enabled !== false) {
+  if (musicOn) {
     args.push('-i', m.url);
     const mi = next;
     const shift = Number(m.shift || 0);
@@ -324,6 +340,19 @@ export async function forgetMedia(ids) {
     n++;
   }
   return { forgotten: n };
+}
+
+// The run's review copy at the current assembly version, built now (ahead of the queue) if it's
+// missing or stale. Exact downloads take their soundtrack from it. Resolves with its path, or null.
+export async function currentReviewFile(run, timeoutMs = 180000) {
+  if (!run?.id) return null;
+  const t0 = Date.now();
+  for (;;) {
+    const st = await mediaStatus(run, { priority: true });
+    if (st.state === 'ready') return mediaFile(run.id, 'review.mp4');
+    if (['failed', 'unavailable'].includes(st.state) || Date.now() - t0 > timeoutMs) return null;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
 }
 
 export function mediaFile(id, name) {

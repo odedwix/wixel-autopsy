@@ -48,6 +48,14 @@
         return handle;
       },
     };
+    // Keys pressed with the focus in here (after a click on the player) go to the run view: ~ toggles
+    // full screen there (inspect.js togglePlayerFullscreen), so it works the same wherever the focus is.
+    window.addEventListener('keydown', function (e) {
+      if ((e.code === 'Backquote' || e.key === '`' || e.key === '~') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        parent.postMessage({ type: 'autopsy-key', code: 'Backquote' }, location.origin);
+      }
+    });
   </script>
 </body>
 </html>

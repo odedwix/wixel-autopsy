@@ -3,7 +3,7 @@ import { state, set, onChange, toggleFilter, clearFilter, famParam } from './sta
 import { FACETS, OUTCOMES, SORTS, applyFilters, facetCounts, facetOptions, outputProfile, setProfile, typeLabel, primaryOutput, expectedTypes, applyExpected, setExpected, setModelNamer, hasAd, pluralOf } from './filters.js';
 import { initGrid, setRuns, relayout, markSelected, scrollToIndex, columns, applySound, stopHover, isVideoRun } from './grid.js';
 import { downloadOutput, mediaOf, resetMedia } from './media.js';
-import { initInspect, openInspect, closeInspect, inspectedPlayer, prefetchDetail, toggleLive, toggleWide, setInspectTabByIndex, listLoaded, downloadExactRun, clearDetails } from './inspect.js';
+import { initInspect, openInspect, closeInspect, inspectedPlayer, prefetchDetail, toggleLive, toggleWide, setInspectTabByIndex, listLoaded, downloadExactRun, clearDetails, togglePlayerFullscreen } from './inspect.js';
 import { modelName, pricesReady } from './models.js';
 import { computeInsights, renderInsights, headlines } from './insights.js';
 import { setSkills, renderSkillButton, openSkillPicker, rememberSkill } from './skillpicker.js';
@@ -722,6 +722,12 @@ document.addEventListener('keydown', (e) => {
     return stepText(/Equal|Add/.test(e.code) ? 1 : /Minus|Subtract/.test(e.code) ? -1 : 0);
   }
   if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+  // ~ (the key left of 1, by position: with or without Shift, in any keyboard layout): the run's player
+  // full screen and back, with the pointer over it.
+  if (e.code === 'Backquote' || e.key === '`' || e.key === '~') {
+    if (togglePlayerFullscreen()) e.preventDefault();
+    return;
+  }
   const p = inspectedPlayer();
   const k = e.key;
   const act = {

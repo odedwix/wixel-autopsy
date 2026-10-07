@@ -1,5 +1,6 @@
 // Session bundle (admin API) → one run record the UI can render without further parsing.
 import { ownedAssetIds, writePath, jobTypes } from './own-assets.js';
+import { splitTime } from './time-split.js';
 
 const ms = (t) => (t ? Date.parse(t) : null);
 
@@ -424,6 +425,9 @@ export function normalizeSession(bundle, opts = {}) {
             volume: p.volume == null ? 1 : Number(p.volume),
             shiftSec: Number(p.frame_shift || 0) / 24,
             trimStartSec: Number(p.trim_start || 0) / 24,
+            // Where it ends on the timeline (the product runs the video until its last track ends).
+            durationSec: Number(p.duration) || null,
+            trimEndSec: Number(p.trim_end || 0) / 24,
           })),
         captions: root.externalConfig?.captionsStyle ?? null,
         styleGuidelines: root.externalConfig?.context?.style_guidelines ?? null,
@@ -616,6 +620,22 @@ export function normalizeSession(bundle, opts = {}) {
 // ownCtes). A turn loading the skill (skill tool or preload) claims the session; later turns stay
 // with it until one loads a skill outside `family`. `family: null` counts every turn. Turn order
 // is by start time.
+// Where the counted turns' time went (time-split.js), from the session's own steps: the run view's
+// bar, also for runs whose day hasn't got step data (the steps query can time out on a busy cluster).
+export function detailTimeSplit(rec) {
+  const owned = rec.scope && !rec.scope.whole ? new Set(rec.scope.owned) : null;
+  const mine = (turnId) => !owned || owned.has(turnId);
+  const steps = (rec.steps || []).filter((x) => mine(x.turnId) && x.startedAt);
+  const turns = (rec.turns || []).filter((t) => mine(t.turnId) && t.startedAt).map((t) => {
+    const last = Math.max(t.startedAt, ...steps.filter((x) => x.turnId === t.turnId).map((x) => x.endedAt || x.startedAt));
+    return [t.startedAt, t.endedAt || last];
+  });
+  return splitTime({
+    turns,
+    calls: steps.map((x) => ({ tool: x.tool, method: x.method, failed: x.status === 'failed', unfinished: x.jobStatus === 'IN_PROGRESS' && !x.resultUrl, start: x.startedAt, end: x.endedAt || x.startedAt + Number(x.durationMs || 0) })),
+  });
+}
+
 export function turnOwnership(rec, skill, family) {
   const loads = new Map();
   const firstAt = new Map();

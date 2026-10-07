@@ -3,6 +3,8 @@ import { sql, getJson } from './admin.js';
 import { config } from './config.js';
 import { limited } from './limits.js';
 import { cached, readCache, writeCache, readStale } from './cache.js';
+import { splitTime } from './time-split.js';
+import { inBackground } from './context.js';
 import { RUNS_QUERY_VERSION, STEPS_QUERY_VERSION, runsDayQuery, eventsDayQuery, stepsDayQuery, skillsQuery, runsIndexQuery, lastSeenQuery, skillPairsQuery } from './queries.js';
 import { ownedAssetIds, writePath, jobTypes } from './own-assets.js';
 
@@ -616,7 +618,21 @@ export function runsIndex({ skill, days = 7, fresh = false }) {
 }
 
 // Per-session step stats for one day (insights). Cached on the same rules as the day's rows.
-function dayStepRows(scope, day, { fresh = false } = {}) {
+// While a query version is new, the day's steps from the version before are served (they lack only what
+// the new one added) and the new ones load in the background: a version bump would otherwise make every
+// day wait on the steps query again, and that one can time out for minutes on a busy cluster.
+const prevStepsKey = (scope, day) => `v${STEPS_QUERY_VERSION - 1}__${scopeKey(scope)}__${day}`;
+async function dayStepRows(scope, day, { fresh = false } = {}) {
+  if (!fresh && (await readStale('steps-day', stepsKey(scope, day))) === undefined) {
+    const prev = await readStale('steps-day', prevStepsKey(scope, day));
+    if (prev !== undefined) {
+      inBackground(() => buildStepRows(scope, day)).catch((err) => console.error(`steps ${scope.skill || 'user'} ${day}: ${err.message}`));
+      return prev;
+    }
+  }
+  return buildStepRows(scope, day, { fresh });
+}
+function buildStepRows(scope, day, { fresh = false } = {}) {
   const final = dayFinal(day);
   const key = stepsKey(scope, day);
   return cached('steps-day', key, fresh ? 0 : final ? Infinity : 3 * 60000, async () => {
@@ -631,11 +647,35 @@ function dayStepRows(scope, day, { fresh = false } = {}) {
 const SEP = String.fromCharCode(31);
 // Steps travel as compact tuples: [tool, method, model, calls, failures, totalMs, maxMs, firstError,
 // graph (the Genix graph a media job ran, for its price), billed seconds (asked for by the calls that succeeded)].
+// The query's 11th field (the calls' spans) stays on the server: timeBreakdown reads it.
 function parseSteps(list) {
   return (list || []).map((x) => {
     const [tool, method, model, n, errs, ms, maxMs, err, graph, billed] = x.split(SEP);
     return [tool, method || null, model || null, Number(n), Number(errs), Number(ms), Number(maxMs), err || null, graph || null, Number(billed || 0)];
   });
+}
+
+// ---- where a run's time went (time-split.js) ----
+// The steps query's turn marks (turn␟s|e␟ms) and, per step, its calls' spans (flag:end:duration).
+function timeBreakdown(sr) {
+  const turns = new Map();
+  for (const m of sr.turn_marks || []) {
+    const [turn, which, ms] = String(m).split(SEP);
+    const t = turns.get(turn) || {};
+    if (which === 's') t.s = Math.min(t.s ?? Infinity, Number(ms));
+    else t.e = Math.max(t.e ?? 0, Number(ms));
+    turns.set(turn, t);
+  }
+  const lastMs = Number(sr.last_ms) || 0;
+  const calls = [];
+  for (const x of sr.steps || []) {
+    const f = String(x).split(SEP);
+    if (f[10]) for (const c of f[10].split(',')) {
+      const [flag, end, dur] = c.split(':').map(Number); // flag: 0 ok, 1 failed, 2 returned with its job still running
+      calls.push({ tool: f[0], method: f[1], failed: flag === 1, unfinished: flag === 2, start: end - dur, end });
+    }
+  }
+  return splitTime({ turns: [...turns.values()].filter((t) => t.s != null).map((t) => [t.s, t.e ?? lastMs]), calls });
 }
 
 function stepFields(sr) {
@@ -653,6 +693,7 @@ function stepFields(sr) {
     firstTurnDoneAt: done[0] ?? null,
     intent: sr.intent || null,
     llmErrors: Number(sr.llm_errors || 0),
+    time: timeBreakdown(sr),
   };
 }
 
@@ -669,7 +710,7 @@ async function scopedDay(scope, day, sampleRate = 1, { fresh = false, fromHour =
     const timed = (p) => p.then((v) => ({ ...v, ms: Date.now() - t0 }));
     const [r, st] = await Promise.all([
       timed(topUp('runs-day', rowsKey(scope, day), ttl, () => buildDayRows(scope, day, hours), () => dayRows(scope, day, { fresh: true }))),
-      timed(topUp('steps-day', stepsKey(scope, day), ttl, () => sliced((h) => stepsDayQuery({ scope, day, hours: h }), hours), () => dayStepRows(scope, day, { fresh: true }))).catch(() => ({ all: [], part: [], ms: null })),
+      timed(topUp('steps-day', stepsKey(scope, day), ttl, () => sliced((h) => stepsDayQuery({ scope, day, hours: h }), hours), () => dayStepRows(scope, day))).catch(() => ({ all: [], part: [], ms: null })),
     ]);
     console.log(`top-up ${scope.skill} ${day} from ${hours[0]}:00 — ${r.part ? `${r.part.length} sessions` : 'whole day (not cached)'} in ${r.ms}ms, steps ${st.ms}ms`);
     rawRows = r.part || r.all;

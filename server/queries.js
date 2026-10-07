@@ -344,7 +344,7 @@ FROM ${skillLoads(skill, (c) => `${c} >= current_timestamp - INTERVAL '90' DAY`)
 // Per-session step stats and timing for insights: per (tool, method, model) calls / failures /
 // time, plus request → first generation → last good generation → turn completions, and the
 // first turn's classified intent. Computed in Trino so insights never fetch sessions one by one.
-export const STEPS_QUERY_VERSION = 4;
+export const STEPS_QUERY_VERSION = 6;
 export function stepsDayQuery({ scope, day, hours = [0, 24] }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw new Error(`bad day ${day}`);
   checkHours(hours);
@@ -357,7 +357,7 @@ e AS (
   WHERE ${windowOf('x.created_date', day, hours)}
 ),
 calls AS (
-  SELECT session_id, tool_call.tool_call_id AS cid, element_at(tool_call.arguments, 'method') AS method,
+  SELECT session_id, tool_call.tool_call_id AS cid, created_date AS call_at, element_at(tool_call.arguments, 'method') AS method,
          json_extract_scalar(element_at(tool_call.arguments, 'requestJson'), '$.parameters.model') AS pmodel,
          TRY_CAST(json_extract_scalar(element_at(tool_call.arguments, 'requestJson'), '$.parameters.duration') AS double) AS pdur
   FROM e WHERE entry_type = 'TOOL_CALL'
@@ -365,6 +365,7 @@ calls AS (
 res AS (
   SELECT session_id, tool_result.tool_call_id AS cid, tool_result.tool_name AS tool, created_date,
          ${failed} AS failed,
+         element_at(tool_result.result, 'output') LIKE '%"status":"IN_PROGRESS"%' AS unfinished,
          TRY_CAST(element_at(metadata, 'durationMs') AS double) AS ms,
          CASE WHEN tool_result.tool_name IN ('generate_image', 'edit_image') THEN json_extract_scalar(element_at(tool_result.result, 'output'), '$.model') END AS omodel,
          -- The Genix graph a media job ran: the key into the product's price list (ListCosts).
@@ -377,7 +378,16 @@ st AS (
          count(*) AS n, count_if(r.failed) AS errs, sum(r.ms) AS ms, max(r.ms) AS max_ms,
          min_by(r.msg, r.created_date) FILTER (WHERE r.failed) AS err,
          arbitrary(r.graph) FILTER (WHERE r.graph IS NOT NULL) AS graph,
-         sum(c.pdur) FILTER (WHERE NOT r.failed) AS billed_sec
+         sum(c.pdur) FILTER (WHERE NOT r.failed) AS billed_sec,
+         -- Where the time went (runs.js timeBreakdown): each call that is a generation, a sub-agent, a
+         -- question to the user or a failure, as flag:end ms:duration ms (flag 0 ok, 1 failed, 2 returned
+         -- with its job still running; a call blocks until its job is done, so end − duration is when it
+         -- started). Everything else counts as the agent's own time.
+         -- (No durationMs on some results, ask_user's among them: then from the call's own time.)
+         array_agg(concat_ws(':', IF(r.failed, '1', IF(r.unfinished, '2', '0')), CAST(CAST(round(to_unixtime(r.created_date) * 1000) AS bigint) AS varchar),
+             CAST(CAST(round(coalesce(r.ms, date_diff('millisecond', c.call_at, r.created_date))) AS bigint) AS varchar)))
+           FILTER (WHERE coalesce(r.ms, date_diff('millisecond', c.call_at, r.created_date)) > 0 AND (r.failed OR r.tool IN ('generate_image', 'edit_image', 'convert_image_format', 'sequence', 'analyze_image', 'ask_user', 'task')
+             OR (r.tool = 'invoke_rpc' AND regexp_like(coalesce(c.method, ''), '^generate|^Generate|^holdStill|^transformVideo|LogoShot|Animation$|Speech|Music|InvokeImageWorkflow|composeImage|DescribeVideo|mergeVoice')))) AS spans
   FROM res r LEFT JOIN calls c ON c.session_id = r.session_id AND c.cid = r.cid
   GROUP BY 1, 2, 3, 4
 ),
@@ -388,7 +398,11 @@ timing AS (
     max(created_date) FILTER (WHERE entry_type = 'TOOL_RESULT' AND element_at(tool_result.result, 'jobId') IS NOT NULL AND NOT ${failed}) AS last_gen_ok_at,
     array_agg(created_date) FILTER (WHERE entry_type = 'TURN_BOUNDARY' AND turn_boundary.kind LIKE '%COMPLETED%') AS turn_done_ats,
     min_by(element_at(system_event.payload, 'intentSubcategory'), sequence) FILTER (WHERE entry_type = 'SYSTEM_EVENT' AND system_event.event_name = 'turn_analysis') AS intent,
-    count(DISTINCT id) FILTER (WHERE entry_type = 'MODEL_CALL' AND model_call.status NOT LIKE '%SUCCESS%') AS llm_errors
+    count(DISTINCT id) FILTER (WHERE entry_type = 'MODEL_CALL' AND model_call.status NOT LIKE '%SUCCESS%') AS llm_errors,
+    -- Each counted turn's start and end as turn␟s|e␟ms (a turn still open ends at last_ms).
+    array_agg(concat_ws(chr(31), turn_id, IF(turn_boundary.kind LIKE '%STARTED%', 's', 'e'), CAST(CAST(round(to_unixtime(created_date) * 1000) AS bigint) AS varchar)))
+      FILTER (WHERE entry_type = 'TURN_BOUNDARY' AND turn_id IS NOT NULL) AS turn_marks,
+    CAST(round(to_unixtime(max(created_date)) * 1000) AS bigint) AS last_ms
   FROM e GROUP BY 1
 )
 SELECT t.*, s.steps
@@ -396,7 +410,7 @@ FROM timing t
 LEFT JOIN (
   SELECT session_id, array_agg(concat_ws(chr(31), tool, method, model, CAST(n AS varchar), CAST(errs AS varchar),
     CAST(CAST(coalesce(round(ms), 0) AS bigint) AS varchar), CAST(CAST(coalesce(round(max_ms), 0) AS bigint) AS varchar),
-    coalesce(replace(err, chr(31), ' '), ''), coalesce(graph, ''), CAST(coalesce(round(billed_sec, 1), 0) AS varchar))) AS steps
+    coalesce(replace(err, chr(31), ' '), ''), coalesce(graph, ''), CAST(coalesce(round(billed_sec, 1), 0) AS varchar), coalesce(array_join(spans, ','), ''))) AS steps
   FROM st GROUP BY 1
 ) s ON s.session_id = t.session_id
 ORDER BY t.session_id`;

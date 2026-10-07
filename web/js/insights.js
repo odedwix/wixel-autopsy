@@ -1,5 +1,6 @@
 import { h, icon, dur, fmtInt, ago } from './util.js';
 import { hasAd, failedRun, attempted, downloaded, worstMood, MOOD, stepKey, getProfile, typeLabel, madeLabel, STOPS } from './filters.js';
+import { timeBar, averageTime, TIME_PARTS } from './timebar.js';
 import { modelStats, money } from './models.js';
 
 // Insights over the runs in view (skill + window + filters + search). Everything is computed in
@@ -290,6 +291,18 @@ export function learn(ins, runs) {
   // skill can do, missing material, content policy, undecided).
   const stalled = runs.filter((r) => (r.userMessages || 0) >= 3 && !hasAd(r) && !walled(r) && !r.errors);
   if (stalled.length >= 3) add(45, 'info', [h('b', {}, String(stalled.length)), ` runs went ${Math.round(stalled.reduce((a, r) => a + r.userMessages, 0) / stalled.length)} messages without making anything, with no error or credit wall`], 'Usually the request itself (asks beyond the skill, missing material, content policy, undecided users) — about 7 in 10 such runs in a review of 18. Open them to read the conversation.', { search: null, ids: stalled.map((r) => r.id) });
+  // 7b. Where the time goes: the biggest part beyond the agent's own work, when it's a big one.
+  const avgTime = averageTime(runs);
+  if (avgTime && avgTime.n >= 5) {
+    const PHRASE = { errors: 'lost to failed calls and calls that gave up', waiting: 'spent waiting on the user', subagents: 'spent waiting on sub-agents', video: 'video generation', image: 'image generation', music: 'music generation', audio: 'voice generation', text: 'image and video analysis' };
+    const ranked = Object.entries(avgTime.shares).filter(([k, v]) => k !== 'agent' && v > 0).sort((a, b) => b[1] - a[1]);
+    const [k, v] = ranked[0] || [];
+    if (k && v >= 0.15) {
+      const bad = k === 'errors' || k === 'waiting';
+      add(bad ? 62 + v * 30 : 38, bad ? 'bad' : 'info', [h('b', {}, P(v)), ` of a run's time is ${PHRASE[k]}`],
+        `Across ${avgTime.n} runs (median ${dur(avgTime.medianSec * 1000)}): ${ranked.slice(0, 3).map(([x, y]) => `${TIME_PARTS[x].label.toLowerCase()} ${P(y)}`).join(', ')}, the agent itself ${P(avgTime.shares.agent || 0)}.`, { section: 'time' });
+    }
+  }
   // 8. Used or not.
   if (enough(ins.finished.length)) {
     const used = ins.finished.filter((r) => downloaded(r) || r.publishedUrl).length / ins.finished.length;
@@ -450,6 +463,13 @@ export function renderInsights(root, ins, act) {
       ins.modelRows.length > 12 ? h('button', { class: 'linkish', onclick: () => { act.expanded.models = !act.expanded.models; act.rerender(); } }, act.expanded.models ? 'Show fewer' : `Show all ${ins.modelRows.length}`) : null)
       : h('p', { class: 'desc' }, 'No generation calls in these runs.'));
 
+  // Where a run's time goes (server/time-split.js), every run counting the same.
+  const avgTime = averageTime(act.runs?.() || []);
+  const timeCard = card('time', 'Where a run’s time goes', avgTime
+    ? `From the first message to the end of the last turn, every moment counted once (two videos generating at the same time are one stretch of video time). The average of ${fmtInt(avgTime.n)} runs, each counting the same; the median run takes ${dur(avgTime.medianSec * 1000)}.`
+    : null,
+    avgTime ? timeBar(avgTime.shares) : h('p', { class: 'desc' }, 'No step data for these runs yet: the steps query can time out while Trino is busy. Refresh a little later.'));
+
   // What we learned: the numbers, read.
   const found = learn(ins, act.runs?.() || []);
   const learned = card('learned', 'What the numbers say', 'The findings worth knowing in these runs, each with its evidence. Click one to see the runs behind it.',
@@ -527,7 +547,7 @@ export function renderInsights(root, ins, act) {
   root.replaceChildren(h('div', { class: 'ins-top' }, h('p', { class: 'ins-note' }, `Insights for ${act.label()}. Click anything to see the runs.`),
       h('button', { class: 'btn', onclick: (e) => act.share(e.currentTarget) }, icon('external'), 'Share insights')),
     h('div', { class: 'ins-wide' }, learned, modelsCard),
-    h('div', { class: 'ins-masonry' }, funnel, errors, mood, asks),
+    h('div', { class: 'ins-masonry' }, timeCard, funnel, errors, mood, asks),
     act.print ? h('div', { class: 'ins-masonry' }, ...all)
       : h('details', { class: 'ins-all', open: Boolean(act.expanded?.all) || ['tools', 'timing', 'repeats', 'trend', 'versions', 'overview'].includes(act.scrollTo), ontoggle: (e) => { act.expanded.all = e.target.open; } },
         h('summary', {}, 'All the numbers', h('small', {}, 'overview tiles, every tool, where the time goes, repeated requests, runs per day, skill versions')),

@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process';
 import os from 'node:os';
 import { config } from './config.js';
 import { withChrome, waitFor } from './pdf.js';
-import { mediaFile } from './media.js';
+import { currentReviewFile, mediaFile } from './media.js';
 
 // The Exact composition as an mp4, for runs with no render: the product's own player (text
 // overlays, captions, music) in headless Chrome, sized to the composition, seeked frame by frame and
@@ -34,14 +34,38 @@ function run(cmd, args) {
   });
 }
 
+// Seconds of sound in a file (its first audio stream), or null.
+function audioSeconds(file) {
+  return new Promise((resolve) => {
+    const p = spawn('ffprobe', ['-v', 'error', '-select_streams', 'a:0', '-show_entries', 'stream=duration', '-of', 'csv=p=0', file], { stdio: ['ignore', 'pipe', 'ignore'] });
+    let out = '';
+    p.stdout.on('data', (d) => (out += d));
+    p.on('error', () => resolve(null));
+    p.on('close', () => resolve(Number.parseFloat(out) || null));
+  });
+}
+
 // v2: captions only when a person turned them on (v1 copies kept the agent's own captions).
-const EXACT_VERSION = 2;
+// v3: the soundtrack runs as long as the video (v2 took it from a review copy that stopped with the
+// scenes, so a video whose music plays on past them went silent there; media.js ASSEMBLY_VERSION 5).
+const EXACT_VERSION = 3;
 export async function exactStatus(id, { cc = false } = {}) {
   if (jobs.has(jobKey(id, cc))) return jobs.get(jobKey(id, cc));
-  const meta = JSON.parse(await fs.readFile(path.join(dirFor(id), cc ? 'exact-cc.json' : 'exact.json'), 'utf8').catch(() => '{}'));
-  if ((meta.v || 1) < EXACT_VERSION) return { state: 'none' };
+  const metaFile = path.join(dirFor(id), cc ? 'exact-cc.json' : 'exact.json');
+  const meta = JSON.parse(await fs.readFile(metaFile, 'utf8').catch(() => '{}'));
+  const v = meta.v || 1;
+  if (v < 2) return { state: 'none' };
   const st = await fs.stat(exactFile(id, { cc })).catch(() => null);
-  return st ? { state: 'ready', bytes: st.size } : { state: 'none' };
+  if (!st) return { state: 'none' };
+  // A v2 copy is rebuilt only if its sound stops early (most were fine); checked once, remembered.
+  if (v === 2 && meta.audio !== 'none' && meta.frames) {
+    if (meta.audioSec == null) {
+      meta.audioSec = (await audioSeconds(exactFile(id, { cc }))) ?? 0;
+      await fs.writeFile(metaFile, JSON.stringify(meta)).catch(() => {});
+    }
+    if (meta.audioSec < meta.frames / meta.fps - 0.2) return { state: 'none' };
+  }
+  return { state: 'ready', bytes: st.size };
 }
 
 export async function startExact(run0, { cc = false } = {}) {
@@ -82,6 +106,8 @@ async function capture(r, job, cc = false) {
   await fs.rm(frames, { recursive: true, force: true });
   await fs.mkdir(frames, { recursive: true });
   let meta;
+  // The soundtrack comes from the review copy, rebuilt meanwhile if it's from an older assembly.
+  const review = currentReviewFile(r).catch(() => null);
   await withChrome(async ({ send, newPage }) => {
     job.state = 'loading';
     // The run's video, or its story (drawn as timed scenes by the same player; see player.js).
@@ -115,7 +141,8 @@ async function capture(r, job, cc = false) {
     }));
   });
   job.state = 'encoding';
-  const audio = mediaFile(r.id, 'review.mp4');
+  // (A rebuild that can't run, e.g. for a run opened from a link and not in the list, leaves the copy there is.)
+  const audio = (await review) || mediaFile(r.id, 'review.mp4');
   const hasAudio = Boolean(audio && (await fs.stat(audio).catch(() => null)));
   const out = exactFile(r.id, { cc });
   await run('ffmpeg', ['-y', '-v', 'error', '-framerate', String(meta.fps), '-i', path.join(frames, 'f%05d.jpg'),
@@ -123,6 +150,7 @@ async function capture(r, job, cc = false) {
     '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
     '-t', String(meta.frames / meta.fps), `${out}.tmp.mp4`]);
   await fs.rename(`${out}.tmp.mp4`, out);
+  const audioSec = hasAudio ? await audioSeconds(out) : null;
   await fs.rm(frames, { recursive: true, force: true });
-  await fs.writeFile(path.join(dirFor(r.id), cc ? 'exact-cc.json' : 'exact.json'), JSON.stringify({ ...meta, v: EXACT_VERSION, pages: job.pages, captions: cc ? 'on' : 'only if a person turned them on', builtMs: Date.now() - job.startedAt, audio: hasAudio ? 'assembled copy' : 'none', at: Date.now() }));
+  await fs.writeFile(path.join(dirFor(r.id), cc ? 'exact-cc.json' : 'exact.json'), JSON.stringify({ ...meta, v: EXACT_VERSION, pages: job.pages, audioSec, captions: cc ? 'on' : 'only if a person turned them on', builtMs: Date.now() - job.startedAt, audio: hasAudio ? 'assembled copy' : 'none', at: Date.now() }));
 }

@@ -965,7 +965,6 @@ a.run-link { color: inherit; text-decoration: none; display: block; }
 .vm-row .ts-val { min-width: 42px; text-align: center; font-variant-numeric: tabular-nums; }
 /* A run that only made something else (an image where the skill makes videos). */
 .thumb img.poster.other { opacity: 0.35; filter: grayscale(0.6); }
-.dl-main .dl-tag { margin-left: 2px; padding: 0 5px; border-radius: 8px; background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); font-size: calc(10px * var(--fs)); font-weight: 600; letter-spacing: 0.02em; }
 details.section.ids > summary { cursor: pointer; color: var(--text-3); font-size: calc(11.5px * var(--fs)); }
 details.section.ids[open] > summary { margin-bottom: 8px; }
 
@@ -980,6 +979,27 @@ details.section.ids[open] > summary { margin-bottom: 8px; }
 .model-row .mbar { height: 8px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
 .model-row .mbar i { display: block; height: 100%; border-radius: 4px; background: var(--viz-seq); }
 .model-row .mbar.cost i { background: #c98500; }
+/* Where a run's time went: one bar (each part its share, labelled when wide enough) and a legend. Part
+   colours match the model kinds above; waiting is striped grey, the agent's own time neutral. */
+.timebar { margin-top: 2px; }
+.tbar { display: flex; gap: 1px; height: calc(22px * var(--fs)); border-radius: 6px; overflow: hidden; background: var(--surface-3); }
+.tbar i { min-width: 2px; display: flex; align-items: center; justify-content: center; overflow: hidden; white-space: nowrap; font-style: normal; font-size: calc(11px * var(--fs)); font-weight: 600; font-variant-numeric: tabular-nums; color: #fff; text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35); }
+.tbar i.tk-agent { color: var(--text); text-shadow: none; }
+.tlegend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; font-size: calc(12px * var(--fs)); color: var(--text-2); }
+.tlegend span { display: inline-flex; align-items: center; gap: 6px; cursor: default; }
+.tlegend i { flex: none; width: 9px; height: 9px; border-radius: 2px; }
+.tlegend b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.tlegend small { color: var(--text-3); font-variant-numeric: tabular-nums; }
+.tnote { margin: 8px 0 0; }
+.tk-video { background: #3987e5; }
+.tk-image { background: #d95926; }
+.tk-music { background: #c98500; }
+.tk-audio { background: #199e70; }
+.tk-text { background: #8a63d2; }
+.tk-subagents { background: #2a9fb0; }
+.tk-errors { background: var(--err); }
+.tk-waiting { background: repeating-linear-gradient(135deg, #7d8590 0 5px, #67707a 5px 10px); }
+.tk-agent { background: var(--viz-none); }
 .mk { flex: none; width: 8px; height: 8px; border-radius: 2px; align-self: center; }
 .mk.video { background: #3987e5; }
 .mk.image { background: #d95926; }

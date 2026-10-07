@@ -8,6 +8,7 @@ import { CAT_COLOR, CAT_LABEL } from './insights.js';
 import { caps, capsReady, HINT } from './caps.js';
 import { toast, popover, closePopover } from './ui.js';
 import { MOOD, worstMood, failedRun, hasAd, primaryOutput, typeLabel, getExpected, STOPS, stopFact } from './filters.js';
+import { runTimeBar } from './timebar.js';
 import { isVideoRun } from './grid.js';
 import { mediaOf, isReady, prioritize, onMedia, videoUrl, spriteUrl, posterUrl, placeSprite, downloadRun, downloadOutput } from './media.js';
 import { showUser } from './skillpicker.js';
@@ -400,13 +401,13 @@ async function downloadExact(run) {
   let s = exactState.get(key);
   if (s?.state !== 'ready') s = await getJson(`/api/exact/${run.id}?start=1${q}`).catch((e) => ({ state: 'failed', error: e.message }));
   while (['queued', 'loading', 'rendering', 'encoding'].includes(s?.state)) {
-    toast(s.state === 'rendering' ? `Rendering the exact composition${cc ? ' with captions' : ''}… ${s.done} / ${s.total} frames` : s.state === 'encoding' ? 'Encoding the mp4…' : 'Loading the product player…', { ms: 5000 });
+    toast(s.state === 'rendering' ? `Preparing the video${cc ? ' with captions' : ''}… ${s.done} / ${s.total} frames` : s.state === 'encoding' ? 'Encoding the mp4…' : 'Loading the product player…', { ms: 5000 });
     await new Promise((r) => setTimeout(r, 1500));
     s = await getJson(`/api/exact/${run.id}?${q.slice(1)}`).catch(() => s);
   }
   exactState.set(key, s);
-  if (s?.state !== 'ready') return toast(`Couldn't render the exact composition: ${s?.error || 'unknown error'}`, { ms: 8000 });
-  toast(`Exact composition ready — downloading${cc ? ' (with captions)' : ''}`, { ms: 3000 });
+  if (s?.state !== 'ready') return toast(`Couldn't prepare the video: ${s?.error || 'unknown error'}`, { ms: 8000 });
+  toast(`Video ready — downloading${cc ? ' (with captions)' : ''}`, { ms: 3000 });
   downloadRun(run, fileSkill(), 'exact', { cc });
   if (current?.run.id === run.id) panel.querySelector('.insp-head')?.replaceWith(header(current.run, current.detail || null));
 }
@@ -424,10 +425,10 @@ function downloadChoices(r) {
   if (isVideoRun(run) && hasAd(run)) {
     const ex = exactState.get(`${run.id}${viewerCaptions(run) ? '|cc' : ''}`);
     const rendering = ['queued', 'loading', 'rendering', 'encoding'].includes(ex?.state);
-    if (m?.kind === 'render') out.push({ label: story ? 'Story — exact' : 'Video — exact', sub: story ? 'The story export the user made (up to date with the story)' : 'The file the user got: full quality, with text, captions and music', go: () => downloadRun(run, fileSkill()) || notReady() });
+    if (m?.kind === 'render') out.push({ label: story ? 'Story' : 'Video', sub: story ? 'The story export the user made (up to date with the story)' : 'The file the user got: full quality, with text, captions and music', go: () => downloadRun(run, fileSkill()) || notReady() });
     else if (exactRoot(run) && caps.exact) {
       out.push({
-        label: story ? 'Story — exact' : 'Video — exact',
+        label: story ? 'Story' : 'Video',
         sub: `${ex?.state === 'ready' ? 'As the product plays it: text overlays and music' : rendering ? `Rendering… ${ex.done || 0} / ${ex.total || '?'} frames` : 'As the product plays it — renders in ~2 min the first time'} · ${viewerCaptions(run) ? 'with captions (you turned them on)' : 'captions only if the user turned them on'}`,
         go: () => downloadExact(run),
       });
@@ -444,8 +445,8 @@ function downloadChoices(r) {
 export function downloadExactRun(run) {
   const m = mediaOf(run.id);
   if (m?.kind === 'render') return downloadRun(run, fileSkill()) || toast('The video is still being prepared — try again in a moment');
-  if (!exactRoot(run)) return toast('This run has no finished video (only clips) — nothing exact to download');
-  if (!caps.exact) return toast('Exact downloads need Google Chrome and the player build (npm run build:player)', { ms: 6000 });
+  if (!exactRoot(run)) return toast('This run has no finished video (only clips) — nothing to download');
+  if (!caps.exact) return toast('Video downloads need Google Chrome and the player build (npm run build:player)', { ms: 6000 });
   return downloadExact(run);
 }
 
@@ -454,7 +455,7 @@ export function downloadExactRun(run) {
 function downloadButton(r) {
   const choices = downloadChoices(r);
   if (!choices.length) return null;
-  if (choices.length === 1) return h('button', { class: 'btn dl-main', title: `${choices[0].label}: ${choices[0].sub} (D)`, onclick: () => choices[0].go() }, icon('download'), 'Download', choices[0].label.endsWith('exact') ? h('small', { class: 'dl-tag' }, 'exact') : null);
+  if (choices.length === 1) return h('button', { class: 'btn dl-main', title: `${choices[0].label}: ${choices[0].sub} (D)`, onclick: () => choices[0].go() }, icon('download'), 'Download');
   const btn = h('button', { class: 'btn dl-main', title: 'Choose what to download (D)', onclick: () => {
     let group = null;
     const rows = [];
@@ -581,21 +582,33 @@ function showExact(on) {
   syncExactUi();
 }
 
-// The Exact switch in the regular player's controls shows how the preload is going.
-function syncExactUi() {
-  const btn = panel?.querySelector('#playerMount .pv-main .controls .mode');
-  const x = current?.exact;
-  if (!btn) return;
-  btn.classList.toggle('loading', Boolean(x && !x.ready && !x.error));
-  btn.title = !x ? 'Exact composition (E)' : x.error ? `Exact player failed: ${x.error}` : x.ready ? 'Switch to the exact composition (E)' : `${x.status} — switches automatically when ready (E)`;
-  const lbl = btn.querySelector('span');
-  if (lbl) lbl.textContent = !x ? 'Exact' : x.error ? 'Exact ✕' : x.ready ? 'Exact' : 'Exact…';
+// No switch on screen any more (one player at a time, and E for anyone who wants the other); kept as
+// the hook the preload calls.
+function syncExactUi() {}
+
+// ~ : the player on screen (the product's own, or the regular copy) full screen, and back. From the app's
+// keys only with the pointer over the player; from inside the product player (live.html forwards it)
+// always, since the focus being there means it's the one in use.
+export function togglePlayerFullscreen({ hovered = true } = {}) {
+  if (document.fullscreenElement) {
+    document.exitFullscreen?.().catch(() => {});
+    return true;
+  }
+  const mount = panel?.querySelector('#playerMount');
+  if (!mount || (hovered && !mount.matches(':hover'))) return false;
+  const stage = mount.querySelector(current?.exact?.shown ? '.pv-exact .stage' : '.pv-main:not([hidden]) .stage') || mount.querySelector('.stage');
+  if (!stage) return false;
+  stage.requestFullscreen?.().catch(() => {});
+  return true;
 }
+window.addEventListener('message', (e) => {
+  if (e.origin === location.origin && e.data?.type === 'autopsy-key' && e.data.code === 'Backquote') togglePlayerFullscreen({ hovered: false });
+});
 
 export function toggleLive() {
   if (!current || !hasAd(current.run)) return;
   if (caps.live && current.exact) {
-    if (!current.exact.ready) return toast(current.exact.error ? `Exact player failed: ${current.exact.error}` : `${current.exact.status} — it takes over by itself when ready`, { ms: 4000 });
+    if (!current.exact.ready) return toast(current.exact.error ? `The product’s player failed: ${current.exact.error}` : `${current.exact.status} — it takes over by itself when ready`, { ms: 4000 });
     current.preferRegular = current.exact.shown;
     return showExact(!current.exact.shown);
   }
@@ -629,12 +642,11 @@ class ReviewPlayer {
     this.muteBtn = h('button', { title: 'Mute', onclick: () => { this.v.muted = !this.v.muted; this.sync(); } }, icon('volume'));
     const src = meta.kind === 'render' ? 'Exact render' : meta.kind === 'assembled' ? 'Assembled — no text/captions' : 'Single clip';
     const canExact = Boolean(exactRoot(run)) && meta.kind !== 'render';
-    this.modeBtn = h('button', { class: 'mode', title: 'Switch to the exact composition (E)', onclick: () => toggleLive() }, icon('sparkle', 'sm'), h('span', {}, 'Exact'));
     const controls = h('div', { class: 'controls' }, this.playBtn, this.time, h('span', { style: { flex: 1 } }), this.rateBtn, this.muteBtn,
-      h('button', { title: 'Download the exact output (D)', onclick: () => panel.querySelector('.insp-head .dl-main')?.click() }, icon('download')), canExact ? this.modeBtn : null,
+      h('button', { title: 'Download (D)', onclick: () => panel.querySelector('.insp-head .dl-main')?.click() }, icon('download')),
       h('button', { title: 'Fullscreen', onclick: () => stage.requestFullscreen?.() }, icon('expand')));
     const note = h('div', { class: 'src-note' }, h('span', { class: 'dot', style: { background: meta.kind === 'render' ? 'var(--ok)' : meta.kind === 'assembled' ? 'var(--info)' : 'var(--warn)' } }),
-      h('span', {}, `${meta.label} · ${meta.duration.toFixed(1)}s · ${src === 'Exact render' ? 'what the user got' : !canExact ? 'no finished composition to show exactly' : caps.live ? 'the exact composition takes over as soon as it has loaded' : 'press E for the exact composition'}`));
+      h('span', {}, `${meta.label} · ${meta.duration.toFixed(1)}s · ${src === 'Exact render' ? 'what the user got' : !canExact ? 'no finished composition to show exactly' : caps.live ? 'the product’s own player takes over as soon as it has loaded' : 'press E for the product’s own player'}`));
     mount.replaceChildren(stage, this.scrub, controls, note);
 
     this.v.addEventListener('timeupdate', () => this.sync());
@@ -843,16 +855,15 @@ class ExactLayer {
     this.onReady = onReady;
     this.onStatus = onStatus;
     this.t0 = Date.now();
-    this.frame = h('iframe', { src: '/player/live.html', allow: 'autoplay; fullscreen', title: 'Exact composition' });
+    this.frame = h('iframe', { src: '/player/live.html', allow: 'autoplay; fullscreen', title: 'The product’s own player' });
     this.ccBtn = h('button', { class: 'mode cc', title: 'Captions (C)', hidden: true, onclick: () => this.setCaptions(!this.captions) }, h('span', {}, 'CC'));
     this.noteText = h('span', {}, '');
     this.el = h('div', { class: 'pv-exact' },
       h('div', { class: 'stage' }, this.frame),
-      h('div', { class: 'controls' }, h('span', { class: 'time' }, 'Exact composition'), h('span', { style: { flex: 1 } }), this.ccBtn,
-        h('button', { class: 'mode on', title: 'Back to the regular copy (E)', onclick: () => toggleLive() }, icon('sparkle', 'sm'), h('span', {}, 'Exact')),
+      h('div', { class: 'controls' }, h('span', { style: { flex: 1 } }), this.ccBtn,
         h('button', { title: 'Download (D)', onclick: () => panel.querySelector('.insp-head .dl-main')?.click() }, icon('download'))),
       h('div', { class: 'src-note' }, h('span', { class: 'dot', style: { background: 'var(--ok)' } }), this.noteText));
-    this.status = 'Loading the exact composition';
+    this.status = 'Loading the product’s own player';
     this.ticker = setInterval(() => !this.ready && !this.error && this.onStatus?.(), 1000);
     this.frame.addEventListener('load', () => this.load(), { once: true });
   }
@@ -872,7 +883,7 @@ class ExactLayer {
       if (!live?.available) throw new Error('the Exact player isn’t built — run npm run build:player');
       const input = await getJson(`/api/player-input/${this.run.id}?root=${exactRoot(this.run)}&captions=${this.captions ? 1 : 0}`);
       this.hasCaptions = Boolean(input.autopsy?.hasCaptions);
-      this.status = 'Loading every scene of the exact composition';
+      this.status = 'Loading every scene';
       this.handle = await live.load(input, { controls: true });
       this.ready = true;
       clearInterval(this.ticker);
@@ -880,8 +891,8 @@ class ExactLayer {
       this.ccBtn.classList.toggle('on', this.captions);
       const story = !this.run.videoAssetId;
       this.noteText.textContent = story
-        ? `Exact story · ${(this.handle.frames / this.handle.fps).toFixed(1)}s — every page drawn by the product's own components (clip, text, images) for its duration, with the voice-over and music; page transitions, music ducking and the story's caption style aren't reproduced`
-        : `Exact composition · ${(this.handle.frames / this.handle.fps).toFixed(1)}s — the product’s own player: text overlays, music and timing as the user saw them${this.hasCaptions ? ` · captions ${this.captions ? 'on' : 'off (CC)'}` : ''}`;
+        ? `The story · ${(this.handle.frames / this.handle.fps).toFixed(1)}s — every page drawn by the product's own components (clip, text, images) for its duration, with the voice-over and music; page transitions, music ducking and the story's caption style aren't reproduced`
+        : `The product’s own player · ${(this.handle.frames / this.handle.fps).toFixed(1)}s — text overlays, music and timing as the user saw them${this.hasCaptions ? ` · captions ${this.captions ? 'on' : 'off (CC)'}` : ''}`;
       this.onStatus?.();
       this.onReady?.();
     } catch (err) {
@@ -1137,9 +1148,18 @@ function ids(r, d) {
     ));
 }
 
+// Where this run's time went, from its first message to the end of its last counted turn (the run's
+// own steps; the list row's when the detail has none), every moment counted once.
+function timeSection(r, d) {
+  const t = d.timeSplit || r.time;
+  const bar = runTimeBar(t);
+  if (!bar) return null;
+  return section('Where the time went', dur(t.total * 1000), bar);
+}
+
 function details(r, d) {
   if (d.error) return [h('div', { class: 'loading-line' }, `Couldn't load this run: ${d.error}`)];
-  return [outcome(r, d), request(d), modelsSection(d), errorsSection(d), mood(d), scenes(d), ids(r, d)].filter(Boolean);
+  return [outcome(r, d), timeSection(r, d), request(d), modelsSection(d), errorsSection(d), mood(d), scenes(d), ids(r, d)].filter(Boolean);
 }
 
 export { worstMood };
