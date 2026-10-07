@@ -25,27 +25,8 @@
       <kbd>/</kbd>
     </div>
     <div class="spacer"></div>
-    <label class="field">
-      <span class="field-label">Sort</span>
-      <select id="sort">
-        <option value="newest">Newest</option>
-        <option value="oldest">Oldest</option>
-        <option value="errors">Most errors</option>
-        <option value="longest">Longest run</option>
-        <option value="generations">Most generations</option>
-        <option value="cost">Highest cost</option>
-      </select>
-    </label>
-    <div class="seg" id="aspect" role="radiogroup" aria-label="Card shape" title="Card shape (A)">
-      <button data-aspect="auto" title="Auto — from what the skill makes">Auto</button>
-      <button data-aspect="9:16" title="Vertical"><span class="shape v"></span></button>
-      <button data-aspect="1:1" title="Square"><span class="shape s"></span></button>
-      <button data-aspect="16:9" title="Horizontal"><span class="shape h"></span></button>
-    </div>
-    <input id="size" type="range" min="120" max="360" step="10" title="Card size (+ / −)" aria-label="Card size" />
-    <button id="sound" class="icon-btn" title="Sound on hover (S)"><svg class="i"><use href="#i-volume" /></svg></button>
-    <button id="textSize" class="icon-btn text-size" title="Text size (⌥+ / ⌥− / ⌥0)">Aa</button>
-    <button id="theme" class="icon-btn" title="Theme"><svg class="i"><use href="#i-contrast" /></svg></button>
+    <button id="refresh" class="btn refresh-btn" title="Refresh: add the runs that started since the last load, and update recent ones (R) — Shift-click: query everything again"><svg class="i"><use href="#i-refresh" /></svg><span>Refresh</span></button>
+    <button id="viewBtn" class="icon-btn" title="View: sort, card shape and size, sound, text size, theme"><svg class="i"><use href="#i-sliders" /></svg></button>
     <button id="help" class="icon-btn" title="Keyboard shortcuts (?)"><svg class="i"><use href="#i-keyboard" /></svg></button>
   </header>
   <div class="loadbar" id="loadbar"><i></i></div>
@@ -54,13 +35,16 @@
   <div class="layout">
     <aside class="filters" id="filters" aria-label="Filters"></aside>
     <main class="main">
-      <div class="tabs" role="tablist">
-        <button role="tab" data-tab="videos" title="Outputs (V)"><span id="tabMain">Videos</span> <kbd>V</kbd></button>
-        <button role="tab" data-tab="insights" title="Insights (I)">Insights <kbd>I</kbd></button>
-        <div class="profile" id="profile" title="What this skill makes, learned from its runs"></div>
+      <div class="resultbar">
+        <div class="tabs" role="tablist">
+          <button role="tab" data-tab="videos" title="Outputs (V)"><span id="tabMain">Videos</span></button>
+          <button role="tab" data-tab="insights" title="Insights (I)">Insights</button>
+        </div>
+        <div class="seg outcome" id="outcome" role="radiogroup" aria-label="Result"></div>
+        <button class="btn filters-btn" id="filtersBtn" title="More filters (F)"><svg class="i"><use href="#i-sliders" /></svg>Filters<span class="cnt" id="filtersCnt"></span></button>
+        <div class="chips" id="chips"></div>
+        <div class="headlines" id="headlines"></div>
       </div>
-      <div class="summary" id="summary"></div>
-      <div class="subbar"><div class="chips" id="chips"></div><div class="headlines" id="headlines"></div></div>
       <div class="insights" id="insights" hidden></div>
       <div class="grid-scroll" id="gridScroll" tabindex="0">
         <div class="grid-sizer" id="gridSizer"></div>
@@ -81,18 +65,21 @@
         <dt>Space</dt><dd>Play / pause</dd>
         <dt>, / .</dt><dd>Step one frame</dd>
         <dt>Shift + ← →</dt><dd>Seek 1s</dd>
-        <dt>E</dt><dd>Exact live player ↔ review copy</dd>
-        <dt>1 – 6</dt><dd>Details tabs: overview, timeline, scenes, brand, assets, raw</dd>
+        <dt>E</dt><dd>Exact composition ↔ regular copy (the exact one takes over by itself once loaded)</dd>
+        <dt>C</dt><dd>Captions on / off (exact composition)</dd>
+        <dt>1 – 5</dt><dd>Details tabs: overview, timeline, scenes, brand &amp; media, raw</dd>
         <dt>W</dt><dd>Wide details panel</dd>
         <dt>/</dt><dd>Search runs</dd>
         <dt>⌘K</dt><dd>Switch skill</dd>
-        <dt>V / I</dt><dd>Videos / Insights</dd>
+        <dt>V / I</dt><dd>Outputs / Insights</dd>
+        <dt>R</dt><dd>Refresh: add new runs since the last load, update recent ones</dd>
+        <dt>Shift + R</dt><dd>Refresh everything (every day queried again)</dd>
         <dt>F</dt><dd>Toggle filters</dd>
         <dt>S</dt><dd>Sound on hover</dd>
         <dt>A</dt><dd>Card shape</dd>
         <dt>+ / −</dt><dd>Card size</dd>
         <dt>O</dt><dd>Open in Wixel admin</dd>
-        <dt>D</dt><dd>Download — opens the menu (full ad regular / exact, other outputs)</dd>
+        <dt>D</dt><dd>Download the exact output (the user's render, or the exact composition)</dd>
         <dt>⌥+ ⌥− ⌥0</dt><dd>Text size bigger / smaller / reset</dd>
       </dl>
     </div>
@@ -124,6 +111,8 @@
       <symbol id="i-expand" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
       <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></symbol>
       <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/></symbol>
+      <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></symbol>
       <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/></symbol>
     </defs>
   </svg>

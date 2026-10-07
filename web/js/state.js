@@ -14,7 +14,7 @@ const defaults = {
   size: 200,
   sound: true,
   theme: 'dark',
-  filtersOpen: true,
+  filtersOpen: false,
   selected: null,
   open: false,
   tab: 'videos',
@@ -56,6 +56,21 @@ function fromStorage() {
 export const state = { ...defaults, ...fromStorage(), ...fromHash() };
 // One-time: card shape now defaults to "auto" (from the skill's outputs); older saved states had 9:16.
 if (!state.shapeAuto) Object.assign(state, { aspect: 'auto', shapeAuto: true });
+// One-time (simpler filters): the filter panel starts closed, and filters whose facet is gone
+// (output type — now automatic — video render, agent) or merged (feedback → mood; downloaded from
+// the editor / via the agent → downloaded) carry over in their new form.
+if (!state.filtersV2) {
+  const f = { ...(state.filters || {}) };
+  const out = {};
+  if (f.outcome?.length) out.outcome = [f.outcome[0]];
+  const delivery = [...new Set((f.delivery || []).map((v) => (v === 'user-dl' || v === 'agent-dl' ? 'downloaded' : v)))];
+  if (delivery.length) out.delivery = delivery;
+  const mood = [...(f.mood || []).filter((v) => v === 'frustrated' || v === 'confused'), ...(f.feedback || []).filter((v) => v === 'up' || v === 'down')];
+  if (mood.length) out.mood = mood;
+  for (const k of ['user', 'issues', 'failedStep', 'source', 'skillsUsed']) if (f[k]?.length) out[k] = f[k].filter((v) => v !== 'stream' && v !== 'unknown');
+  for (const k of Object.keys(out)) if (!out[k].length) delete out[k];
+  Object.assign(state, { filters: out, filtersOpen: false, filtersV2: true });
+}
 
 const listeners = new Set();
 export const onChange = (fn) => listeners.add(fn);
@@ -69,8 +84,8 @@ export function set(patch, { silent = false } = {}) {
 }
 
 function save() {
-  const { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab, inspectTab, inspectWide, shapeAuto, recentSkills, mode, user, recentUsers, families, showOther, textScale } = state;
-  const persisted = { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab, inspectTab, inspectWide, shapeAuto, recentSkills, mode, user, recentUsers, families, showOther, textScale };
+  const { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab, inspectTab, inspectWide, shapeAuto, filtersV2, recentSkills, mode, user, recentUsers, families, showOther, textScale } = state;
+  const persisted = { skill, days, q, sort, filters, aspect, size, sound, theme, filtersOpen, selected, open, tab, inspectTab, inspectWide, shapeAuto, filtersV2, recentSkills, mode, user, recentUsers, families, showOther, textScale };
   try {
     localStorage.setItem(KEY, JSON.stringify(persisted));
   } catch {}

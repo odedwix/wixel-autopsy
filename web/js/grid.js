@@ -135,9 +135,11 @@ function render() {
 
 // Review media (hover video, sprite) only exists for video outputs.
 const primary = (r) => primaryOutput(r);
+// Stories play like videos: their review copy is the user's story export, or assembled from its pages.
+const PLAYABLE = new Set(['video', 'story']);
 const isVideoRun = (r) => {
   const p = primary(r);
-  return p ? p.type === 'video' : r.generations > 0 && !r.outputs?.length;
+  return p ? PLAYABLE.has(p.type) : r.generations > 0 && !r.outputs?.length && !r.otherOutputs?.length;
 };
 const wantsMedia = (r) => r && (hasAd(r) || r.generations > 0) && isVideoRun(r);
 
@@ -249,8 +251,10 @@ function fillThumb(c, r) {
   const m = video ? mediaOf(r.id) : null;
   const keepVideo = hover.card === c ? hover.video : null;
   thumb.replaceChildren();
-  const poster = isReady(m) ? `/media/${r.id}/poster.jpg` : p?.thumb || r.thumbnail;
-  if (poster) thumb.append(h('img', { class: 'poster', src: poster, loading: 'lazy', decoding: 'async', alt: '' }));
+  // A run that only made other things (an image where the skill makes videos) shows that, dimmed.
+  const other = !p ? r.otherOutputs?.find((o) => o.thumb) : null;
+  const poster = isReady(m) ? `/media/${r.id}/poster.jpg` : p?.thumb || (p || !r.otherOutputs?.length ? r.thumbnail : null) || other?.thumb;
+  if (poster) thumb.append(h('img', { class: `poster${other ? ' other' : ''}`, src: poster, loading: 'lazy', decoding: 'async', alt: '' }));
   else if (failedRun(r)) {
     thumb.append(h('div', { class: 'empty err' }, icon('alert'), h('b', {}, 'Tried, no output'), r.firstError ? h('div', { class: 'msg' }, r.firstError) : null));
   } else if (!attempted(r)) {
@@ -274,7 +278,8 @@ function fillThumb(c, r) {
   }
   const n = r.outputs?.length || 0;
   if (n > 1) thumb.append(h('span', { class: 'badge br', title: r.outputs.map((o) => `${typeLabel(o.type)} · ${o.name || ''}`).join('\n') }, `${n} outputs`));
-  if (failedRun(r) && poster) thumb.append(h('span', { class: 'badge br fail' }, 'No output'));
+  if (other) thumb.append(h('span', { class: 'badge br fail', title: r.otherOutputs.map((o) => `${typeLabel(o.type)} · ${o.name || ''}`).join('\n') }, `No ${typeLabel(getProfile()[0]?.type || 'output').toLowerCase()} · made ${typeLabel(other.type).toLowerCase()} instead`));
+  else if (failedRun(r) && poster) thumb.append(h('span', { class: 'badge br fail' }, 'No output'));
   if (keepVideo) thumb.append(keepVideo);
 }
 

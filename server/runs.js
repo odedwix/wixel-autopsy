@@ -2,8 +2,9 @@ import crypto from 'node:crypto';
 import { sql, getJson } from './admin.js';
 import { config } from './config.js';
 import { limited } from './limits.js';
-import { cached, readCache, writeCache } from './cache.js';
+import { cached, readCache, writeCache, readStale } from './cache.js';
 import { RUNS_QUERY_VERSION, STEPS_QUERY_VERSION, runsDayQuery, eventsDayQuery, stepsDayQuery, skillsQuery, runsIndexQuery, lastSeenQuery, skillPairsQuery } from './queries.js';
+import { ownedAssetIds, writePath, jobTypes } from './own-assets.js';
 
 const DAY = 86400000;
 const utcDay = (t) => new Date(t).toISOString().slice(0, 10);
@@ -25,29 +26,34 @@ async function mapLimit(items, limit, fn) {
 // IN (...) lists are chunked: the SQL endpoint rejects statements over 64KB (~1,400 ids).
 const chunks = (arr, n = 1000) => Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
 
-async function sessionAttrs(ids, day) {
+// `skipDim`: the dimension table lags about a day, so for a top-up of the last day it has nothing yet.
+async function sessionAttrs(ids, day, { skipDim = false } = {}) {
   if (!ids.length) return new Map();
   if (ids.length > 1000) {
-    const parts = await Promise.all(chunks(ids).map((c) => sessionAttrs(c, day)));
+    const parts = await Promise.all(chunks(ids).map((c) => sessionAttrs(c, day, { skipDim })));
     return new Map(parts.flatMap((m) => [...m]));
   }
   const list = ids.map(lit).join(',');
+  // Results over 500 rows come back a page at a time and each page re-runs the query, so every
+  // query here orders by a unique key: otherwise pages can repeat rows and miss others.
   const [dim, crud] = await Promise.all([
-    sql(`SELECT session_id, agent_name, subject, session_source, caller_name, device_type, total_cost_usd, credits_charged_usd
-         FROM prod.wixel.agent_session_dim WHERE session_id IN (${list})`),
+    skipDim ? [] : sql(`SELECT session_id, agent_name, subject, session_source, caller_name, device_type, total_cost_usd, credits_charged_usd
+         FROM prod.wixel.agent_session_dim WHERE session_id IN (${list}) ORDER BY session_id`),
     // The dim table lags; the CRUD stream covers today's sessions.
-    sql(`SELECT id, max_by(agent_name, revision) AS agent_name, max_by(subject, revision) AS subject, max_by(project_id, revision) AS project_id
+    sql(`SELECT id, max_by(agent_name, revision) AS agent_name, max_by(subject, revision) AS subject, max_by(project_id, revision) AS project_id,
+           max_by(session_type, revision) AS session_type, max_by(parent_session_id, revision) AS parent_session_id
          FROM domain_events.www_wixel_agent.v1_session_crud
-         WHERE id IN (${list}) AND created_date >= TIMESTAMP '${day} 00:00:00' - INTERVAL '1' DAY GROUP BY id`),
+         WHERE id IN (${list}) AND created_date >= TIMESTAMP '${day} 00:00:00' - INTERVAL '1' DAY GROUP BY id ORDER BY id`),
   ]);
   const m = new Map();
-  for (const r of crud) m.set(r.id, { agent_name: r.agent_name, title: r.subject, project_id: r.project_id });
+  // A sub-agent session (session_type SUB, with a parent): campaigns making several assets at once.
+  for (const r of crud) m.set(r.id, { agent_name: r.agent_name, title: r.subject, project_id: r.project_id, source: /SUB/i.test(r.session_type || '') ? 'sub-agent' : undefined, parent_session_id: r.parent_session_id || null });
   for (const r of dim) {
     m.set(r.session_id, {
       ...m.get(r.session_id),
       agent_name: r.agent_name || m.get(r.session_id)?.agent_name,
       title: r.subject || m.get(r.session_id)?.title,
-      source: r.session_source,
+      source: r.session_source || m.get(r.session_id)?.source,
       caller_name: r.caller_name,
       device_type: r.device_type,
       total_cost_usd: r.total_cost_usd,
@@ -80,25 +86,52 @@ async function projectSignals(projectIds, day) {
            min(_event_time) FILTER (WHERE published_info IS NOT NULL) AS published_at
          FROM domain_events.www_asset.v1_asset_crud
          WHERE parent_id IS NULL AND _event_time >= ${since} AND project_id IN (${list})
-         GROUP BY 1, 2`),
+         GROUP BY 1, 2 ORDER BY 1, 2`),
     sql(`SELECT project_id, asset_id, count(*) AS n, max(date_created) AS at, max_by(asset_url, date_created) AS url,
            max_by(REGEXP_EXTRACT(additional_info, 'fileType:([^,]+)', 1), date_created) AS file_type
          FROM events.dbo.users_193
          WHERE evid = 19 AND result = 'success' AND date_created >= ${since} AND project_id IN (${list})
-         GROUP BY 1, 2`),
+         GROUP BY 1, 2 ORDER BY 1, 2`),
   ]);
   const m = new Map();
+  const seen = new Set();
   for (const a of assets) {
+    if (seen.has(a.asset_id)) continue;
+    seen.add(a.asset_id);
     const p = m.get(a.project_id) || { assets: [], downloads: [] };
     p.assets.push(a);
     m.set(a.project_id, p);
   }
+  const seenDl = new Set();
   for (const d of downloads) {
+    if (seenDl.has(`${d.project_id}/${d.asset_id}`)) continue;
+    seenDl.add(`${d.project_id}/${d.asset_id}`);
     const p = m.get(d.project_id) || { assets: [], downloads: [] };
     p.downloads.push(d);
     m.set(d.project_id, p);
   }
   return m;
+}
+
+// Pages and scenes a run wrote → the top-level asset they belong to (two levels at most).
+async function topLevelOf(ids, day) {
+  const out = new Map();
+  let todo = [...new Set(ids)];
+  for (let level = 0; level < 2 && todo.length; level++) {
+    const rows = (await Promise.all(chunks(todo).map((c) => sql(`SELECT id, max_by(parent_id, _event_time) AS parent
+      FROM domain_events.www_asset.v1_asset_crud
+      WHERE id IN (${c.map(lit).join(',')}) AND _event_time >= TIMESTAMP '${day} 00:00:00' - INTERVAL '7' DAY
+      GROUP BY 1 ORDER BY 1`)))).flat();
+    const next = [];
+    for (const r of rows) {
+      if (!r.parent) continue;
+      for (const [child, top] of [...out].filter(([, t]) => t === r.id)) out.set(child, r.parent);
+      if (!out.has(r.id)) out.set(r.id, r.parent);
+      next.push(r.parent);
+    }
+    todo = next;
+  }
+  return out;
 }
 
 // ---- account → user type ----
@@ -108,7 +141,21 @@ async function projectSignals(projectIds, day) {
 // 64KB SQL cap, and fast enough to stay under the endpoint's 30s when Trino is busy).
 let accountTypes;
 let teamSet;
-export async function resolveUserTypes(accountIds) {
+// One lookup at a time: a second caller waits and then finds the accounts already resolved.
+let typesChain = Promise.resolve();
+export function resolveUserTypes(accountIds) {
+  const run = typesChain.then(() => lookUpUserTypes(accountIds));
+  typesChain = run.catch(() => {});
+  return run;
+}
+// What's known now, without waiting for new accounts (they resolve in the background).
+const knownUserType = (id) => (!id ? 'unknown' : teamSet?.has(id) ? 'wixel-team' : accountTypes?.[id] || 'unknown');
+async function userTypesWithin(accountIds, ms) {
+  const work = resolveUserTypes(accountIds);
+  work.catch(() => {});
+  return (await Promise.race([work, new Promise((r) => setTimeout(() => r(null), ms))])) || knownUserType;
+}
+async function lookUpUserTypes(accountIds) {
   accountTypes ??= (await readCache('meta', 'account-types', Infinity)) || {};
   teamSet ??= new Set(await cached('meta', 'wixel-team', DAY, async () => ({
     value: (await sql('SELECT DISTINCT account_id FROM sandbox.www.slides_employees_team')).map((r) => r.account_id),
@@ -169,17 +216,17 @@ function scopeKey(sc) {
   return `${sc.skill}__${Array.isArray(sc.family) ? `f${hash([...sc.family].sort().join(','))}` : 'all'}${sc.sample ? `__s${sc.sample}` : ''}`;
 }
 
-// Session events arrive per turn (id␟turn[␟value]); keep the ones from counted turns (and
-// session-level ones with no turn). All asset writes are still counted once, so a run whose only
-// writes were other skills' work shows no outputs instead of falling back to project assets.
+// Session events arrive per turn (id␟turn[␟value…]); keep the ones from counted turns (and
+// session-level ones with no turn). Asset evidence from other skills' turns is dropped, so a run
+// whose only writes were other skills' work shows no outputs.
 function eventFields(e, ownedTurns) {
   const owned = ownedTurns ? new Set(ownedTurns) : null;
+  const SEP = String.fromCharCode(31);
   const parse = (list) => (list || []).map((x) => {
-    const [id, turn, ...rest] = String(x).split(String.fromCharCode(31));
-    return { id, turn, value: rest.join(String.fromCharCode(31)) };
+    const [id, turn, ...rest] = String(x).split(SEP);
+    return { id, turn, value: rest.join(SEP), parts: rest };
   });
   const mine = (list) => parse(list).filter((x) => !owned || !x.turn || owned.has(x.turn));
-  const assets = parse(e.asset_events_t);
   return {
     thumbs_up: mine(e.thumbs_up_t).length,
     thumbs_down: mine(e.thumbs_down_t).length,
@@ -187,32 +234,86 @@ function eventFields(e, ownedTurns) {
     out_of_funds: mine(e.out_of_funds_t).length,
     stream_errors: mine(e.stream_errors_t).length,
     asset_events: mine(e.asset_events_t).map((x) => x.value),
-    all_asset_events: assets.length,
+    asset_writes: mine(e.asset_writes_t).map((x) => ({ ...writePath(x.parts[0]), intent: x.parts[1] || null, type: x.parts[2] || null })),
+    asset_mentions: mine(e.asset_mentions_t).map((x) => x.value),
   };
 }
 
-function dayRows(scope, day) {
+// `fresh` (the Refresh button): re-query now instead of serving the cache, even a final day's
+// (downloads and publishes keep arriving after a session ends).
+const dayFinal = (day) => Date.parse(`${day}T00:00:00Z`) + 3 * DAY < Date.now();
+const rowsKey = (scope, day) => `v${RUNS_QUERY_VERSION}__${scopeKey(scope)}__${day}`;
+const stepsKey = (scope, day) => `v${STEPS_QUERY_VERSION}__${scopeKey(scope)}__${day}`;
+
+function dayRows(scope, day, { fresh = false } = {}) {
   // A day's rows keep changing while its sessions may still be active (entries are read
   // up to 2 days past the skill load); after that they're final.
-  const final = Date.parse(`${day}T00:00:00Z`) + 3 * DAY < Date.now();
-  return cached('runs-day', `v${RUNS_QUERY_VERSION}__${scopeKey(scope)}__${day}`, final ? Infinity : 3 * 60000, async () => {
-    const [rows, events] = await Promise.all([
-      sliced((hours) => runsDayQuery({ scope, day, hours })),
-      sliced((hours) => eventsDayQuery({ scope, day, hours })).catch(() => []),
-    ]);
-    const [attrs] = await Promise.all([
-      sessionAttrs(rows.map((r) => r.session_id), day),
-      // Warm the account cache in parallel; listRuns reads it.
-      resolveUserTypes(rows.map((r) => r.account_id)),
-    ]);
-    const projects = await projectSignals([...new Set([...attrs.values()].map((a) => a.project_id).filter(Boolean))], day);
-    const ev = new Map(events.map((e) => [e.session_id, e]));
-    const value = rows.map((r) => {
-      const a = attrs.get(r.session_id) || {};
-      return { ...r, ...eventFields(ev.get(r.session_id) || {}, r.owned_turns), ...a, project: projects.get(a.project_id) || null };
-    });
+  const final = dayFinal(day);
+  const key = rowsKey(scope, day);
+  return cached('runs-day', key, fresh ? 0 : final ? Infinity : 3 * 60000, async () => {
+    // The routine re-check of a recent day (every few minutes while it's looked at) tops up from the
+    // newest sessions it already has instead of reading the whole day again; Shift+Refresh (`fresh`)
+    // reads it whole.
+    const from = fresh ? null : await topUpHour('runs-day', key, day);
+    const value = from == null ? await buildDayRows(scope, day) : mergeRows(await readStale('runs-day', key), await buildDayRows(scope, day, [from, 24]));
     return { value, ttlMs: final ? Infinity : 3 * 60000 };
-  }, { staleWhileRevalidate: true });
+  }, { staleWhileRevalidate: !fresh });
+}
+
+// Where a top-up of a cached recent day starts: an hour before the newest session it holds (runs still
+// going then may have finished since), on the hour; null = read the whole day.
+async function topUpHour(ns, key, day) {
+  if (dayFinal(day)) return null;
+  const have = await readStale(ns, key);
+  if (!have?.length) return null;
+  const newest = Math.max(...have.map((r) => tsMs(r.skill_at || r.first_ts) || 0));
+  const h = Math.floor((newest - TOP_UP_OVERLAP - Date.parse(`${day}T00:00:00Z`)) / 3600000);
+  return h > 0 ? Math.min(23, h) : null;
+}
+const mergeRows = (have, part) => {
+  const ids = new Set(part.map((r) => r.session_id));
+  return [...(have || []).filter((r) => !ids.has(r.session_id)), ...part].sort((a, b) => String(a.session_id).localeCompare(String(b.session_id)));
+};
+
+// The rows of the sessions that first loaded the skill within `hours` of the day (all of it by default).
+async function buildDayRows(scope, day, hours = [0, 24]) {
+  const [rows, events] = await Promise.all([
+    sliced((h) => runsDayQuery({ scope, day, hours: h }), hours),
+    sliced((h) => eventsDayQuery({ scope, day, hours: h }), hours).catch(() => []),
+  ]);
+  // A top-up (a later hour window of the last day or two) skips the lagging dimension table and
+  // doesn't wait for brand-new accounts' user types (looked up in the background).
+  const topUpWindow = hours[0] > 0 && Date.parse(`${day}T00:00:00Z`) > Date.now() - 2 * DAY;
+  const types = resolveUserTypes(rows.map((r) => r.account_id));
+  if (topUpWindow) types.catch(() => {});
+  const [attrs] = await Promise.all([
+    sessionAttrs(rows.map((r) => r.session_id), day, { skipDim: topUpWindow }),
+    // Warm the account cache in parallel; listRuns reads it.
+    topUpWindow ? null : types,
+  ]);
+  const projects = await projectSignals([...new Set([...attrs.values()].map((a) => a.project_id).filter(Boolean))], day);
+  // Written ids that aren't top-level assets are pages or scenes: credit their top-level asset.
+  const tops = new Set([...projects.values()].flatMap((p) => p.assets.map((a) => a.asset_id)));
+  const parts = await topLevelOf(rows.flatMap((r) => r.written_ids || []).filter((id) => !tops.has(id)), day).catch(() => new Map());
+  const ev = new Map(events.map((e) => [e.session_id, e]));
+  const value = rows.map((r) => {
+    const a = attrs.get(r.session_id) || {};
+    const written = [...new Set((r.written_ids || []).map((id) => parts.get(id) || id))];
+    return { ...r, written_ids: written, ...eventFields(ev.get(r.session_id) || {}, r.owned_turns), ...a, project: projects.get(a.project_id) || null };
+  });
+  return value;
+}
+
+// Refresh, the quick way: query again only the sessions that first loaded the skill from `fromHour`
+// on (new ones, and the recent ones that may have finished since), and merge them into the cached
+// day. A day with nothing cached yet is loaded whole. Returns the re-queried rows only.
+async function topUp(ns, key, ttlMs, build, whole) {
+  const have = await readStale(ns, key);
+  if (!have) return { all: await whole(), part: null };
+  const part = await build();
+  const all = mergeRows(have, part);
+  await writeCache(ns, key, all, ttlMs);
+  return { all, part };
 }
 
 const num = (v) => (v == null ? null : Number(v));
@@ -241,29 +342,58 @@ function parseAssetEvents(list) {
   return out;
 }
 
-// A run's outputs: top-level assets its counted turns wrote (TURN_UPDATED_ASSETS) or that were
-// created while they ran. The product often logs an asset only on a later turn that edits it
-// (slides-creation builds a deck; slides-edit's turn is the one that reports it), so creation
-// time is what ties an asset to the skill that made it. Sessions without asset events at all also
-// take assets updated in that window. Projects outlive sessions, so older assets never count.
+// AGENT_MENTIONED_ASSETS payloads: { assetId: '{"name","type","snapshotUrl","isFallback"}' }.
+function parseMentions(list) {
+  const out = new Map();
+  for (const raw of list || []) {
+    let obj;
+    try {
+      obj = JSON.parse(raw);
+    } catch {
+      continue;
+    }
+    for (const [id, v] of Object.entries(obj || {})) {
+      if (!/^[0-9a-f-]{36}$/i.test(id)) continue;
+      let info = v;
+      try {
+        info = typeof v === 'string' ? JSON.parse(v) : v;
+      } catch {}
+      out.set(id, { id, ...(info && typeof info === 'object' ? info : {}) });
+    }
+  }
+  return out;
+}
+
+// A run's outputs: the top-level assets its counted turns wrote, or handed over while they ran (see
+// own-assets.js). Only the session's own write log counts: assets other sessions made in the same
+// project at the same time (a campaign's post and story next to its video) are not this run's.
 function outputsOf(r) {
   const started = tsMs(r.first_ts) || 0;
   // When other skills took the session over after the counted turns, the window ends there (other
   // work before the skill was loaded doesn't limit it).
   const handedOver = tsMs(r.whole_last_ts) > tsMs(r.last_ts) + 1000;
-  // Otherwise shortly after the last counted turn: assets made by hand in the editor later aren't output.
+  // Otherwise shortly after the last counted turn (the editor saves a moment after the turn ends).
   const until = (tsMs(r.last_ts) || Infinity) + (handedOver ? 120000 : 300000);
   const inWindow = (t) => Boolean(t) && t >= started - 60000 && t <= until;
-  const anyEvents = Number(r.all_asset_events) > 0;
   const top = r.project?.assets || [];
-  const written = parseAssetEvents(r.asset_events);
-  let picked = top.filter((a) => written.has(a.asset_id) || inWindow(tsMs(a.created)) || (!anyEvents && inWindow(tsMs(a.updated))))
-    .map((a) => ({ w: written.get(a.asset_id) || null, a }));
-  // The asset table can lag the events; if none matched yet, trust the events (minus scene parts).
-  if (!picked.length && written.size) picked = [...written.values()].filter((w) => !/^scene\b/i.test(w.name || '')).map((w) => ({ w, a: null }));
+  const reported = parseAssetEvents(r.asset_events);
+  const mentioned = parseMentions(r.asset_mentions);
+  const own = ownedAssetIds(
+    { writes: r.asset_writes || [], reported: [...reported.keys(), ...(r.written_ids || [])], mentioned: [...mentioned.keys()], jobs: jobTypes(r.methods) },
+    top.map((a) => ({ id: a.asset_id, parentId: null, name: a.name, type: a.type, created: tsMs(a.created), updated: tsMs(a.updated) })),
+    inWindow,
+  );
+  let picked = top.filter((a) => own.has(a.asset_id)).map((a) => ({ w: reported.get(a.asset_id) || mentioned.get(a.asset_id) || null, a }));
+  // The asset table can lag the events: an asset the turns reported or wrote and handed over, not
+  // in the table yet, comes from the events (minus scene parts).
+  if (!picked.length) {
+    const id8s = new Set((r.asset_writes || []).map((w) => w.id8).filter(Boolean));
+    picked = [...reported.values(), ...[...mentioned.values()].filter((m) => id8s.has(m.id.slice(0, 8)))]
+      .filter((w, i, all) => !/^scene\b/i.test(w.name || '') && all.findIndex((x) => x.id === w.id) === i).map((w) => ({ w, a: null }));
+  }
   const outs = picked.map(({ w, a }) => ({
     id: a?.asset_id || w.id,
-    type: normType(a?.type || w?.assetType),
+    type: normType(a?.type || w?.assetType || w?.type),
     name: a?.name || w?.name || null,
     thumb: a?.thumb || w?.snapshotUrl || null,
     publishedUrl: a?.published_url || null,
@@ -298,6 +428,9 @@ function finishedAd(r) {
     downloadedAt: tsMs(dl.map((d) => d.at).sort().at(-1)),
     renderUrl: mp4?.url || null,
     videoAssetId: video?.id || null,
+    // A story's own mp4 export (the story player has no other render); used when it's up to date.
+    storyAssetId: outs.find((o) => o.type === 'story')?.id || null,
+    storyExportUrl: outs.find((o) => o.type === 'story' && /\/exports\/story-\d+\.mp4/i.test(o.downloadUrl || ''))?.downloadUrl || null,
     videoCount: outs.filter((o) => o.type === 'video').length,
   };
 }
@@ -330,6 +463,7 @@ function toRun(r, userType) {
     userType: userType(r.account_id),
     agent: r.agent_name || null,
     source: r.source || null,
+    parentSessionId: r.parent_session_id || null,
     caller: r.caller_name || null,
     device: r.device_type || null,
     costUsd: num(r.total_cost_usd),
@@ -362,9 +496,9 @@ export const getIndexedRun = (id) => runIndex.get(id) || null;
 
 // Which days in the window have runs (so empty days are never queried), plus when the skill
 // last ran when the window is empty.
-export function runsIndex({ skill, days = 7 }) {
+export function runsIndex({ skill, days = 7, fresh = false }) {
   const n = Math.max(1, Math.min(90, Number(days) || 7));
-  return cached('runs-index', `v2__${skill}__${n}__${utcDay(Date.now())}`, 3 * 60000, async () => {
+  return cached('runs-index', `v2__${skill}__${n}__${utcDay(Date.now())}`, fresh ? 0 : 3 * 60000, async () => {
     const rows = await retryOnce(() => sql(runsIndexQuery({ skill, windowDays: n })));
     const dayList = rows.map((r) => ({ day: r.day, sessions: Number(r.sessions) }));
     let lastSeen = null;
@@ -373,24 +507,29 @@ export function runsIndex({ skill, days = 7 }) {
       lastSeen = ls?.last_at ? { at: tsMs(ls.last_at), sessions90d: Number(ls.sessions_90d || 0) } : { at: null, sessions90d: 0 };
     }
     return { value: { skill, days: n, dayList, total: dayList.reduce((a, d) => a + d.sessions, 0), lastSeen }, ttlMs: 3 * 60000 };
-  }, { staleWhileRevalidate: true });
+  }, { staleWhileRevalidate: !fresh });
 }
 
 // Per-session step stats for one day (insights). Cached on the same rules as the day's rows.
-function dayStepRows(scope, day) {
-  const final = Date.parse(`${day}T00:00:00Z`) + 3 * DAY < Date.now();
-  return cached('steps-day', `v${STEPS_QUERY_VERSION}__${scopeKey(scope)}__${day}`, final ? Infinity : 3 * 60000, async () => {
-    const rows = await sliced((hours) => stepsDayQuery({ scope, day, hours }));
+function dayStepRows(scope, day, { fresh = false } = {}) {
+  const final = dayFinal(day);
+  const key = stepsKey(scope, day);
+  return cached('steps-day', key, fresh ? 0 : final ? Infinity : 3 * 60000, async () => {
+    // Topped up like the day's rows, from the same hour (taken from the rows, which carry the times).
+    const have = fresh ? null : await readStale('steps-day', key);
+    const from = have ? await topUpHour('runs-day', rowsKey(scope, day), day) : null;
+    const rows = from == null ? await sliced((hours) => stepsDayQuery({ scope, day, hours })) : mergeRows(have, await sliced((hours) => stepsDayQuery({ scope, day, hours }), [from, 24]));
     return { value: rows, ttlMs: final ? Infinity : 3 * 60000 };
-  }, { staleWhileRevalidate: true });
+  }, { staleWhileRevalidate: !fresh });
 }
 
 const SEP = String.fromCharCode(31);
-// Steps travel as compact tuples: [tool, method, model, calls, failures, totalMs, maxMs, firstError].
+// Steps travel as compact tuples: [tool, method, model, calls, failures, totalMs, maxMs, firstError,
+// graph (the Genix graph a media job ran, for its price), billed seconds (asked for by the calls that succeeded)].
 function parseSteps(list) {
   return (list || []).map((x) => {
-    const [tool, method, model, n, errs, ms, maxMs, err] = x.split(SEP);
-    return [tool, method || null, model || null, Number(n), Number(errs), Number(ms), Number(maxMs), err || null];
+    const [tool, method, model, n, errs, ms, maxMs, err, graph, billed] = x.split(SEP);
+    return [tool, method || null, model || null, Number(n), Number(errs), Number(ms), Number(maxMs), err || null, graph || null, Number(billed || 0)];
   });
 }
 
@@ -413,11 +552,29 @@ function stepFields(sr) {
 }
 
 // One day's runs, ready for the grid.
-async function scopedDay(scope, day, sampleRate = 1) {
-  const [rawRows, stepRows] = await Promise.all([dayRows(scope, day), dayStepRows(scope, day).catch(() => [])]);
+// `fromHour`: Refresh's top-up (see topUp): only those sessions are queried, merged into the cached
+// day, and returned.
+async function scopedDay(scope, day, sampleRate = 1, { fresh = false, fromHour = null } = {}) {
+  let rawRows;
+  let stepRows;
+  if (fromHour != null) {
+    const ttl = dayFinal(day) ? Infinity : 3 * 60000;
+    const hours = [Math.max(0, Math.min(23, fromHour)), 24];
+    const t0 = Date.now();
+    const timed = (p) => p.then((v) => ({ ...v, ms: Date.now() - t0 }));
+    const [r, st] = await Promise.all([
+      timed(topUp('runs-day', rowsKey(scope, day), ttl, () => buildDayRows(scope, day, hours), () => dayRows(scope, day, { fresh: true }))),
+      timed(topUp('steps-day', stepsKey(scope, day), ttl, () => sliced((h) => stepsDayQuery({ scope, day, hours: h }), hours), () => dayStepRows(scope, day, { fresh: true }))).catch(() => ({ all: [], part: [], ms: null })),
+    ]);
+    console.log(`top-up ${scope.skill} ${day} from ${hours[0]}:00 — ${r.part ? `${r.part.length} sessions` : 'whole day (not cached)'} in ${r.ms}ms, steps ${st.ms}ms`);
+    rawRows = r.part || r.all;
+    stepRows = st.all;
+  } else {
+    [rawRows, stepRows] = await Promise.all([dayRows(scope, day, { fresh }), dayStepRows(scope, day, { fresh }).catch(() => [])]);
+  }
   const seen = new Set();
   const rows = rawRows.filter((r) => !seen.has(r.session_id) && seen.add(r.session_id));
-  const userType = await resolveUserTypes(rows.map((r) => r.account_id));
+  const userType = fromHour != null ? await userTypesWithin(rows.map((r) => r.account_id), 3000) : await resolveUserTypes(rows.map((r) => r.account_id));
   const bySession = new Map(stepRows.map((r) => [r.session_id, r]));
   const runs = rows.map((r) => ({ ...toRun(r, userType), ...stepFields(bySession.get(r.session_id)), sampleRate }));
   for (const r of runs) runIndex.set(r.id, r);
@@ -426,9 +583,16 @@ async function scopedDay(scope, day, sampleRate = 1) {
 
 // `sessions` is the day's count from the index; above the target the day is sampled.
 // `family`: the skills counted with it (null = whole sessions).
-export async function runsForDay({ skill, family, day, sessions = 0 }) {
+// `since` (ms, Refresh): only sessions that started after it, less an overlap for runs that were
+// still going then, are queried again and returned; the rest of the day comes from the cache.
+// Runs take ~11 min from request to result (median; 24 min for the slowest 10%), so an hour back
+// catches every run that was still going.
+const TOP_UP_OVERLAP = 3600000;
+export async function runsForDay({ skill, family, day, sessions = 0, fresh = false, since = null }) {
   const sample = sampleFor(sessions);
-  return scopedDay({ skill, family, sample }, day, sample ? sample.length / 16 : 1);
+  const fromHour = since ? Math.floor((since - TOP_UP_OVERLAP - Date.parse(`${day}T00:00:00Z`)) / 3600000) : null;
+  if (fromHour != null && fromHour >= 24) return [];
+  return scopedDay({ skill, family, sample }, day, sample ? sample.length / 16 : 1, { fresh, fromHour });
 }
 
 export async function listRuns({ skill, family, days = 7 }) {

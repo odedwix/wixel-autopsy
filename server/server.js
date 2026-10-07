@@ -12,7 +12,7 @@ import { assetSource, pagesPdf, imageAsJpeg } from './asset-download.js';
 import { renderPdf, chromePath } from './pdf.js';
 import { startExact, exactStatus, exactFile } from './exact.js';
 import { checkConnectivity, connectivity, startConnectivityChecks } from './connectivity.js';
-import { mediaStatus, mediaFile, queueDepth, downloadSource, clipFrame } from './media.js';
+import { mediaStatus, mediaFile, queueDepth, downloadSource, clipFrame, forgetMedia } from './media.js';
 import { Readable } from 'node:stream';
 import { createReadStream } from 'node:fs';
 import { playerInput, bundleList, playerScript } from './player.js';
@@ -25,7 +25,8 @@ import { fleetView, fleetIssue, backfillStatus, requestDays, periodDays, readDay
 import { buildBrief, updateState, readState, startDraft, draftStatus, claudeAvailable } from './fleet-brief.js';
 import { codexSummary } from './codex.js';
 import { skillFix, askClaude, skillClaudeStatus } from './fleet-skillfix.js';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { prices } from './prices.js';
 
 const WEB = path.join(config.root, 'web');
 const QUIET = /^\/api\/(load|media-batch|media-queue|health|exact\/[\w-]{36}|fleet\/status|fleet\/draft\/\w+|fleet\/skillfix\/\w+(\/claude)?)$/;
@@ -41,6 +42,14 @@ function send(req, res, status, body, type = 'application/json; charset=utf-8') 
   res.writeHead(status, headers).end(buf);
 }
 
+function bundleHas(file, marker) {
+  try {
+    return readFileSync(path.join(config.cacheDir, 'vendor', file), 'utf8').includes(marker);
+  } catch {
+    return false;
+  }
+}
+
 let caps;
 function capabilities() {
   caps ??= {
@@ -49,6 +58,9 @@ function capabilities() {
     player: existsSync(path.join(config.cacheDir, 'vendor', 'iframe-bootstrap.js')),
     pdf: Boolean(chromePath()), // reports download straight to a PDF (else the print dialog)
     exact: Boolean(chromePath()) && existsSync(path.join(config.cacheDir, 'vendor', 'capture-bootstrap.js')), // Exact composition → mp4
+    // The run view's Exact player, preloaded while the regular copy plays (a capture bundle built
+    // after it gained AutopsyLive; older builds keep the manual Exact toggle).
+    live: bundleHas('capture-bootstrap.js', 'AutopsyLive'),
   };
   return caps;
 }
@@ -92,21 +104,25 @@ const routes = [
   // Can we reach bo.wix.com (Wix network / VPN)? `?fresh=1` re-checks now.
   [/^\/api\/connectivity$/, async (_m, q) => checkConnectivity({ fresh: q.get('fresh') === '1' })],
   [/^\/api\/skills$/, async (_m, q) => listSkills({ days: Number(q.get('days') || 30) })],
+  // What each model's calls cost: the product's price list per Genix graph, image costs per model.
+  [/^\/api\/prices$/, async () => prices()],
   [/^\/api\/runs$/, async (_m, q) => {
     const skill = q.get('skill');
     if (!skill) throw Object.assign(new Error('skill is required'), { status: 400 });
     return listRuns({ skill, days: Number(q.get('days') || 7) });
   }],
   // Progressive loading: the index says which days have runs, then each day loads on its own.
-  [/^\/api\/runs-index$/, async (_m, q) => runsIndex({ skill: required(q, 'skill'), days: Number(q.get('days') || 7) })],
+  [/^\/api\/runs-index$/, async (_m, q) => runsIndex({ skill: required(q, 'skill'), days: Number(q.get('days') || 7), fresh: q.get('fresh') === '1' })],
   [/^\/api\/runs-day$/, async (_m, q) => {
     const day = required(q, 'day');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) throw Object.assign(new Error('day must be YYYY-MM-DD'), { status: 400 });
     const skill = required(q, 'skill');
-    return runsForDay({ skill, family: await resolveFamily(skill, q.get('fam')), day, sessions: Number(q.get('n') || 0) });
+    const since = Number(q.get('since')) || null;
+    return runsForDay({ skill, family: await resolveFamily(skill, q.get('fam')), day, sessions: Number(q.get('n') || 0), fresh: q.get('fresh') === '1', since });
   }],
   // The Exact composition as an mp4 (runs with no render): status, `?start=1` renders it.
-  [/^\/api\/exact\/([\w-]{36})$/, async ([, id], q) => (q.get('start') === '1' ? startExact(getIndexedRun(id) || { id }) : exactStatus(id))],
+  // `cc=1`: with captions (the viewer turned them on); otherwise only if a person turned them on.
+  [/^\/api\/exact\/([\w-]{36})$/, async ([, id], q) => (q.get('start') === '1' ? startExact(getIndexedRun(id) || { id }, { cc: q.get('cc') === '1' }) : exactStatus(id, { cc: q.get('cc') === '1' }))],
   // One run's list row, if this proxy has served it (reports opened from a link).
   [/^\/api\/run\/([\w-]{36})$/, async ([, id]) => getIndexedRun(id) || Promise.reject(Object.assign(new Error('run not indexed'), { status: 404 }))],
   // A skill's family (the helpers counted with it) and why each is in it.
@@ -118,7 +134,9 @@ const routes = [
     const bundle = await getSessionBundle(id, { fresh: q.get('fresh') === '1' });
     rememberUser(bundle.meta).catch(() => {});
     if (q.get('raw') === '1') return bundle;
-    const rec = normalizeSession(bundle);
+    // The root shown is the run's own output (from the list row) when this proxy has listed it.
+    const row = getIndexedRun(id);
+    const rec = normalizeSession(bundle, { rootId: row?.videoAssetId || row?.adAssetId || undefined });
     // With a skill: which turns count for it (the rest are other skills' work).
     const skill = q.get('skill');
     if (skill) rec.scope = turnOwnership(rec, skill, await resolveFamily(skill, q.get('fam')));
@@ -126,7 +144,7 @@ const routes = [
   }],
   [/^\/api\/trace\/([\w-]{36})$/, async ([, wid], q) => getGenerationTrace(wid, { fresh: q.get('fresh') === '1' })],
   [/^\/api\/media\/([\w-]{36})$/, async ([, id], q) => mediaStatus(getIndexedRun(id) || { id }, { priority: q.get('priority') === '1', retry: q.get('retry') === '1' })],
-  [/^\/api\/player-input\/([\w-]{36})$/, async ([, id], q) => playerInput(id, q.get('root'))],
+  [/^\/api\/player-input\/([\w-]{36})$/, async ([, id], q) => playerInput(id, q.get('root'), { captions: q.get('captions') === '1' ? true : q.get('captions') === '0' ? false : 'user' })],
   // Same-origin bundle-server pass-through for the live player (bundleServerBaseUrl: '').
   [/^\/_api\/wixel-viewer-bundle-server\/bundles$/, async (_m, _q, url) => bundleList(url.search)],
   // Status for the cards on screen; queues builds for any that have none (in the order given,
@@ -138,6 +156,12 @@ const routes = [
     return out;
   }],
   [/^\/api\/media-queue$/, async () => queueDepth()],
+  // Refresh: rebuild these runs' review copies (and exact mp4s) next time they're looked at.
+  [/^\/api\/media-refresh$/, async (_m, _q, _u, req) => {
+    if (req.method !== 'POST') throw Object.assign(new Error('POST only'), { status: 405 });
+    const { ids } = await readBody(req);
+    return forgetMedia(Array.isArray(ids) ? ids.slice(0, 2000) : []);
+  }],
   [/^\/api\/load$/, async () => ({ ...loadReport(), media: queueDepth(), cache: cacheReport(), net: connectivity() })],
   // ---- Fleet: every major skill at once (daily rollups; see server/fleet.js) ----
   [/^\/api\/fleet$/, async (_m, q) => fleetView(fleetParams(q))],
@@ -215,9 +239,9 @@ async function serveMedia(req, res, id, name) {
 
 // Save-to-disk: the exact render streamed through (a cross-origin link can't force a download),
 // else the review copy, with a readable filename.
-async function serveDownload(req, res, id, name, which) {
+async function serveDownload(req, res, id, name, which, cc = false) {
   const src = which === 'exact'
-    ? ((await exactStatus(id)).state === 'ready' ? { kind: 'exact', file: exactFile(id) } : null)
+    ? ((await exactStatus(id, { cc })).state === 'ready' ? { kind: 'exact', file: exactFile(id, { cc }) } : null)
     : await downloadSource(id, which);
   if (!src) return send(req, res, 404, { error: 'video not ready yet' });
   const base = String(name || id).replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120) || id;
@@ -321,7 +345,7 @@ const server = http.createServer(async (req, res) => {
   const mm = url.pathname.match(/^\/media\/([\w-]{36})\/([\w.]+)$/);
   if (mm) return serveMedia(req, res, mm[1], mm[2]);
   const dm = url.pathname.match(/^\/download\/([\w-]{36})$/);
-  if (dm) return serveDownload(req, res, dm[1], url.searchParams.get('name'), url.searchParams.get('src'));
+  if (dm) return serveDownload(req, res, dm[1], url.searchParams.get('name'), url.searchParams.get('src'), url.searchParams.get('cc') === '1');
   if (url.pathname === '/api/frame') return serveFrame(req, res, url.searchParams.get('url'));
   if (url.pathname === '/api/report.pdf') return serveReportPdf(req, res, url.searchParams);
   const am = url.pathname.match(/^\/download-asset\/([\w-]{36})\/([\w-]{36})$/);

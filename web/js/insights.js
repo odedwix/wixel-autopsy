@@ -1,5 +1,6 @@
 import { h, icon, dur, fmtInt, ago } from './util.js';
-import { hasAd, failedRun, attempted, downloaded, worstMood, MOOD, stepKey, getProfile, typeLabel } from './filters.js';
+import { hasAd, failedRun, attempted, downloaded, worstMood, MOOD, stepKey, getProfile, typeLabel, madeLabel } from './filters.js';
+import { modelStats, money } from './models.js';
 
 // Insights over the runs in view (skill + window + filters + search). Everything is computed in
 // the browser from data the list already carries — no extra load on any upstream system.
@@ -40,7 +41,6 @@ function pct(arr, p) {
 }
 const share = (a, b) => (b ? a / b : null);
 const pc = (x) => (x == null ? '–' : `${Math.round(x * 100)}%`);
-const money = (x) => (x == null ? '–' : x < 1 ? `$${x.toFixed(2)}` : `$${x.toFixed(x < 10 ? 2 : 0)}`);
 
 // Error text → signature, so the same failure groups across runs.
 export function signature(msg) {
@@ -199,6 +199,7 @@ export function computeInsights(runs) {
 
   const cost = runs.reduce((a, r) => a + (r.costUsd || 0), 0);
   return {
+    modelRows: modelStats(withSteps.map((r) => r.steps)),
     n: runs.length, withSteps: withSteps.length, reached, finished, finishedOfReached, failed, dl, pub,
     toFirst, toFinal, firstTurn,
     tools: [...tools.values()], models: [...models.values()], genCalls, genMs,
@@ -215,19 +216,89 @@ export function computeInsights(runs) {
   };
 }
 
-// ---------- headline strip (above the grid) ----------
-export function headlines(ins, go) {
-  if (!ins.n) return [];
+// ---------- what we learned: the numbers, read ----------
+// Findings worth knowing, each a sentence with its evidence and a click that shows the runs.
+// Measured facts only; where a reason is a reading of the data (a pattern, not a cause), it says so.
+const P = (x) => `${Math.round(x * 100)}%`;
+const enough = (n) => n >= 12;
+export function learn(ins, runs) {
   const out = [];
-  const worstTool = [...ins.tools].filter((t) => t.fails >= 3).sort((a, b) => b.fails - a.fails)[0];
-  if (worstTool) out.push(h('button', { class: 'headline', onclick: () => go('tools') }, icon('alert'), 'Most failures', h('b', {}, worstTool.key), `${fmtInt(worstTool.fails)} of ${fmtInt(worstTool.calls)}`));
-  if (ins.toFinal.length) out.push(h('button', { class: 'headline', onclick: () => go('timing') }, icon('film'), 'Request → final', h('b', {}, dur(pct(ins.toFinal, 50))), 'median'));
-  if (ins.genCalls) out.push(h('button', { class: 'headline', onclick: () => go('models') }, icon('sparkle'), 'Avg generation', h('b', {}, dur(ins.genMs / ins.genCalls)), 'per call'));
-  if (ins.intents[0]) out.push(h('button', { class: 'headline', onclick: () => go('asks') }, icon('user'), 'Top ask', h('b', {}, ins.intents[0][0]), pc(share(ins.intents[0][1], ins.n))));
-  const fr = ins.moodCounts.frustrated;
-  if (fr) out.push(h('button', { class: 'headline', onclick: () => go('mood') }, icon('frustrated'), h('b', {}, pc(share(fr, ins.n))), 'frustrated'));
-  if (ins.finished.length) out.push(h('button', { class: 'headline', onclick: () => go('funnel') }, icon('download'), h('b', {}, pc(share(ins.dl.length + ins.pub.filter((r) => !downloaded(r)).length, ins.finished.length))), 'of runs with output were used'));
-  return out;
+  const add = (score, tone, title, detail, go) => out.push({ score, tone, title, detail, go });
+  const n = ins.n;
+  if (!n) return out;
+  const made = madeLabel();
+  // 1. Did it make what it's for?
+  const tried = ins.reached.length;
+  if (tried >= 5) {
+    const rate = ins.finishedOfReached.length / tried;
+    add(rate < 0.6 ? 90 : 40, rate < 0.6 ? 'bad' : 'good', [h('b', {}, P(rate)), ` of runs that tried made ${/^[aeiou]/.test(made) ? 'an' : 'a'} ${made}`],
+      `${ins.finishedOfReached.length} of ${tried} tried; ${ins.failed.length} tried and made nothing.`, { filter: ['outcome', 'failed'] });
+  }
+  // 2. Runs that never tried: who they are.
+  const never = runs.filter((r) => !hasAd(r) && !attempted(r));
+  if (enough(never.length) && never.length / n >= 0.15) {
+    const sub = never.filter((r) => r.source === 'sub-agent').length;
+    const broke = never.filter((r) => r.outOfFunds).length;
+    const oneMsg = never.filter((r) => (r.userMessages || 0) <= 1).length;
+    const why = [sub / never.length >= 0.25 ? `${P(sub / never.length)} are sub-agents (campaigns making several assets at once)` : null, broke / never.length >= 0.15 ? `${P(broke / never.length)} ran out of credits` : null, oneMsg / never.length >= 0.5 ? `${P(oneMsg / never.length)} ended after one message` : null].filter(Boolean);
+    add(70 + (never.length / n) * 40, 'bad', [h('b', {}, P(never.length / n)), ' of runs never tried to make anything'], why.length ? `Of those, ${why.join(', ')}.` : `${never.length} runs: they only planned, asked or answered.`, { filter: ['outcome', 'none'] });
+  }
+  // 3. Models: where the time and the money go.
+  const gen = ins.modelRows.filter((m) => m.calls >= 3);
+  const totalMs = gen.reduce((a, m) => a + m.ms, 0);
+  const slow = [...gen].sort((a, b) => b.ms - a.ms)[0];
+  if (slow && totalMs) add(60, 'info', [h('b', {}, slow.name), ` is ${P(slow.ms / totalMs)} of generation time: `, h('b', {}, dur(slow.avgMs)), ' a call', slow.avgCost != null ? [', ', h('b', {}, money(slow.avgCost)), ' a call'] : ''],
+    `${slow.calls} calls in ${slow.runs} runs${slow.fails ? `, ${P(slow.failRate)} failed` : ''}. See Models for every model.`, { section: 'models' });
+  const priced = gen.filter((m) => m.cost > 0);
+  const totalCost = priced.reduce((a, m) => a + m.cost, 0);
+  const dear = [...priced].sort((a, b) => b.cost - a.cost)[0];
+  if (dear && dear !== slow && totalCost) add(50, 'info', [h('b', {}, dear.name), ` is ${P(dear.cost / totalCost)} of generation spend (`, h('b', {}, money(dear.avgCost)), ' a call)'], `${money(totalCost)} at list price across ${priced.length} priced models in view.`, { section: 'models' });
+  // 4. The failure that costs the most output: runs it hit vs runs it didn't.
+  const hit = [...ins.tools].filter((t) => t.failRuns >= 5 && t.fails >= 5).sort((a, b) => b.failRuns - a.failRuns)[0];
+  if (hit) {
+    const withF = runs.filter((r) => r.steps?.some((x) => stepKey(x[0], x[1]) === hit.key && x[4] > 0));
+    const without = runs.filter((r) => r.steps && !withF.includes(r) && attempted(r));
+    const rw = withF.filter(hasAd).length / Math.max(1, withF.length);
+    const ro = without.filter(hasAd).length / Math.max(1, without.length);
+    const hurts = enough(withF.length) && enough(without.length) && ro - rw >= 0.1;
+    add(hurts ? 80 : 45, 'bad', [h('b', {}, hit.key), ` fails in ${hit.failRuns} runs (${P(hit.fails / hit.calls)} of its calls)`], hurts ? `Runs where it failed made ${/^[aeiou]/.test(made) ? 'an' : 'a'} ${made} ${P(rw)} of the time, against ${P(ro)} for the rest.` : 'The runs it hit made their output about as often as the rest: a retry usually gets past it.', { filterStep: hit.key });
+  }
+  // 5. Problems and the user's mood.
+  const err = runs.filter((r) => r.errors > 0);
+  const clean = runs.filter((r) => !r.errors);
+  const fr = (xs) => xs.filter((r) => r.sentiments?.includes('frustrated')).length / Math.max(1, xs.length);
+  if (enough(err.length) && enough(clean.length) && fr(err) >= 0.08 && fr(err) >= 1.5 * fr(clean)) add(55, 'bad', ['Users are ', h('b', {}, `${(fr(err) / Math.max(0.005, fr(clean))).toFixed(1)}×`), ' as likely to be frustrated when a tool fails'], `${P(fr(err))} frustrated in runs with tool errors, ${P(fr(clean))} without.`, { filter: ['issues', 'errors'] });
+  // 6. The credit wall.
+  const broke = runs.filter((r) => r.outOfFunds > 0);
+  if (enough(broke.length) && broke.length / n >= 0.08) add(65, 'bad', [h('b', {}, P(broke.length / n)), ' of runs hit the credit limit'], `Of those, ${P(broke.filter(hasAd).length / broke.length)} still made ${/^[aeiou]/.test(made) ? 'an' : 'a'} ${made} (often a cut-down one); ${P(runs.filter((r) => !r.outOfFunds && hasAd(r)).length / Math.max(1, n - broke.length))} of the others did.`, { filter: ['issues', 'credits'] });
+  // 7. Stalled on the request (the chat review's tested rule: ≥3 user messages, nothing made, no
+  // credit wall, no tool error — about 7 in 10 of those were the request itself: beyond what the
+  // skill can do, missing material, content policy, undecided).
+  const stalled = runs.filter((r) => (r.userMessages || 0) >= 3 && !hasAd(r) && !r.outOfFunds && !r.errors);
+  if (stalled.length >= 3) add(45, 'info', [h('b', {}, String(stalled.length)), ` runs went ${Math.round(stalled.reduce((a, r) => a + r.userMessages, 0) / stalled.length)} messages without making anything, with no error or credit wall`], 'Usually the request itself (asks beyond the skill, missing material, content policy, undecided users) — about 7 in 10 such runs in a review of 18. Open them to read the conversation.', { search: null, ids: stalled.map((r) => r.id) });
+  // 8. Used or not.
+  if (enough(ins.finished.length)) {
+    const used = ins.finished.filter((r) => downloaded(r) || r.publishedUrl).length / ins.finished.length;
+    add(35, used < 0.3 ? 'bad' : 'info', [h('b', {}, P(used)), ` of the ${madeLabel(true)} made were downloaded or published`], `${ins.dl.length} downloaded, ${ins.pub.length} published, of ${ins.finished.length}.`, { filter: ['delivery', 'neither'] });
+  }
+  // 9. How long it takes.
+  if (ins.toFinal.length >= 5) add(30, 'info', ['Request → final result takes ', h('b', {}, dur(pct(ins.toFinal, 50))), ' (median)'], `The slowest 10% take over ${dur(pct(ins.toFinal, 90))}. First generation starts after ${dur(pct(ins.toFirst, 50))}.`, { section: 'timing' });
+  // 10. A newer skill version doing better or worse.
+  const vs = ins.versions.filter((v) => v.runs.length >= 25).sort((a, b) => b.first - a.first);
+  if (vs.length >= 2) {
+    const rate = (v) => v.runs.filter(attempted).filter(hasAd).length / Math.max(1, v.runs.filter(attempted).length);
+    const d = rate(vs[0]) - rate(vs[1]);
+    if (Math.abs(d) >= 0.1) add(60, d > 0 ? 'good' : 'bad', [`The newest skill version (${vs[0].v.slice(0, 8)}) makes output `, h('b', {}, `${d > 0 ? '+' : ''}${Math.round(d * 100)} pts`), ` ${d > 0 ? 'more' : 'less'} often`], `${P(rate(vs[0]))} vs ${P(rate(vs[1]))} for ${vs[1].v.slice(0, 8)} (${vs[0].runs.length} and ${vs[1].runs.length} runs).`, { section: 'versions' });
+  }
+  return out.sort((a, b) => b.score - a.score);
+}
+
+// The top finding, above the grid.
+export function headlines(ins, go, runs) {
+  if (!ins.n) return [];
+  const top = learn(ins, runs || [])[0];
+  if (!top) return [];
+  return [h('button', { class: `headline ${top.tone}`, title: 'Insights: what the numbers say', onclick: () => go(top.go?.section || 'learned') }, icon('sparkle'), h('span', {}, ...[].concat(top.title)))];
 }
 
 // ---------- render ----------
@@ -346,16 +417,30 @@ export function renderInsights(root, ins, act) {
   // Tools table (wide)
   const tools = card('tools', 'Tools & methods', 'Every tool call in these runs. Sort by any column; click a row to see the runs where it failed.', ...toolsTable(ins, act));
 
-  // Generation models
-  const models = [...ins.models].map((m) => ({ ...m, rate: m.calls ? m.fails / m.calls : 0, avg: m.calls ? m.ms / m.calls : 0 })).sort((a, b) => b.calls - a.calls).slice(0, 12);
-  const modelsCard = card('models', 'Generation models', 'Media generation calls by method / model: how long each call takes, and how often it fails.',
-    h('table', { class: 'ins' },
-      h('thead', {}, h('tr', {}, h('th', {}, 'Model / method'), h('th', {}, 'Calls'), h('th', {}, 'Avg'), h('th', {}, 'p90'), h('th', {}, 'Fail rate'))),
-      h('tbody', {}, models.map((m) => tooltip(h('tr', { onclick: () => act.filterStep(m.step, m.fails > 0) },
-        h('td', { title: m.key }, h('span', { class: 'cat', style: { background: CAT_COLOR[m.cat] } }), m.key),
-        h('td', {}, fmtInt(m.calls)), h('td', {}, dur(m.avg)), h('td', {}, dur(pct(m.perCall, 90))),
-        h('td', {}, h('span', { class: 'minibar' }, m.fails ? h('i', { style: { width: `${Math.max(2, m.rate * 60)}px`, background: 'var(--viz-crit)' } }) : null, m.fails ? `${pc(m.rate)} (${m.fails})` : '0%'))),
-      `${m.key}\n${fmtInt(m.calls)} calls · avg ${dur(m.avg)} · p90 ${dur(pct(m.perCall, 90))}\n${fmtInt(m.fails)} failed`)))));
+  // Models: time and cost per call, each model against the slowest / most expensive.
+  const mrows = ins.modelRows.filter((m) => m.calls > 0).sort((a, b) => b.ms - a.ms).slice(0, act.expanded?.models ? 60 : 12);
+  const maxAvg = Math.max(1, ...mrows.map((m) => m.avgMs));
+  const maxCost = Math.max(0.0001, ...mrows.map((m) => m.avgCost || 0));
+  const totMs = ins.modelRows.reduce((a, m) => a + m.ms, 0);
+  const totCost = ins.modelRows.reduce((a, m) => a + m.cost, 0);
+  const modelsCard = card('models', 'Models: time and cost', `Every generation model in these runs: how long one call takes and what it costs at the product's list price (per second of video asked for, or per generation; failed calls free). ${dur(totMs)} of generation and ${money(totCost)} in view.`,
+    mrows.length ? h('div', { class: 'models' },
+      h('div', { class: 'model-row head' }, h('span', {}, 'Model'), h('span', {}, 'Time a call'), h('span', {}), h('span', {}, 'Cost a call'), h('span', {})),
+      ...mrows.map((m) => tooltip(h('div', { class: 'model-row', style: { cursor: 'pointer' }, onclick: () => act.filter('model', m.name) },
+        h('span', { class: 'mn' }, h('i', { class: `mk ${m.kind}` }), h('b', {}, m.name), h('small', {}, `${fmtInt(m.calls)}×${m.fails ? ` · ${pc(m.failRate)} fail` : ''}`)),
+        h('span', { class: 'mbar' }, h('i', { style: { width: `${(m.avgMs / maxAvg) * 100}%` } })),
+        h('span', { class: 'mv' }, dur(m.avgMs), h('small', {}, `${pc(share(m.ms, totMs))} of time`)),
+        h('span', { class: 'mbar cost' }, h('i', { style: { width: `${((m.avgCost || 0) / maxCost) * 100}%` } })),
+        h('span', { class: 'mv' }, money(m.avgCost), h('small', {}, m.cost ? `${pc(share(m.cost, totCost))} of spend` : 'no price'))),
+      `${m.name} (${m.methods.join(', ')})\n${fmtInt(m.calls)} calls in ${fmtInt(m.runs)} runs · ${fmtInt(m.fails)} failed\n${dur(m.avgMs)} a call on average, slowest ${dur(m.maxMs)}\n${m.avgCost != null ? `${money(m.avgCost)} a successful call · ${money(m.cost)} in total` : 'Not in the price list'}\nClick to see these runs`)),
+      ins.modelRows.length > 12 ? h('button', { class: 'linkish', onclick: () => { act.expanded.models = !act.expanded.models; act.rerender(); } }, act.expanded.models ? 'Show fewer' : `Show all ${ins.modelRows.length}`) : null)
+      : h('p', { class: 'desc' }, 'No generation calls in these runs.'));
+
+  // What we learned: the numbers, read.
+  const found = learn(ins, act.runs?.() || []);
+  const learned = card('learned', 'What the numbers say', 'The findings worth knowing in these runs, each with its evidence. Click one to see the runs behind it.',
+    found.length ? h('div', { class: 'learned' }, found.slice(0, 8).map((f) => h('button', { class: `finding ${f.tone}`, onclick: () => act.go(f.go) },
+      h('div', { class: 't' }, ...[].concat(f.title)), h('div', { class: 'd' }, f.detail)))) : h('p', { class: 'desc' }, 'Nothing stands out in these runs.'));
 
   // Errors
   const errors = card('errors', 'Top errors', 'Failures grouped by message (ids and numbers masked), by how many runs they hit.',
@@ -422,10 +507,16 @@ export function renderInsights(root, ins, act) {
           h('td', {}, pc(share(v.runs.filter((r) => r.sentiments?.includes('frustrated')).length, v.runs.length))), h('td', {}, dur(pct(tf, 50))));
       }))) : h('p', { class: 'desc' }, 'No version data.'));
 
-  // Wide cards across the top, then the rest packed into masonry columns (no height gaps).
-  root.replaceChildren(h('div', { class: 'ins-top' }, h('p', { class: 'ins-note' }, `Insights for ${act.label()}. Click anything to filter the runs.`),
+  // The findings and the models first; the few cards that explain them; every other number folded
+  // away under "All the numbers" (on paper, everything is printed).
+  const all = [overview, tools, timing, rep, trend, vers];
+  root.replaceChildren(h('div', { class: 'ins-top' }, h('p', { class: 'ins-note' }, `Insights for ${act.label()}. Click anything to see the runs.`),
       h('button', { class: 'btn', onclick: (e) => act.share(e.currentTarget) }, icon('external'), 'Share insights')),
-    h('div', { class: 'ins-wide' }, overview, tools),
-    h('div', { class: 'ins-masonry' }, funnel, mood, errors, timing, modelsCard, asks, rep, trend, vers));
+    h('div', { class: 'ins-wide' }, learned, modelsCard),
+    h('div', { class: 'ins-masonry' }, funnel, errors, mood, asks),
+    act.print ? h('div', { class: 'ins-masonry' }, ...all)
+      : h('details', { class: 'ins-all', open: Boolean(act.expanded?.all) || ['tools', 'timing', 'repeats', 'trend', 'versions', 'overview'].includes(act.scrollTo), ontoggle: (e) => { act.expanded.all = e.target.open; } },
+        h('summary', {}, 'All the numbers', h('small', {}, 'overview tiles, every tool, where the time goes, repeated requests, runs per day, skill versions')),
+        h('div', { class: 'ins-wide' }, overview, tools), h('div', { class: 'ins-masonry' }, timing, rep, trend, vers)));
   if (act.scrollTo) root.querySelector(`#ins-${act.scrollTo}`)?.scrollIntoView({ block: 'start' });
 }

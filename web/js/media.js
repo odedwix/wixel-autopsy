@@ -27,10 +27,11 @@ const save = (href) => {
 };
 
 // `which: 'review'` saves the 540p review copy even when there's an exact render.
-export function downloadRun(run, skill, which) {
+// `cc`: the exact copy with captions (the viewer turned them on in the player).
+export function downloadRun(run, skill, which, { cc = false } = {}) {
   if (!isReady(mediaOf(run.id))) return false;
   const src = which === 'review' || which === 'exact' ? which : null;
-  save(`/download/${run.id}?name=${encodeURIComponent(downloadName(run, skill) + (src ? `-${src}` : ''))}${src ? `&src=${src}` : ''}`);
+  save(`/download/${run.id}?name=${encodeURIComponent(downloadName(run, skill) + (src ? `-${src}` : '') + (cc ? '-captions' : ''))}${src ? `&src=${src}` : ''}${cc ? '&cc=1' : ''}`);
   return true;
 }
 
@@ -41,6 +42,14 @@ export function downloadOutput(run, output, skill) {
   if (output.type === 'video') return downloadRun(run, skill);
   save(`/download-asset/${run.id}/${output.id}?name=${encodeURIComponent(downloadName({ ...run, adName: output.name || run.adName }, skill || output.type))}`);
   return true;
+}
+
+// After Refresh: forget these runs' statuses (all of them without ids), so their cards and the open
+// run ask again and rebuilt copies show.
+export function resetMedia(ids) {
+  if (ids) for (const id of ids) status.delete(id);
+  else status.clear();
+  for (const fn of listeners) fn(ids || []);
 }
 
 const FINAL = new Set(['ready', 'failed', 'unavailable']);

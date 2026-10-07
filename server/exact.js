@@ -13,7 +13,10 @@ import { mediaFile } from './media.js';
 
 const jobs = new Map(); // runId → { state, done, total, error, startedAt }
 const dirFor = (id) => path.join(config.cacheDir, 'media', id);
-export const exactFile = (id) => path.join(dirFor(id), 'exact.mp4');
+// Two copies at most: without captions unless a person turned them on (the default), and with them
+// (`cc`: the viewer turned them on in the player).
+export const exactFile = (id, { cc = false } = {}) => path.join(dirFor(id), cc ? 'exact-cc.mp4' : 'exact.mp4');
+const jobKey = (id, cc) => `${id}${cc ? '|cc' : ''}`;
 
 function run(cmd, args) {
   return new Promise((resolve, reject) => {
@@ -25,36 +28,43 @@ function run(cmd, args) {
   });
 }
 
-export async function exactStatus(id) {
-  if (jobs.has(id)) return jobs.get(id);
-  const st = await fs.stat(exactFile(id)).catch(() => null);
+// v2: captions only when a person turned them on (v1 copies kept the agent's own captions).
+const EXACT_VERSION = 2;
+export async function exactStatus(id, { cc = false } = {}) {
+  if (jobs.has(jobKey(id, cc))) return jobs.get(jobKey(id, cc));
+  const meta = JSON.parse(await fs.readFile(path.join(dirFor(id), cc ? 'exact-cc.json' : 'exact.json'), 'utf8').catch(() => '{}'));
+  if ((meta.v || 1) < EXACT_VERSION) return { state: 'none' };
+  const st = await fs.stat(exactFile(id, { cc })).catch(() => null);
   return st ? { state: 'ready', bytes: st.size } : { state: 'none' };
 }
 
-export async function startExact(run0) {
+export async function startExact(run0, { cc = false } = {}) {
   const id = run0.id;
-  const cur = await exactStatus(id);
+  const key = jobKey(id, cc);
+  const cur = await exactStatus(id, { cc });
   if (['ready', 'queued', 'loading', 'rendering', 'encoding'].includes(cur.state)) return cur;
   const job = { state: 'queued', done: 0, total: 0, startedAt: Date.now() };
-  jobs.set(id, job);
-  capture(run0, job)
-    .then(() => jobs.delete(id))
+  jobs.set(key, job);
+  capture(run0, job, cc)
+    .then(() => jobs.delete(key))
     .catch((err) => {
       job.state = 'failed';
       job.error = String(err.message || err).slice(0, 400);
-      setTimeout(() => jobs.get(id) === job && jobs.delete(id), 10 * 60000);
+      setTimeout(() => jobs.get(key) === job && jobs.delete(key), 10 * 60000);
     });
   return job;
 }
 
-async function capture(r, job) {
-  const frames = path.join(dirFor(r.id), 'exact-frames');
+async function capture(r, job, cc = false) {
+  const frames = path.join(dirFor(r.id), cc ? 'exact-frames-cc' : 'exact-frames');
   await fs.rm(frames, { recursive: true, force: true });
   await fs.mkdir(frames, { recursive: true });
   let meta;
   await withChrome(async ({ send }) => {
     job.state = 'loading';
-    await send('Page.navigate', { url: `http://127.0.0.1:${config.port}/player/capture.html?run=${r.id}${r.videoAssetId ? `&root=${r.videoAssetId}` : ''}` });
+    // The run's video, or its story (drawn as timed scenes by the same player; see player.js).
+    const root = r.videoAssetId || r.storyAssetId;
+    await send('Page.navigate', { url: `http://127.0.0.1:${config.port}/player/capture.html?run=${r.id}${root ? `&root=${root}` : ''}&captions=${cc ? '1' : 'user'}` });
     const got = await waitFor(send, 'window.__captureMeta || (window.__captureError && { error: window.__captureError }) || null', 180000);
     if (!got) throw new Error('the player did not load in 3 minutes');
     if (got.error) throw new Error(got.error);
@@ -76,12 +86,12 @@ async function capture(r, job) {
   job.state = 'encoding';
   const audio = mediaFile(r.id, 'review.mp4');
   const hasAudio = Boolean(audio && (await fs.stat(audio).catch(() => null)));
-  const out = exactFile(r.id);
+  const out = exactFile(r.id, { cc });
   await run('ffmpeg', ['-y', '-v', 'error', '-framerate', String(meta.fps), '-i', path.join(frames, 'f%05d.jpg'),
     ...(hasAudio ? ['-i', audio, '-map', '0:v', '-map', '1:a?', '-c:a', 'aac', '-b:a', '192k'] : []),
     '-c:v', 'libx264', '-preset', 'medium', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart',
     '-t', String(meta.frames / meta.fps), `${out}.tmp.mp4`]);
   await fs.rename(`${out}.tmp.mp4`, out);
   await fs.rm(frames, { recursive: true, force: true });
-  await fs.writeFile(path.join(dirFor(r.id), 'exact.json'), JSON.stringify({ ...meta, builtMs: Date.now() - job.startedAt, audio: hasAudio ? 'assembled copy' : 'none', at: Date.now() }));
+  await fs.writeFile(path.join(dirFor(r.id), cc ? 'exact-cc.json' : 'exact.json'), JSON.stringify({ ...meta, v: EXACT_VERSION, captions: cc ? 'on' : 'only if a person turned them on', builtMs: Date.now() - job.startedAt, audio: hasAudio ? 'assembled copy' : 'none', at: Date.now() }));
 }

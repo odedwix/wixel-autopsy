@@ -1,8 +1,9 @@
 // Facets: OR within a facet, AND across facets. Counts are "what you'd get if you added this
 // option" (every other active facet applied), so they never lie about the result.
 
-// A run "has output" when it wrote at least one top-level asset (any type the skill makes).
-export const hasAd = (r) => Boolean(r.outputs?.length || r.adAssetId || r.thumbnail);
+// A run "has output" when it wrote at least one top-level asset of a type the skill makes (see
+// expectedTypes: a wixel-ads run that only made an image hasn't made its video).
+export const hasAd = (r) => (Array.isArray(r.outputs) ? r.outputs.length > 0 : Boolean(r.adAssetId || r.thumbnail));
 export const hasOutput = hasAd;
 // It "tried" when it called something that makes an asset: a media job, an image tool, or a write.
 const MAKERS = new Set(['generate_image', 'edit_image', 'convert_image_format', 'write']);
@@ -16,7 +17,7 @@ export function outputProfile(runs) {
   const counts = new Map();
   let withOut = 0;
   for (const r of runs) {
-    const types = new Set((r.outputs || []).map((o) => o.type));
+    const types = new Set((r.allOutputs || r.outputs || []).map((o) => o.type));
     if (types.size) withOut++;
     for (const t of types) counts.set(t, (counts.get(t) || 0) + 1);
   }
@@ -27,6 +28,37 @@ export function outputProfile(runs) {
 let currentProfile = [];
 export const setProfile = (p) => (currentProfile = p || []);
 export const getProfile = () => currentProfile;
+
+// What the skill is supposed to make, learned from its runs: its main output type, plus any other
+// type at least a quarter of its producing runs make (brand-kit: image, logo, icons). Runs are shown
+// and judged by these only; other types they wrote are kept aside as `otherOutputs`.
+export function expectedTypes(profile) {
+  if (!profile?.length) return null;
+  return profile.filter((p, i) => i === 0 || (p.share >= 0.25 && p.runs >= 3)).map((p) => p.type);
+}
+
+// Splits each run's outputs by the expected types (null = keep everything, e.g. user mode).
+// Idempotent: the originals stay in `allOutputs`.
+export function applyExpected(runs, types) {
+  const keep = types ? new Set(types) : null;
+  for (const r of runs) {
+    r.allOutputs ??= r.outputs || [];
+    r.outputs = keep ? r.allOutputs.filter((o) => keep.has(o.type)) : r.allOutputs;
+    r.otherOutputs = keep ? r.allOutputs.filter((o) => !keep.has(o.type)) : [];
+  }
+}
+
+// The expected output in words, for labels: "a video", "videos", "an image or a logo".
+let expected = null;
+export const setExpected = (t) => (expected = t);
+export const getExpected = () => expected;
+export function madeLabel(plural = false) {
+  const t = expected?.length ? expected : null;
+  if (!t) return plural ? 'outputs' : 'output';
+  const words = t.slice(0, 2).map((x) => typeLabel(x).toLowerCase());
+  return plural ? words.map(pluralOf).join(' / ') : words.join(' or ');
+}
+export const pluralOf = (w) => (/s$/i.test(w) ? w : /[^aeiou]y$/i.test(w) ? `${w.slice(0, -1)}ies` : `${w}s`);
 
 // The output to show for a run: the skill's main type first, then whatever it wrote last.
 export function primaryOutput(r, profile = currentProfile) {
@@ -41,7 +73,7 @@ export function primaryOutput(r, profile = currentProfile) {
 export const stepKey = (tool, method) => (tool === 'invoke_rpc' && method ? method : tool);
 export const downloaded = (r) => r.userDownloads > 0 || r.agentDownloads > 0;
 export const failedRun = (r) => attempted(r) && !hasAd(r);
-const GEN_METHOD = /^generate|^holdStill|^transformVideo|LogoShot|^mergeVoice/;
+const GEN_METHOD = /^generate|^holdStill|^transformVideo|LogoShot|Animation$|^StartAnimation/;
 
 export const MOOD = {
   frustrated: { label: 'Frustrated', icon: 'frustrated', color: 'var(--err)' },
@@ -56,42 +88,23 @@ export function worstMood(r) {
   return null;
 }
 
+// The outcome is one switch above the grid (All / Made it / Tried, no output / Never tried), not a
+// facet; the facets below are the few that answer real questions, each option with its count.
+export const OUTCOMES = [
+  { value: 'video', label: () => `Made ${/^[aeiou]/.test(madeLabel()) ? 'an' : 'a'} ${madeLabel()}`, dot: 'var(--ok)', test: hasAd },
+  { value: 'failed', label: () => `Tried, no ${madeLabel()}`, dot: 'var(--err)', test: failedRun },
+  { value: 'none', label: () => 'Never tried', dot: 'var(--text-3)', test: (r) => !hasAd(r) && !attempted(r) },
+];
+
 export const FACETS = [
-  {
-    key: 'outcome',
-    label: 'Result',
-    options: [
-      { value: 'video', label: 'Produced output', dot: 'var(--ok)', test: hasAd },
-      { value: 'failed', label: 'Tried, no output', dot: 'var(--err)', test: failedRun },
-      { value: 'none', label: 'Never tried', dot: 'var(--text-3)', test: (r) => !hasAd(r) && !attempted(r) },
-    ],
-  },
-  { key: 'outputType', label: 'Output type', dynamic: (r) => [...new Set((r.outputs || []).map((o) => o.type))], labelOf: (v) => typeLabel(v) },
-  // Every skill the session loaded (in skill mode: which skills people combine with this one).
-  { key: 'skillsUsed', label: 'Skills in the session', dynamic: (r) => r.allSkills || r.skills || [], limit: 6 },
+  { key: 'outcome', label: 'Result', hidden: true, options: OUTCOMES.map((o) => ({ value: o.value, dot: o.dot, test: o.test, get label() { return o.label(); } })) },
   {
     key: 'delivery',
     label: 'What the user did',
     options: [
       { value: 'downloaded', label: 'Downloaded', test: downloaded },
-      { value: 'user-dl', label: '· from the editor', test: (r) => r.userDownloads > 0 },
-      { value: 'agent-dl', label: '· asked the agent', test: (r) => r.agentDownloads > 0 },
       { value: 'published', label: 'Published', test: (r) => Boolean(r.publishedUrl) },
       { value: 'neither', label: 'Neither', test: (r) => hasAd(r) && !downloaded(r) && !r.publishedUrl },
-    ],
-  },
-  {
-    key: 'mood',
-    label: 'User mood (any turn)',
-    options: Object.entries(MOOD).map(([value, m]) => ({ value, label: m.label, dot: m.color, test: (r) => r.sentiments?.includes(value) })),
-  },
-  {
-    key: 'feedback',
-    label: 'Feedback',
-    options: [
-      { value: 'up', label: 'Thumbs up', test: (r) => r.thumbsUp > 0 },
-      { value: 'down', label: 'Thumbs down', test: (r) => r.thumbsDown > 0 },
-      { value: 'tagged', label: 'Left a reason', test: (r) => r.feedbackTags?.length > 0 },
     ],
   },
   {
@@ -101,33 +114,43 @@ export const FACETS = [
       { value: 'real', label: 'Real users', test: (r) => r.userType === 'real' },
       { value: 'employee', label: 'Wix employees', test: (r) => r.userType === 'employee' },
       { value: 'wixel-team', label: 'Wixel team', test: (r) => r.userType === 'wixel-team' },
-      { value: 'unknown', label: 'Unknown', test: (r) => !r.userType || r.userType === 'unknown' },
+    ],
+  },
+  {
+    key: 'mood',
+    label: 'How it went for the user',
+    options: [
+      { value: 'frustrated', label: 'Frustrated', dot: 'var(--err)', test: (r) => r.sentiments?.includes('frustrated') },
+      { value: 'confused', label: 'Confused', dot: 'var(--warn)', test: (r) => r.sentiments?.includes('confused') },
+      { value: 'up', label: 'Thumbs up', dot: 'var(--ok)', test: (r) => r.thumbsUp > 0 },
+      { value: 'down', label: 'Thumbs down', dot: 'var(--err)', test: (r) => r.thumbsDown > 0 },
     ],
   },
   {
     key: 'issues',
-    label: 'Issues',
+    label: 'Problems',
     options: [
       { value: 'errors', label: 'Tool errors', dot: 'var(--err)', test: (r) => r.errors > 0 },
       { value: 'failed-turn', label: 'Failed turn', dot: 'var(--err)', test: (r) => r.failedTurns > 0 },
       { value: 'credits', label: 'Out of credits', dot: 'var(--warn)', test: (r) => r.outOfFunds > 0 },
-      { value: 'stream', label: 'Model stream error', dot: 'var(--warn)', test: (r) => r.streamErrors > 0 },
-      { value: 'clean', label: 'No issues', dot: 'var(--ok)', test: (r) => !r.errors && !r.failedTurns && !r.outOfFunds && !r.streamErrors },
+      { value: 'clean', label: 'No problems', dot: 'var(--ok)', test: (r) => !r.errors && !r.failedTurns && !r.outOfFunds && !r.streamErrors },
     ],
   },
-  {
-    key: 'render',
-    label: 'Video render',
-    options: [
-      { value: 'exact', label: 'Exact render exists', test: (r) => Boolean(r.renderUrl || r.agentDownloadLink) },
-      { value: 'assembled', label: 'Assembled only', test: (r) => Boolean(r.videoAssetId) && !r.renderUrl && !r.agentDownloadLink },
-    ],
-  },
-  { key: 'failedStep', label: 'Failed step', dynamic: (r) => [...new Set((r.steps || []).filter((x) => x[4] > 0).map((x) => stepKey(x[0], x[1])))], limit: 6 },
-  { key: 'agent', label: 'Agent', dynamic: (r) => (r.agent ? [r.agent] : []) },
-  { key: 'source', label: 'Source', dynamic: (r) => (r.source ? [r.source] : []) },
-  { key: 'model', label: 'Generation methods', dynamic: (r) => (r.methods || []).filter((m) => GEN_METHOD.test(m)), limit: 8 },
+  { key: 'failedStep', label: 'Failed step', dynamic: (r) => [...new Set((r.steps || []).filter((x) => x[4] > 0).map((x) => stepKey(x[0], x[1])))], limit: 5 },
+  { key: 'model', label: 'Model', dynamic: (r) => modelsOfRun(r), limit: 6 },
+  { key: 'source', label: 'Started from', dynamic: (r) => (r.source ? [r.source] : []), labelOf: (v) => SOURCE_LABEL[v] || v },
+  // Every skill the session loaded (in skill mode: which skills people combine with this one).
+  { key: 'skillsUsed', label: 'Skills in the session', dynamic: (r) => r.allSkills || r.skills || [], limit: 5 },
 ];
+const SOURCE_LABEL = { 'wixel-chat-ui': 'Chat', 'sub-agent': 'Sub-agent (campaigns, parallel work)', 'api': 'API' };
+
+// The generation models a run used (media job graphs by their price-list name, image models).
+let modelNamer = (tool, method, model) => model || (tool === 'invoke_rpc' ? method : tool);
+export const setModelNamer = (fn) => (modelNamer = fn);
+const GEN_STEP = (tool, method) => tool === 'generate_image' || tool === 'edit_image' || (tool === 'invoke_rpc' && GEN_METHOD.test(method || ''));
+function modelsOfRun(r) {
+  return [...new Set((r.steps || []).filter((x) => GEN_STEP(x[0], x[1]) && x[3] - x[4] > 0).map((x) => modelNamer(x[0], x[1], x[2], x[8])).filter(Boolean))];
+}
 
 // Dynamic facets get their options from the data.
 export function facetOptions(facet, runs) {
@@ -157,6 +180,11 @@ export function matchesQuery(r, q) {
 // ---- apply ----
 export function compile(filters, runs) {
   const active = [];
+  // A pick of runs from an insight ("these 9 stalled runs"), not a facet.
+  if (filters.ids?.length) {
+    const ids = new Set(filters.ids);
+    active.push({ key: 'ids', test: (r) => ids.has(r.id) });
+  }
   for (const f of FACETS) {
     const vals = filters[f.key];
     if (!vals?.length) continue;
@@ -193,15 +221,3 @@ export const SORTS = {
   generations: (a, b) => (b.generations || 0) - (a.generations || 0),
   cost: (a, b) => (b.costUsd || 0) - (a.costUsd || 0),
 };
-
-// Headline numbers; each one is also a one-click filter.
-export const STATS = [
-  { key: 'all', label: 'Runs', filter: null },
-  { key: 'video', label: 'Produced output', dot: 'var(--ok)', filter: ['outcome', 'video'], test: hasAd },
-  { key: 'failed', label: 'Tried, no output', dot: 'var(--err)', filter: ['outcome', 'failed'], test: failedRun },
-  { key: 'downloaded', label: 'Downloaded', dot: 'var(--info)', filter: ['delivery', 'downloaded'], test: downloaded },
-  { key: 'published', label: 'Published', dot: 'var(--accent)', filter: ['delivery', 'published'], test: (r) => Boolean(r.publishedUrl) },
-  { key: 'frustrated', label: 'Frustrated', dot: 'var(--err)', filter: ['mood', 'frustrated'], test: (r) => r.sentiments?.includes('frustrated') },
-  { key: 'down', label: 'Thumbs down', dot: 'var(--warn)', filter: ['feedback', 'down'], test: (r) => r.thumbsDown > 0 },
-  { key: 'employee', label: 'Employees', dot: 'var(--info)', filter: ['user', 'employee'], test: (r) => r.userType === 'employee' },
-];

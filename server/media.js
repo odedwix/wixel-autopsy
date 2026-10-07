@@ -15,8 +15,10 @@ const MEDIA = path.join(config.cacheDir, 'media');
 const SPRITE_FRAMES = 60;
 const SHORT_SIDE = 540;
 const CONCURRENCY = 2;
-// Recorded in each build's meta (v2 = root voiceover/music tracks mixed in), so stale copies can be found.
-const ASSEMBLY_VERSION = 2;
+// Recorded in each build's meta (v2 = root voiceover/music tracks mixed in; v4 = the run's own video,
+// not the project's root asset, and the root voiceover read from where the product keeps it). Older
+// assembled copies are rebuilt when next asked for.
+const ASSEMBLY_VERSION = 4;
 
 const dirFor = (id) => path.join(MEDIA, id);
 const exists = (f) => fs.access(f).then(() => true, () => false);
@@ -57,7 +59,15 @@ async function pickSource(run) {
     const url = await resolveAgentRender(run.agentDownloadLink).catch(() => null);
     if (url) return { kind: 'render', label: 'Exact render (agent download)', url };
   }
-  const rec = normalizeSession(await getSessionBundle(run.id));
+  // The run's own video or story (from the list), not the project's root: projects hold other
+  // sessions' work.
+  const rec = normalizeSession(await getSessionBundle(run.id), { rootId: run.videoAssetId || run.storyAssetId || undefined });
+  if (rec.outputs?.kind === 'story') {
+    // The user's own story export is exact, unless the story changed after it was made.
+    const at = Number(run.storyExportUrl?.match(/story-(\d+)\.mp4/)?.[1]);
+    if (at && at >= rec.outputs.contentUpdatedAt - 2000) return { kind: 'render', label: 'Story export (the file the user downloaded)', url: run.storyExportUrl };
+    if (rec.outputs.scenes.length) return { kind: 'assembled', label: 'Assembled from the story pages (no text layers)', story: rec.outputs };
+  }
   const scenes = (rec.outputs?.scenes || []).filter((s) => s.clipUrl);
   if (scenes.length) return { kind: 'assembled', label: 'Assembled from scenes (no text overlays)', scenes, music: rec.outputs.music, rootAudio: rec.outputs.rootAudio || [], fps: 24 };
   // Nothing composed: fall back to the last generated clip so failed/partial runs still show something.
@@ -137,6 +147,82 @@ async function assemble(src, out) {
   await run('ffmpeg', args);
 }
 
+// A story: each page for its duration (clip from its start, frozen on the last frame if shorter;
+// a still page's poster or background image; else its background color), hard cuts; the
+// voice-over, sound effects, and music ducked under the voice and faded out at the end.
+const HEX = /^#?([0-9a-f]{6})$/i;
+async function assembleStory(src, out) {
+  const st = src.story;
+  const portrait = st.height >= st.width;
+  const even = (x) => Math.round(x / 2) * 2;
+  const W = portrait ? SHORT_SIDE : even((SHORT_SIDE * st.width) / st.height);
+  const H = portrait ? even((SHORT_SIDE * st.height) / st.width) : SHORT_SIDE;
+  const fill = (fit) => (fit ? `scale=${W}:${H}:force_original_aspect_ratio=decrease,pad=${W}:${H}:(ow-iw)/2:(oh-ih)/2` : `scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H}`);
+  const args = ['-y', '-v', 'error'];
+  const parts = [];
+  let n = 0;
+  let total = 0;
+  // Provider clip links expire: a page whose clip can't be read shows its still, else its color.
+  // Stills are fetched once into local files: ffmpeg's looped image input re-reads its file for every
+  // frame, which over HTTP means one download per frame.
+  const ok = async (u) => Boolean(u) && Boolean(await probe(u).catch(() => null));
+  const local = async (u, i) => {
+    try {
+      const res = await fetch(u, { signal: AbortSignal.timeout(30000) });
+      if (!res.ok) return null;
+      const f = path.join(path.dirname(out), `still-${i}.img`);
+      await fs.writeFile(f, Buffer.from(await res.arrayBuffer()));
+      return (await ok(f)) ? f : null;
+    } catch {
+      return null;
+    }
+  };
+  const pages = await Promise.all(st.scenes.map(async (p, i) => ({ ...p, clipUrl: (await ok(p.clipUrl)) ? p.clipUrl : null, stillUrl: p.stillUrl ? await local(p.stillUrl, i) : null })));
+  pages.forEach((p, i) => {
+    const len = p.playFrames / 24;
+    total += len;
+    if (p.clipUrl) {
+      args.push('-i', p.clipUrl);
+      parts.push(`[${n++}:v]trim=start=${p.clipStartSec || 0},setpts=PTS-STARTPTS,fps=24,${fill(p.fit)},setsar=1,tpad=stop_mode=clone:stop_duration=${len},trim=duration=${len}[v${i}]`);
+    } else if (p.stillUrl) {
+      args.push('-loop', '1', '-framerate', '24', '-t', String(len), '-i', p.stillUrl);
+      parts.push(`[${n++}:v]fps=24,${fill(p.fit)},setsar=1,trim=duration=${len},setpts=PTS-STARTPTS[v${i}]`);
+    } else {
+      parts.push(`color=c=0x${HEX.exec(p.color || '')?.[1] || '000000'}:s=${W}x${H}:r=24:d=${len},setsar=1[v${i}]`);
+    }
+  });
+  parts.push(`${pages.map((_, i) => `[v${i}]`).join('')}concat=n=${pages.length}:v=1:a=0[v]`);
+  // Story audio URLs sometimes use the bare wixstatic.com host (it doesn't resolve; the media lives on
+  // static.wixstatic.com). A track that still can't be read is left out rather than failing the video.
+  const fix = (u) => String(u).replace(/^https:\/\/wixstatic\.com\//, 'https://static.wixstatic.com/');
+  const readable = async (list) => (await Promise.all(list.map(async (t) => {
+    const info = await probe(fix(t.url)).catch(() => null);
+    return info ? { ...t, url: fix(t.url), duration: info.duration } : null;
+  }))).filter(Boolean);
+  const a = { ...st.story, voices: await readable(st.story.voices), sfx: await readable(st.story.sfx), music: await readable(st.story.music) };
+  const voiceSpans = a.voices.map((v) => [v.atSec, v.atSec + (v.duration || 0)]);
+  const mix = [];
+  const track = (url, chain) => {
+    args.push('-i', url);
+    parts.push(`[${n}:a]${chain},aresample=48000,aformat=channel_layouts=stereo,apad=whole_dur=${total},atrim=duration=${total}[a${n}]`);
+    mix.push(`[a${n++}]`);
+  };
+  const delay = (sec) => `adelay=${Math.round(sec * 1000)}:all=1`;
+  for (const v of [...a.voices, ...a.sfx]) track(v.url, `volume=${v.volume},${delay(v.atSec)}`);
+  for (const m of a.music) {
+    const duck = voiceSpans.length && a.duckVolume < 1 ? `,volume='if(${voiceSpans.map(([s0, s1]) => `between(t,${s0},${s1})`).join('+')},${a.duckVolume},1)':eval=frame` : '';
+    track(m.url, `${delay(m.atSec)},volume=${m.volume}${duck},afade=t=out:st=${Math.max(0, total - m.fadeOutSec)}:d=${m.fadeOutSec}`);
+  }
+  if (!mix.length) parts.push(`anullsrc=r=48000:cl=stereo,atrim=duration=${total}[aout]`);
+  else parts.push(`${mix.join('')}amix=inputs=${mix.length}:duration=longest:normalize=0,atrim=duration=${total}[aout]`);
+  args.push('-filter_complex', parts.join(';'), '-map', '[v]', '-map', '[aout]', ...videoArgs, ...audioArgs, '-t', String(total), '-movflags', '+faststart', out);
+  try {
+    await run('ffmpeg', args);
+  } finally {
+    await Promise.all(pages.filter((p) => p.stillUrl).map((p) => fs.rm(p.stillUrl, { force: true })));
+  }
+}
+
 async function stills(dir) {
   const video = path.join(dir, 'review.mp4');
   const info = await probe(video);
@@ -164,7 +250,8 @@ async function build(run) {
   const src = await pickSource(run);
   if (!src) return { state: 'unavailable', reason: 'No render, scenes or clips in this run' };
   const tmp = path.join(dir, 'review.tmp.mp4');
-  if (src.kind === 'assembled') await assemble(src, tmp);
+  if (src.story) await assembleStory(src, tmp);
+  else if (src.kind === 'assembled') await assemble(src, tmp);
   else await transcode(src.url, tmp);
   await fs.rename(tmp, path.join(dir, 'review.mp4'));
   const meta = await stills(dir);
@@ -210,7 +297,8 @@ export async function mediaStatus(run, { priority = false, retry = false } = {})
   const meta = await readMeta(run.id);
   // A render that appears later (user downloads after we assembled) upgrades the media.
   const upgrade = meta?.state === 'ready' && meta.kind !== 'render' && (run.renderUrl || run.agentDownloadLink);
-  if (meta && !upgrade && !(retry && meta.state === 'failed')) return meta;
+  const stale = meta?.state === 'ready' && meta.kind !== 'render' && (meta.v || 0) < ASSEMBLY_VERSION;
+  if (meta && !upgrade && !stale && !(retry && meta.state === 'failed')) return meta;
   let job = jobs.get(run.id);
   if (!job) {
     job = { run, state: 'queued' };
@@ -222,6 +310,20 @@ export async function mediaStatus(run, { priority = false, retry = false } = {})
     pending.unshift(job);
   }
   return { state: job.state, queuePosition: pending.indexOf(job) };
+}
+
+// Refresh: forget the review copies (and Exact composition mp4s) of these runs unless their video
+// is the user's own render, so the next look rebuilds them from the assets as they are now.
+export async function forgetMedia(ids) {
+  let n = 0;
+  for (const id of ids.filter((x) => /^[\w-]{36}$/.test(x))) {
+    if (jobs.has(id)) continue;
+    const meta = await readMeta(id);
+    if (!meta || meta.kind === 'render') continue;
+    await Promise.all(['meta.json', 'exact.mp4', 'exact.json', 'exact-cc.mp4', 'exact-cc.json'].map((f) => fs.rm(path.join(dirFor(id), f), { force: true })));
+    n++;
+  }
+  return { forgotten: n };
 }
 
 export function mediaFile(id, name) {

@@ -64,7 +64,9 @@ async function session(fn) {
   // A fresh profile per session (a killed Chrome can still be writing to the last one).
   await fs.mkdir(path.join(config.cacheDir, 'chrome-pdf'), { recursive: true });
   const profile = await fs.mkdtemp(path.join(config.cacheDir, 'chrome-pdf', 'p-'));
-  const chrome = spawn(bin, ['--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--mute-audio',
+  // Software WebGL (SwiftShader): the product's image components draw with WebGL, and without a GPU
+  // headless Chrome has no WebGL context — those layers would come out blank in Exact captures.
+  const chrome = spawn(bin, ['--headless=new', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist', '--no-first-run', '--no-default-browser-check', '--mute-audio',
     '--autoplay-policy=no-user-gesture-required', `--user-data-dir=${profile}`, '--remote-debugging-port=0', '--window-size=1400,1000', 'about:blank'], { stdio: 'ignore' });
   let ws;
   try {
