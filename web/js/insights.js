@@ -353,6 +353,13 @@ function runLink(act, id, ...content) {
   return h('a', { class: 'run-link', href: ADMIN + id, target: '_blank', rel: 'noopener', onclick: (e) => { if (!act.print && !e.metaKey && !e.ctrlKey) { e.preventDefault(); act.open(id); } } }, ...content);
 }
 
+const errSearch = (e) => e.sig.replace(/<\w+>|N/g, ' ').split(/\s+/).filter((w) => w.length > 3).slice(0, 4).join(' ');
+
+// On paper (the PDF) what's clickable on screen becomes a real link into Autopsy: act.href(kind, …)
+// (share.js) builds the view link — a search, a filter, a failing step, a finding's runs.
+const paperHref = (act, ...args) => (act.print && act.href ? act.href(...args) : null);
+const paperLink = (href, ...content) => (href ? h('a', { class: 'rp-go', href, target: '_blank', rel: 'noopener' }, ...content) : content);
+
 function card(id, title, desc, ...body) {
   return h('section', { class: 'ins-card', id: `ins-${id}` }, h('h3', {}, title), desc ? h('p', { class: 'desc' }, desc) : null, ...body.filter(Boolean));
 }
@@ -361,10 +368,11 @@ function tile(v, k, x) {
   return h('div', { class: 'tile' }, h('div', { class: 'v' }, v), h('div', { class: 'k' }, k), x ? h('div', { class: 'x' }, x) : null);
 }
 
-function barList(rows, { max, fmt = fmtInt, onClick, tipText }) {
+// `href(r)`: on paper, the row's label links there; `r.links`: more links after it (runs it hit).
+function barList(rows, { max, fmt = fmtInt, onClick, tipText, href }) {
   const top = max ?? Math.max(1, ...rows.map((r) => r.value));
   return h('div', { class: 'bars' }, rows.map((r) => tooltip(h('div', { class: 'bar-row', onclick: () => onClick?.(r) },
-    h('span', { class: 'lbl', title: r.label }, r.label, r.sub ? h('small', {}, r.sub) : null),
+    h('span', { class: 'lbl', title: r.label }, paperLink(href?.(r), r.label), r.sub ? h('small', {}, r.sub) : null, r.note ? h('span', { class: 'rp-note' }, r.note) : null, r.links?.length ? h('span', { class: 'rp-runs' }, r.links) : null),
     h('span', { class: 'track' }, h('span', { class: 'fill', style: { width: `${(r.value / top) * 100}%`, background: r.color || 'var(--viz-seq)' } })),
     h('span', { class: 'val' }, fmt(r.value))), tipText ? tipText(r) : `${r.label}: ${fmt(r.value)}`)));
 }
@@ -381,7 +389,7 @@ function toolsTable(ins, act) {
   const table = h('table', { class: 'ins' },
     h('thead', {}, h('tr', {}, cols.map(([k, label]) => h('th', { class: toolSort.key === k ? 'on' : '', onclick: () => { toolSort.key = k; act.rerender(); } }, label)))),
     h('tbody', {}, rows.slice(0, act.expanded?.tools ? 200 : 14).map((t) => tooltip(h('tr', { onclick: () => act.filterStep(t.key, t.fails > 0) },
-      h('td', { title: t.key }, h('span', { class: 'cat', style: { background: CAT_COLOR[t.cat] } }), t.key),
+      h('td', { title: t.key }, h('span', { class: 'cat', style: { background: CAT_COLOR[t.cat] } }), paperLink(paperHref(act, 'step', t.key, t.fails > 0), t.key)),
       h('td', {}, fmtInt(t.calls)),
       h('td', {}, t.fails ? fmtInt(t.fails) : '–'),
       h('td', {}, h('span', { class: 'minibar' }, t.fails ? h('i', { style: { width: `${Math.max(2, t.rate * 60)}px`, background: 'var(--viz-crit)' } }) : null, pc(t.rate))),
@@ -391,7 +399,7 @@ function toolsTable(ins, act) {
     `${t.key} (${CAT_LABEL[t.cat]})\n${fmtInt(t.calls)} calls in ${fmtInt(t.runs)} runs\n${fmtInt(t.fails)} failures (${pc(t.rate)}) in ${fmtInt(t.failRuns)} runs\navg ${dur(t.avg)} · slowest ${dur(t.maxMs)}\nClick to see the runs${t.fails ? ' where it failed' : ''}`))),
   );
   const legend = h('div', { class: 'legend', style: { marginTop: '10px' } }, Object.entries(CAT_LABEL).filter(([c]) => rows.some((r) => r.cat === c)).map(([c, l]) => h('span', {}, h('i', { style: { background: CAT_COLOR[c] } }), l)));
-  const more = rows.length > 14 ? h('button', { class: 'linkish', onclick: () => { act.expanded.tools = !act.expanded.tools; act.rerender(); } }, act.expanded.tools ? 'Show fewer' : `Show all ${rows.length}`) : null;
+  const more = rows.length > 14 && !act.print ? h('button', { class: 'linkish', onclick: () => { act.expanded.tools = !act.expanded.tools; act.rerender(); } }, act.expanded.tools ? 'Show fewer' : `Show all ${rows.length}`) : null;
   return [table, more, legend];
 }
 
@@ -445,7 +453,7 @@ export function renderInsights(root, ins, act) {
   const tools = card('tools', 'Tools & methods', 'Every tool call in these runs. Sort by any column; click a row to see the runs where it failed.', ...toolsTable(ins, act));
 
   // Models: time and cost per call, each model against the slowest / most expensive.
-  const mrows = ins.modelRows.filter((m) => m.calls > 0).sort((a, b) => b.ms - a.ms).slice(0, act.expanded?.models ? 60 : 12);
+  const mrows = ins.modelRows.filter((m) => m.calls > 0).sort((a, b) => b.ms - a.ms).slice(0, act.expanded?.models || act.print ? 60 : 12);
   const maxAvg = Math.max(1, ...mrows.map((m) => m.avgMs));
   const maxCost = Math.max(0.0001, ...mrows.map((m) => m.avgCost || 0));
   const totMs = ins.modelRows.reduce((a, m) => a + m.ms, 0);
@@ -454,13 +462,13 @@ export function renderInsights(root, ins, act) {
     mrows.length ? h('div', { class: 'models' },
       h('div', { class: 'model-row head' }, h('span', {}, 'Model'), h('span', {}, 'Time a call'), h('span', {}), h('span', {}, 'Cost a call'), h('span', {})),
       ...mrows.map((m) => tooltip(h('div', { class: 'model-row', style: { cursor: 'pointer' }, onclick: () => act.filter('model', m.name) },
-        h('span', { class: 'mn' }, h('i', { class: `mk ${m.kind}` }), h('b', {}, m.name), h('small', {}, `${fmtInt(m.calls)}×${m.fails ? ` · ${pc(m.failRate)} fail` : ''}`)),
+        h('span', { class: 'mn' }, h('i', { class: `mk ${m.kind}` }), h('b', {}, paperLink(paperHref(act, 'filter', 'model', m.name), m.name)), h('small', {}, `${fmtInt(m.calls)}×${m.fails ? ` · ${pc(m.failRate)} fail` : ''}`)),
         h('span', { class: 'mbar' }, h('i', { style: { width: `${(m.avgMs / maxAvg) * 100}%` } })),
         h('span', { class: 'mv' }, dur(m.avgMs), h('small', {}, `${pc(share(m.ms, totMs))} of time`)),
         h('span', { class: 'mbar cost' }, h('i', { style: { width: `${((m.avgCost || 0) / maxCost) * 100}%` } })),
         h('span', { class: 'mv' }, money(m.avgCost), h('small', {}, m.cost ? `${pc(share(m.cost, totCost))} of spend` : 'no price'))),
       `${m.name} (${m.methods.join(', ')})\n${fmtInt(m.calls)} calls in ${fmtInt(m.runs)} runs · ${fmtInt(m.fails)} failed\n${dur(m.avgMs)} a call on average, slowest ${dur(m.maxMs)}\n${m.avgCost != null ? `${money(m.avgCost)} a successful call · ${money(m.cost)} in total` : 'Not in the price list'}\nClick to see these runs`)),
-      ins.modelRows.length > 12 ? h('button', { class: 'linkish', onclick: () => { act.expanded.models = !act.expanded.models; act.rerender(); } }, act.expanded.models ? 'Show fewer' : `Show all ${ins.modelRows.length}`) : null)
+      ins.modelRows.length > 12 && !act.print ? h('button', { class: 'linkish', onclick: () => { act.expanded.models = !act.expanded.models; act.rerender(); } }, act.expanded.models ? 'Show fewer' : `Show all ${ins.modelRows.length}`) : null)
       : h('p', { class: 'desc' }, 'No generation calls in these runs.'));
 
   // Where a run's time goes (server/time-split.js), every run counting the same.
@@ -473,29 +481,34 @@ export function renderInsights(root, ins, act) {
   // What we learned: the numbers, read.
   const found = learn(ins, act.runs?.() || []);
   const learned = card('learned', 'What the numbers say', 'The findings worth knowing in these runs, each with its evidence. Click one to see the runs behind it.',
-    found.length ? h('div', { class: 'learned' }, found.slice(0, 8).map((f) => h('button', { class: `finding ${f.tone}`, onclick: () => act.go(f.go) },
+    found.length ? h('div', { class: 'learned' }, found.slice(0, act.print ? 20 : 8).map((f) => h(paperHref(act, 'go', f.go) ? 'a' : 'button', { class: `finding ${f.tone}`, href: paperHref(act, 'go', f.go), target: act.print ? '_blank' : null, onclick: () => act.go(f.go) },
       h('div', { class: 't' }, ...[].concat(f.title)), h('div', { class: 'd' }, f.detail)))) : h('p', { class: 'desc' }, 'Nothing stands out in these runs.'));
 
   // Errors
   const errors = card('errors', 'Top errors', 'Failures grouped by message (ids and numbers masked), by how many runs they hit.',
-    ins.errs.length ? barList(ins.errs.slice(0, 10).map((e) => ({ label: e.sig, sub: e.step, value: e.runs.size, color: 'var(--viz-crit)', e })), {
-      onClick: (r) => act.search(r.e.sig.replace(/<\w+>|N/g, ' ').split(/\s+/).filter((w) => w.length > 3).slice(0, 4).join(' ')),
+    ins.errs.length ? barList(ins.errs.slice(0, act.print ? 30 : 10).map((e) => ({
+      // On paper the whole message (an example of the group) rather than its masked, shortened signature.
+      label: act.print && e.example && String(e.example).length > e.sig.length ? String(e.example) : e.sig, sub: e.step, value: e.runs.size, color: 'var(--viz-crit)', e,
+      // On paper, each error also links to a few of the runs it hit.
+      links: act.print ? [...e.runs].slice(0, 3).map((id, i) => runLink(act, id, `run ${i + 1}`)) : null,
+    })), {
+      onClick: (r) => act.search(errSearch(r.e)),
+      href: (r) => paperHref(act, 'search', errSearch(r.e)),
       tipText: (r) => `${r.e.step}\n${r.e.example}\n\n${fmtInt(r.e.count)} failures in ${fmtInt(r.e.runs.size)} runs · click to search`,
-    }) : h('p', { class: 'desc' }, 'No tool errors in these runs.'),
-    // On paper, each top error links to a few of the runs it hit.
-    act.print && ins.errs.length ? h('div', {}, ins.errs.slice(0, 6).map((e) => h('div', { class: 'rp-examples' },
-      h('span', {}, `${e.step}: ${e.sig.slice(0, 70)}`), ...[...e.runs].slice(0, 3).map((id, i) => runLink(act, id, `run ${i + 1}`))))) : null);
+    }) : h('p', { class: 'desc' }, 'No tool errors in these runs.'));
 
   // What users asked for
   const asks = card('asks', 'What users asked for', 'Classified intent of the first turn, and the most common subjects in session titles.',
-    ins.intents.length ? barList(ins.intents.slice(0, 8).map(([label, value]) => ({ label, value })), { onClick: (r) => act.search(r.label) }) : h('p', { class: 'desc' }, 'No intent data.'),
+    ins.intents.length ? barList(ins.intents.slice(0, act.print ? 40 : 8).map(([label, value]) => ({ label, value })), { onClick: (r) => act.search(r.label), href: (r) => paperHref(act, 'search', r.label) }) : h('p', { class: 'desc' }, 'No intent data.'),
     ins.subjects.length ? h('div', { style: { marginTop: '12px' } }, h('p', { class: 'desc' }, 'Subjects (click to search)'),
-      h('div', { class: 'chips-cloud' }, ins.subjects.map(([w, n]) => h('button', { onclick: () => act.search(w) }, w, h('small', {}, n))))) : null);
+      h('div', { class: 'chips-cloud' }, ins.subjects.map(([w, n]) => (act.print && act.href
+        ? h('a', { class: 'chip', href: act.href('search', w), target: '_blank', rel: 'noopener' }, w, h('small', {}, n))
+        : h('button', { onclick: () => act.search(w) }, w, h('small', {}, n)))))) : null);
 
   // Repeated requests
   const rep = card('repeats', 'Most repeated requests', 'Identical prompts. Many users = a template or API caller; one user = retrying.',
-    ins.repeated.length ? h('div', {}, ins.repeated.slice(0, 6).map((g) => tooltip(h('div', { class: 'rep', onclick: () => act.search(normPrompt(g.prompt).split(' ').slice(0, 6).join(' ')) },
-      h('span', { class: 't' }, g.prompt.replace(/<HIDDEN>[\s\S]*/i, '').trim() || g.prompt),
+    ins.repeated.length ? h('div', {}, ins.repeated.slice(0, act.print ? 20 : 6).map((g) => tooltip(h('div', { class: 'rep', onclick: () => act.search(normPrompt(g.prompt).split(' ').slice(0, 6).join(' ')) },
+      h('span', { class: 't' }, paperLink(paperHref(act, 'search', normPrompt(g.prompt).split(' ').slice(0, 6).join(' ')), g.prompt.replace(/<HIDDEN>[\s\S]*/i, '').trim() || g.prompt)),
       h('span', { class: 'n' }, `${g.runs.length}× · ${g.users.size} user${g.users.size > 1 ? 's' : ''}`),
       act.print ? runLink(act, g.runs[0].id, 'open a run') : null),
     `${g.runs.length} runs, ${g.users.size} distinct users\n${g.runs.filter(hasAd).length} finished · ${g.runs.filter(failedRun).length} failed\nlast ${ago(Math.max(...g.runs.map((r) => r.createdAt)))} · click to search`))) : h('p', { class: 'desc' }, 'No repeated prompts.'));
@@ -511,9 +524,9 @@ export function renderInsights(root, ins, act) {
     h('div', { class: 'pills', style: { margin: '12px 0' } },
       h('span', { class: 'pill ok' }, icon('up', 'sm'), `${fmtInt(ins.thumbsUp)} thumbs up`),
       h('span', { class: 'pill err' }, icon('down', 'sm'), `${fmtInt(ins.thumbsDown)} thumbs down`),
-      ...ins.tags.slice(0, 6).map(([t, n]) => h('span', { class: 'pill' }, `${t} ×${n}`)),
+      ...ins.tags.slice(0, act.print ? 40 : 6).map(([t, n]) => h('span', { class: 'pill' }, `${t} ×${n}`)),
       ins.outOfFunds ? h('span', { class: 'pill warn' }, icon('card', 'sm'), `${fmtInt(ins.outOfFunds)} runs out of credits`) : null),
-    ins.quotes.length ? h('div', { class: 'quotes' }, ins.quotes.slice(0, act.print ? 8 : 4).map((r) => runLink(act, r.id, h('div', { class: 'quote' }, `“${r.sentimentDetail}”`,
+    ins.quotes.length ? h('div', { class: 'quotes' }, ins.quotes.slice(0, act.print ? 60 : 4).map((r) => runLink(act, r.id, h('div', { class: 'quote' }, `“${r.sentimentDetail}”`,
       h('small', {}, `${r.title || 'Untitled'} · ${ago(r.createdAt)} · ${r.sentiments.includes('frustrated') ? 'frustrated' : 'confused'}`))))) : null);
 
   // Daily trend: stacked columns (status colors carry state, legend + tooltip carry labels)
@@ -531,12 +544,12 @@ export function renderInsights(root, ins, act) {
   const vers = card('versions', 'Skill versions', 'Outcomes by the skill (codex) version each run used — did a change help?',
     ins.versions.length ? h('table', { class: 'ins' },
       h('thead', {}, h('tr', {}, h('th', {}, 'Version'), h('th', {}, 'Runs'), h('th', {}, 'Output rate'), h('th', {}, 'Frustrated'), h('th', {}, 'Median to final'))),
-      h('tbody', {}, ins.versions.slice(0, 6).map((v) => {
+      h('tbody', {}, ins.versions.slice(0, act.print ? 30 : 6).map((v) => {
         const gen = v.runs.filter(attempted);
         const fin = gen.filter(hasAd);
         const tf = fin.filter((r) => r.requestAt && r.finalAt).map((r) => r.finalAt - r.requestAt);
         return h('tr', { onclick: () => act.search(v.v) },
-          h('td', { title: v.v, class: 'mono' }, `${v.v.slice(0, 8)} · ${new Date(v.first).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`),
+          h('td', { title: v.v, class: 'mono' }, paperLink(paperHref(act, 'search', v.v), `${v.v.slice(0, 8)} · ${new Date(v.first).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`)),
           h('td', {}, fmtInt(v.runs.length)), h('td', {}, pc(share(fin.length, gen.length))),
           h('td', {}, pc(share(v.runs.filter((r) => r.sentiments?.includes('frustrated')).length, v.runs.length))), h('td', {}, dur(pct(tf, 50))));
       }))) : h('p', { class: 'desc' }, 'No version data.'));
