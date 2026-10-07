@@ -122,6 +122,7 @@ export async function codexFindings(issue) {
   if (!ix.available) return { available: false, findings: [], files: [] };
   const findings = [];
   const files = [];
+  const proof = {};
   const add = (p, why, line) => files.push({ path: p, why, url: codexWebUrl(p, line) });
   const text = `${issue.sig}\n${issue.example || ''}`;
 
@@ -136,6 +137,7 @@ export async function codexFindings(issue) {
         findings.push(`\`${p}\` is not in the codex, but \`${elsewhere.join('`, `')}\` is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.`);
         for (const e of elsewhere) add(e, 'where the file really is');
         const refs = await grepCodex(path.basename(p), { max: 12 });
+        proof.missingFile = { path: p, elsewhere, refs };
         if (refs.length) findings.push(`It's referred to by bare name in ${new Set(refs.map((r) => r.path)).size} file(s), e.g. ${refs.slice(0, 3).map((r) => `\`${r.path}:${r.line}\``).join(', ')} — that wording is what sends the agent looking.`);
         for (const r of refs.slice(0, 4)) add(r.path, `mentions ${path.basename(p)}`, r.line);
       } else findings.push(`\`${p}\` doesn't exist anywhere in the codex (${ix.ref}).`);
@@ -153,6 +155,7 @@ export async function codexFindings(issue) {
   // A tool name the agent made up (e.g. "functions.edit_image").
   for (const m of new Map([...text.matchAll(/unknown tool "([\w.]+)"/g)].map((x) => [x[1], x])).values()) {
     const hits = await grepCodex(m[1], { max: 8 });
+    if (hits.length) proof.codexWritesTool = true;
     findings.push(hits.length
       ? `The codex itself writes \`${m[1]}\` in ${hits.slice(0, 3).map((h) => `\`${h.path}:${h.line}\``).join(', ')} — the agent copies it.`
       : `\`${m[1]}\` appears nowhere in the codex: the agent adds the \`functions.\` prefix on its own. Say in the sequence instructions that step tools are bare names (\`${m[1].replace(/^functions\./, '')}\`), with an example.`);
@@ -170,7 +173,7 @@ export async function codexFindings(issue) {
   const evals = [];
   for (const f of files.filter((x) => x.path.startsWith('skills/')).slice(0, 2)) evals.push(...(await evalSetsFor(f.path)));
   const seen = new Set();
-  return { available: true, ref: ix.ref, sha: ix.sha, date: ix.date, findings: [...new Set(findings)], files: files.filter((f) => !seen.has(f.path + f.why) && seen.add(f.path + f.why)), evals: [...new Set(evals)].slice(0, 6) };
+  return { available: true, ref: ix.ref, sha: ix.sha, date: ix.date, proof, findings: [...new Set(findings)], files: files.filter((f) => !seen.has(f.path + f.why) && seen.add(f.path + f.why)), evals: [...new Set(evals)].slice(0, 6) };
 }
 
 // ---- the brief ----

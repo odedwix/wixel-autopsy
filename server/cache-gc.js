@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { forget } from './cache.js';
 import path from 'node:path';
 import { config } from './config.js';
 
@@ -62,6 +63,7 @@ export async function sweep() {
       for (const e of list) {
         if (total <= target) break;
         await fs.rm(e.file, { recursive: true, force: true });
+        forget(e.file);
         total -= e.bytes;
         evicted++;
       }

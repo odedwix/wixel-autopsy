@@ -7,19 +7,43 @@ import { printReport, downloadReport, section as rpSection } from './report.js';
 import { CAT_COLOR, CAT_LABEL } from './insights.js';
 import { caps, capsReady, HINT } from './caps.js';
 import { toast, popover, closePopover } from './ui.js';
-import { MOOD, worstMood, failedRun, hasAd, primaryOutput, typeLabel } from './filters.js';
+import { MOOD, worstMood, failedRun, hasAd, primaryOutput, typeLabel, getExpected, STOPS, stopFact } from './filters.js';
+import { runTimeBar } from './timebar.js';
 import { isVideoRun } from './grid.js';
 import { mediaOf, isReady, prioritize, onMedia, videoUrl, spriteUrl, posterUrl, placeSprite, downloadRun, downloadOutput } from './media.js';
 import { showUser } from './skillpicker.js';
+import { modelStats, detailSteps, money, pricesReady } from './models.js';
 
 const ADMIN = 'https://wix-bo.com/wixel-agent/admin/#/sessions/';
 const detailCache = new Map();
+// After Refresh, each run's session is read again from the admin API the first time it's opened.
+let refreshed = false;
+const reread = new Set();
+// `ids`: only these runs (Refresh's top-up); none = every run (full refresh).
+const freshIds = new Set();
+export function clearDetails(ids) {
+  if (ids) {
+    for (const key of [...detailCache.keys()]) if (ids.some((id) => key.startsWith(id))) detailCache.delete(key);
+    for (const id of ids) {
+      freshIds.add(id);
+      reread.delete(id);
+    }
+    return;
+  }
+  detailCache.clear();
+  reread.clear();
+  refreshed = true;
+}
 
 // In skill mode the detail says which turns count for the skill (same rule as the grid).
 export function prefetchDetail(id) {
   const q = state.mode === 'user' ? '' : `?skill=${encodeURIComponent(state.skill)}&fam=${encodeURIComponent(famParam())}`;
   const key = `${id}${q}`;
-  if (!detailCache.has(key)) detailCache.set(key, getJson(`/api/session/${id}${q}`).catch((e) => ({ error: e.message })));
+  if (!detailCache.has(key)) {
+    const fresh = (refreshed || freshIds.has(id)) && !reread.has(id);
+    if (fresh) reread.add(id);
+    detailCache.set(key, getJson(`/api/session/${id}${q}${fresh ? `${q ? '&' : '?'}fresh=1` : ''}`).catch((e) => ({ error: e.message })));
+  }
   return detailCache.get(key);
 }
 
@@ -100,7 +124,7 @@ export function openInspect(run) {
     }
     return;
   }
-  current?.player?.destroy();
+  destroyPlayers();
   current = { run, player: null };
   panel.classList.toggle('wide', Boolean(state.inspectWide));
   panel.replaceChildren(header(run, null), h('div', { class: 'insp-body' }, h('div', { class: 'player', id: 'playerMount' }), tabBar(), h('div', { id: 'detailMount' }, h('div', { class: 'loading-line' }, 'Loading run…'))));
@@ -122,18 +146,22 @@ export function openInspect(run) {
     }
     panel.querySelector('.insp-head').replaceWith(header(run, d));
     renderTab();
-    current.player?.setScenes(d.outputs?.scenes || []);
+    // Model prices may land after the run (first open of the app).
+    pricesReady.then(() => current?.run.id === run.id && tabOf(state.inspectTab) === 'overview' && renderTab());
+    current.review?.setScenes?.(d.outputs?.scenes || []);
     current.player?.setDetail?.(d);
     maybeAutoReport();
   });
 }
 
 // ---------- tabs ----------
-const TABS = [['overview', 'Overview', '1'], ['timeline', 'Timeline', '2'], ['scenes', 'Scenes', '3'], ['brand', 'Brand', '4'], ['assets', 'Assets', '5'], ['raw', 'Raw', '6']];
+const TABS = [['overview', 'Overview', '1'], ['timeline', 'Timeline', '2'], ['scenes', 'Scenes', '3'], ['media', 'Brand & media', '4'], ['raw', 'Raw', '5']];
+// Saved views from before Brand and Assets were one tab.
+const tabOf = (t) => (t === 'brand' || t === 'assets' ? 'media' : TABS.some(([k]) => k === t) ? t : 'overview');
 
 function tabBar() {
   return h('div', { class: 'insp-tabs', role: 'tablist' }, TABS.map(([k, label, key]) =>
-    h('button', { role: 'tab', 'aria-selected': String((state.inspectTab || 'overview') === k), title: `${label} (${key})`, onclick: () => setInspectTab(k) }, label)));
+    h('button', { role: 'tab', 'aria-selected': String(tabOf(state.inspectTab) === k), title: `${label} (${key})`, onclick: () => setInspectTab(k) }, label)));
 }
 
 export function setInspectTab(k) {
@@ -159,20 +187,30 @@ function renderTab() {
   if (full.error) return mount.replaceChildren(...details(current.run, full));
   const d = counted(full);
   const banner = scopeBanner(full);
-  const tab = state.inspectTab || 'overview';
+  const tab = tabOf(state.inspectTab);
   const box = h('div', { class: 'section dz' });
   const seek = (sec) => current?.player?.seekSec(sec);
   if (tab === 'overview') return mount.replaceChildren(...[banner, ...details(current.run, d)].filter(Boolean));
   mount.replaceChildren(...[banner, box].filter(Boolean));
   if (tab === 'timeline') renderTimeline(box, d);
   if (tab === 'scenes') renderScenes(box, d, { seek });
-  if (tab === 'brand') renderBrand(box, d);
-  if (tab === 'assets') renderAssets(box, d);
+  if (tab === 'media') {
+    renderBrand(box, d);
+    const as = h('div', { class: 'section dz' });
+    mount.append(as);
+    renderAssets(as, d);
+  }
   if (tab === 'raw') renderRaw(box, d);
 }
 
+function destroyPlayers() {
+  if (!current) return;
+  for (const p of new Set([current.player, current.review, current.exact])) p?.destroy();
+  current.player = current.review = current.exact = null;
+}
+
 export function closeInspect() {
-  current?.player?.destroy();
+  destroyPlayers();
   current = null;
   if (panel) {
     panel.hidden = true;
@@ -208,10 +246,12 @@ async function maybeAutoReport() {
 // The run as the report shows it: the list row, or (not in the list) what its detail says.
 function reportRun(r, d) {
   if (!r._stub && (r.outputs || r.title || r.adName)) return r;
-  const outs = (d.assetTree || []).map((a) => ({ id: a.id, type: a.type, name: a.name, thumb: a.thumbnailUrl }));
+  // Only what this session made (the project also holds other sessions' work).
+  const outs = (d.assetTree || []).filter((a) => a.own !== false).map((a) => ({ id: a.id, type: a.type === 'slide' ? 'slides' : a.type, name: a.name, thumb: a.thumbnailUrl }));
   return {
     ...r,
-    videoAssetId: r.videoAssetId || d.outputs?.rootAssetId || null,
+    videoAssetId: r.videoAssetId || (d.outputs?.kind === 'video' ? d.outputs.rootAssetId : null),
+    storyAssetId: r.storyAssetId || (d.outputs?.kind === 'story' ? d.outputs.rootAssetId : null),
     title: d.title || d.outputs?.name || String(d.prompt || '').replace(/<HIDDEN>[\s\S]*/i, '').trim().slice(0, 70) || null,
     adName: d.outputs?.name || outs[0]?.name || null,
     outputs: outs,
@@ -350,55 +390,64 @@ async function refreshExact(run) {
   if (current?.run.id === run.id) panel.querySelector('.insp-head')?.replaceWith(header(current.run, current.detail || null));
   return s;
 }
+// Captions go into the download only if a person turned them on: the user in the editor, or you
+// with CC in the player for this run (the agent switching them on itself doesn't count).
+const viewerCaptions = (run) => Boolean(current?.exact?.run.id === run.id && current.exact.captions);
 async function downloadExact(run) {
-  let s = exactState.get(run.id);
-  if (s?.state !== 'ready') s = await getJson(`/api/exact/${run.id}?start=1`).catch((e) => ({ state: 'failed', error: e.message }));
+  await capsReady;
+  const cc = viewerCaptions(run);
+  const key = `${run.id}${cc ? '|cc' : ''}`;
+  const q = cc ? '&cc=1' : '';
+  let s = exactState.get(key);
+  if (s?.state !== 'ready') s = await getJson(`/api/exact/${run.id}?start=1${q}`).catch((e) => ({ state: 'failed', error: e.message }));
   while (['queued', 'loading', 'rendering', 'encoding'].includes(s?.state)) {
-    toast(s.state === 'rendering' ? `Rendering the exact composition… ${s.done} / ${s.total} frames` : s.state === 'encoding' ? 'Encoding the mp4…' : 'Loading the product player…', { ms: 5000 });
+    toast(s.state === 'rendering' ? `Preparing the video${cc ? ' with captions' : ''}… ${s.done} / ${s.total} frames` : s.state === 'encoding' ? 'Encoding the mp4…' : 'Loading the product player…', { ms: 5000 });
     await new Promise((r) => setTimeout(r, 1500));
-    s = await getJson(`/api/exact/${run.id}`).catch(() => s);
+    s = await getJson(`/api/exact/${run.id}?${q.slice(1)}`).catch(() => s);
   }
-  exactState.set(run.id, s);
-  if (s?.state !== 'ready') return toast(`Couldn't render the exact composition: ${s?.error || 'unknown error'}`, { ms: 8000 });
-  toast('Exact composition ready — downloading', { ms: 3000 });
-  downloadRun(run, fileSkill(), 'exact');
+  exactState.set(key, s);
+  if (s?.state !== 'ready') return toast(`Couldn't prepare the video: ${s?.error || 'unknown error'}`, { ms: 8000 });
+  toast(`Video ready — downloading${cc ? ' (with captions)' : ''}`, { ms: 3000 });
+  downloadRun(run, fileSkill(), 'exact', { cc });
   if (current?.run.id === run.id) panel.querySelector('.insp-head')?.replaceWith(header(current.run, current.detail || null));
 }
 
-// One Download button: the main part saves the best file (the exact render when there is one);
-// the arrow lists every version and every other output of the run.
+// Downloads are the exact output only (a copy that doesn't show what the user got isn't offered):
+//   a video: the user's own render, else the Exact composition rendered from the product's player;
+//   a story: the user's own export when it's up to date, else its pages as a PDF (as they look);
+//   other outputs the skill makes: their own files.
 function downloadChoices(r) {
   const run = current?.run || r;
   const m = mediaOf(run.id);
   const out = [];
-  if (isVideoRun(run)) {
-    const ex = exactState.get(run.id);
+  const notReady = () => toast('The video is still being prepared — try again in a moment');
+  const story = !run.videoAssetId && run.storyAssetId ? (run.outputs || []).find((o) => o.id === run.storyAssetId) : null;
+  if (isVideoRun(run) && hasAd(run)) {
+    const ex = exactState.get(`${run.id}${viewerCaptions(run) ? '|cc' : ''}`);
     const rendering = ['queued', 'loading', 'rendering', 'encoding'].includes(ex?.state);
-    const notReady = () => toast('The video is still being prepared — try again in a moment');
-    if (m?.kind === 'render') {
-      // The user's render is the exact ad already.
-      out.push({ label: 'Full ad — exact', sub: 'The file the user got: full quality, with text, captions and music', go: () => downloadRun(run, fileSkill()) || notReady() });
-      out.push({ label: 'Full ad — small copy', sub: '540p copy of the same video (smaller file)', go: () => downloadRun(run, fileSkill(), 'review') || notReady() });
-    } else {
+    if (m?.kind === 'render') out.push({ label: story ? 'Story' : 'Video', sub: story ? 'The story export the user made (up to date with the story)' : 'The file the user got: full quality, with text, captions and music', go: () => downloadRun(run, fileSkill()) || notReady() });
+    else if (exactRoot(run) && caps.exact) {
       out.push({
-        label: 'Full ad — regular',
-        sub: !isReady(m) ? 'Still being prepared…' : m.kind === 'assembled' ? 'The scenes joined with voice and music — no text overlays or captions' : 'The last generated clip (the run has no finished ad)',
-        go: () => downloadRun(run, fileSkill(), 'review') || notReady(),
+        label: story ? 'Story' : 'Video',
+        sub: `${ex?.state === 'ready' ? 'As the product plays it: text overlays and music' : rendering ? `Rendering… ${ex.done || 0} / ${ex.total || '?'} frames` : 'As the product plays it — renders in ~2 min the first time'} · ${viewerCaptions(run) ? 'with captions (you turned them on)' : 'captions only if the user turned them on'}`,
+        go: () => downloadExact(run),
       });
-      if (hasAd(run) && caps.exact) {
-        out.push({
-          label: 'Full ad — exact',
-          sub: ex?.state === 'ready' ? 'As the product plays it: text overlays, captions and music' : rendering ? `Rendering… ${ex.done || 0} / ${ex.total || '?'} frames` : 'As the product plays it: text overlays, captions and music — renders in ~2 min the first time',
-          go: () => downloadExact(run),
-        });
-      }
     }
   }
-  const others = (run.outputs || []).filter((o) => o.type !== 'video');
-  for (const o of others) {
-    out.push({ group: 'Other outputs', label: `${typeLabel(o.type)}${o.name ? ` · ${o.name}` : ''}`, sub: ['slides', 'doc', 'story'].includes(o.type) ? 'PDF of its pages (or the user’s own export when reachable)' : 'Original image, or the design as the user saw it', go: () => downloadOutput(run, o, fileSkill()) });
+  const main = new Set([run.videoAssetId, story?.id].filter(Boolean));
+  for (const o of (run.outputs || []).filter((x) => !main.has(x.id) && x.type !== 'video')) {
+    out.push({ group: out.length ? 'Its other outputs' : null, label: `${typeLabel(o.type)}${o.name ? ` · ${o.name}` : ''}`, sub: ['slides', 'doc', 'story'].includes(o.type) ? 'PDF of its pages (or the user’s own export when reachable)' : 'Original image, or the design as the user saw it', go: () => downloadOutput(run, o, fileSkill()) });
   }
   return out;
+}
+
+// The D key and the grid: the same exact-only download for a run that isn't open.
+export function downloadExactRun(run) {
+  const m = mediaOf(run.id);
+  if (m?.kind === 'render') return downloadRun(run, fileSkill()) || toast('The video is still being prepared — try again in a moment');
+  if (!exactRoot(run)) return toast('This run has no finished video (only clips) — nothing to download');
+  if (!caps.exact) return toast('Video downloads need Google Chrome and the player build (npm run build:player)', { ms: 6000 });
+  return downloadExact(run);
 }
 
 // Download: one choice downloads right away; more than one (regular and exact full ad, other
@@ -435,38 +484,134 @@ function header(r, d) {
         h('span', { class: 'sep' }, '·'),
         h('span', { class: 'num' }, dur(r.wallMs)),
         r.agent ? [h('span', { class: 'sep' }, '·'), h('span', {}, `${r.agent}${r.source ? ` / ${r.source}` : ''}`)] : null,
+        // A campaign's sub-agent: the session that started it.
+        r.parentSessionId ? [h('span', { class: 'sep' }, '·'), h('a', { href: ADMIN + r.parentSessionId, target: '_blank', rel: 'noopener', title: 'This run is a sub-agent; open the session that started it (Wixel admin)' }, 'parent session ↗')] : null,
       ),
     ),
     downloadButton(r),
     h('button', { class: 'btn share-btn', title: 'Share this run', onclick: (e) => shareRun(e.currentTarget, current?.run || r, current?.detail || d, { exportPdf: () => exportRunReport(current?.run || r) }) }, icon('external'), 'Share'),
     h('button', { class: 'icon-btn', title: 'Wide panel (W)', onclick: () => toggleWide() }, icon('expand')),
-    h('a', { class: 'icon-btn', href: ADMIN + r.id, target: '_blank', rel: 'noopener', title: 'Open in Wixel admin (O)' }, icon('external')),
     h('button', { class: 'icon-btn', title: 'Close (Esc)', onclick: () => panel._close() }, icon('x')),
   );
 }
 
 // ---------- player ----------
+// Video runs: the regular copy (review mp4, ready in seconds) plays at once while the Exact
+// composition (the product's own player: text overlays, music, exact timing) loads hidden behind
+// it; once every file is in memory it takes over at the same moment and keeps playing. E switches
+// back and forth. Runs whose video is the user's own render already show the exact thing.
+// The composition the exact player draws: the run's video, or its story (pages as timed scenes —
+// the same clip, text and image components the product uses; see server/player.js).
+const exactRoot = (r) => r.videoAssetId || r.storyAssetId || null;
+const exactWanted = (r) => !r._stub && hasAd(r) && Boolean(exactRoot(r)) && isVideoRun(r) && mediaOf(r.id)?.kind !== 'render';
+
 function mountPlayer(r) {
   const mount = panel.querySelector('#playerMount');
   if (!mount) return;
-  current.player?.destroy();
+  current.review?.destroy();
+  current.review = null;
   // Skills that make images, logos, docs, slides… get a gallery instead of a video player.
   if (!r._stub && !isVideoRun(r) && (r.outputs?.length || r.thumbnail)) {
+    current.exact?.destroy();
+    current.exact = null;
     current.player = new OutputViewer(mount, r, current.detail);
     return;
   }
-  const m = mediaOf(r.id);
-  const live = current.live ?? (!isReady(m) && hasAd(r) && caps.player);
-  current.player = live ? new LivePlayer(mount, r) : isReady(m) ? new ReviewPlayer(mount, r, m) : null;
-  if (!current.player) {
-    const why = !r.generations ? 'This run never reached generation.' : m?.state === 'failed' ? `Couldn't prepare video: ${m.reason}` : m?.state === 'unavailable' ? m.reason : 'Preparing review video…';
-    mount.replaceChildren(h('div', { class: 'stage' }, h('div', { class: 'note' }, why)));
+  // Two layers: the regular copy, and the Exact player kept alive across re-mounts.
+  let main = mount.querySelector(':scope > .pv-main');
+  if (!main) {
+    mount.replaceChildren(main = h('div', { class: 'pv-main' }));
+    if (current.exact) mount.append(current.exact.el);
   }
-  if (current.detail) current.player?.setScenes?.(current.detail.outputs?.scenes || []);
+  const m = mediaOf(r.id);
+  // An older player build (no AutopsyLive): the product player only on request (E), as before.
+  if (!caps.live && current.live && caps.player) {
+    current.review = current.player = new LivePlayer(main, r);
+    return;
+  }
+  // Behind a showing Exact player the regular copy waits paused.
+  current.review = isReady(m) ? new ReviewPlayer(main, r, m, { autoplay: !current.exact?.shown }) : null;
+  if (!current.review) {
+    // A run that made nothing says why, as its card does (server/runs.js stopReason).
+    if (r.stop && !hasAd(r)) {
+      const d = STOPS[r.stop.kind] || STOPS.ended;
+      const fact = stopFact(r.stop);
+      main.replaceChildren(h('div', { class: 'stage' }, h('div', { class: `stop-note${d.tone ? ` ${d.tone}` : ''}` },
+        icon(d.icon), h('b', {}, d.title ? d.title(r.stop) : d.label), fact ? h('div', { class: 'fact' }, fact) : null, r.stop.text ? h('q', {}, r.stop.text) : null)));
+    } else {
+      const why = !r.generations ? 'This run never reached generation.' : m?.state === 'failed' ? `Couldn't prepare video: ${m.reason}` : m?.state === 'unavailable' ? m.reason : 'Preparing the video…';
+      main.replaceChildren(h('div', { class: 'stage' }, h('div', { class: 'note' }, why)));
+    }
+  }
+  if (current.detail) current.review?.setScenes?.(current.detail.outputs?.scenes || []);
+  startExact(r);
+  // The capabilities can arrive after a run opened from a link.
+  if (caps.live === undefined) capsReady.then(() => current?.run === r && startExact(r));
 }
+
+function startExact(r) {
+  const mount = panel.querySelector('#playerMount');
+  if (mount && caps.live && exactWanted(r) && !current.exact) {
+    current.exact = new ExactLayer(r, { onReady: () => current?.exact && !current.preferRegular && showExact(true), onStatus: () => syncExactUi() });
+    mount.append(current.exact.el);
+  }
+  current.player = current.exact?.shown ? current.exact : current.review;
+  syncExactUi();
+}
+
+// Flip between the regular copy and the Exact player, carrying over the position and play state.
+function showExact(on) {
+  const x = current?.exact;
+  if (!x?.ready) return;
+  const rv = current.review;
+  const t = on ? rv?.v?.currentTime ?? 0 : x.timeSec();
+  const playing = on ? (rv ? !rv.v.paused : true) : x.isPlaying();
+  const muted = rv?.v?.muted ?? false;
+  if (on) {
+    rv?.v?.pause();
+    x.show(t, { play: playing, muted });
+  } else {
+    x.hide();
+    if (rv?.v) {
+      rv.v.currentTime = Math.min(t, rv.duration);
+      if (playing) rv.v.play().catch(() => {});
+    }
+  }
+  current.player = on ? x : rv;
+  panel.querySelector('#playerMount .pv-main')?.toggleAttribute('hidden', on);
+  syncExactUi();
+}
+
+// No switch on screen any more (one player at a time, and E for anyone who wants the other); kept as
+// the hook the preload calls.
+function syncExactUi() {}
+
+// ~ : the player on screen (the product's own, or the regular copy) full screen, and back. From the app's
+// keys only with the pointer over the player; from inside the product player (live.html forwards it)
+// always, since the focus being there means it's the one in use.
+export function togglePlayerFullscreen({ hovered = true } = {}) {
+  if (document.fullscreenElement) {
+    document.exitFullscreen?.().catch(() => {});
+    return true;
+  }
+  const mount = panel?.querySelector('#playerMount');
+  if (!mount || (hovered && !mount.matches(':hover'))) return false;
+  const stage = mount.querySelector(current?.exact?.shown ? '.pv-exact .stage' : '.pv-main:not([hidden]) .stage') || mount.querySelector('.stage');
+  if (!stage) return false;
+  stage.requestFullscreen?.().catch(() => {});
+  return true;
+}
+window.addEventListener('message', (e) => {
+  if (e.origin === location.origin && e.data?.type === 'autopsy-key' && e.data.code === 'Backquote') togglePlayerFullscreen({ hovered: false });
+});
 
 export function toggleLive() {
   if (!current || !hasAd(current.run)) return;
+  if (caps.live && current.exact) {
+    if (!current.exact.ready) return toast(current.exact.error ? `The product’s player failed: ${current.exact.error}` : `${current.exact.status} — it takes over by itself when ready`, { ms: 4000 });
+    current.preferRegular = current.exact.shown;
+    return showExact(!current.exact.shown);
+  }
   if (!caps.player && !(current.player instanceof LivePlayer)) {
     toast(HINT.player, { ms: 6000 });
     return;
@@ -477,7 +622,7 @@ export function toggleLive() {
 }
 
 class ReviewPlayer {
-  constructor(mount, run, meta) {
+  constructor(mount, run, meta, { autoplay = true } = {}) {
     this.meta = meta;
     this.scenes = [];
     this.v = h('video', { src: videoUrl(run.id), preload: 'auto', playsinline: true });
@@ -496,12 +641,12 @@ class ReviewPlayer {
     this.rateBtn = h('button', { class: 'rate', title: 'Playback speed', onclick: () => this.cycleRate() }, '1×');
     this.muteBtn = h('button', { title: 'Mute', onclick: () => { this.v.muted = !this.v.muted; this.sync(); } }, icon('volume'));
     const src = meta.kind === 'render' ? 'Exact render' : meta.kind === 'assembled' ? 'Assembled — no text/captions' : 'Single clip';
-    this.modeBtn = h('button', { class: 'mode', title: 'Switch to the exact live player (E)', onclick: () => toggleLive() }, icon('sparkle', 'sm'), 'Exact');
+    const canExact = Boolean(exactRoot(run)) && meta.kind !== 'render';
     const controls = h('div', { class: 'controls' }, this.playBtn, this.time, h('span', { style: { flex: 1 } }), this.rateBtn, this.muteBtn,
-      h('button', { title: 'Download — regular or exact (D)', onclick: () => panel.querySelector('.insp-head .dl-main')?.click() }, icon('download')), hasAd(run) ? this.modeBtn : null,
+      h('button', { title: 'Download (D)', onclick: () => panel.querySelector('.insp-head .dl-main')?.click() }, icon('download')),
       h('button', { title: 'Fullscreen', onclick: () => stage.requestFullscreen?.() }, icon('expand')));
     const note = h('div', { class: 'src-note' }, h('span', { class: 'dot', style: { background: meta.kind === 'render' ? 'var(--ok)' : meta.kind === 'assembled' ? 'var(--info)' : 'var(--warn)' } }),
-      h('span', {}, `${meta.label} · ${meta.duration.toFixed(1)}s · ${src === 'Exact render' ? 'what the user got' : 'press E for the exact composition'}`));
+      h('span', {}, `${meta.label} · ${meta.duration.toFixed(1)}s · ${src === 'Exact render' ? 'what the user got' : !canExact ? 'no finished composition to show exactly' : caps.live ? 'the product’s own player takes over as soon as it has loaded' : 'press E for the product’s own player'}`));
     mount.replaceChildren(stage, this.scrub, controls, note);
 
     this.v.addEventListener('timeupdate', () => this.sync());
@@ -531,7 +676,7 @@ class ReviewPlayer {
     });
     // Autoplay with sound can be refused (no click on the page yet): play muted and offer Unmute
     // rather than leaving a silent or paused player.
-    this.v.play().catch(() => {
+    if (autoplay) this.v.play().catch(() => {
       this.v.muted = true;
       this.v.play().catch(() => {});
       this.sync();
@@ -696,7 +841,149 @@ class OutputViewer {
   destroy() {}
 }
 
-// The product's own Remotion player in an iframe: exact text, captions, music.
+// The Exact composition: the product's own player (web/player/live.html, AutopsyLive from the
+// capture bundle) in a same-origin iframe, loaded hidden while the regular copy plays. Captions
+// start off (CC turns them on); the player input is built from the run's own video asset.
+class ExactLayer {
+  constructor(run, { onReady, onStatus } = {}) {
+    this.run = run;
+    this.ready = false;
+    this.shown = false;
+    this.error = null;
+    this.captions = false;
+    this.hasCaptions = false;
+    this.onReady = onReady;
+    this.onStatus = onStatus;
+    this.t0 = Date.now();
+    this.frame = h('iframe', { src: '/player/live.html', allow: 'autoplay; fullscreen', title: 'The product’s own player' });
+    this.ccBtn = h('button', { class: 'mode cc', title: 'Captions (C)', hidden: true, onclick: () => this.setCaptions(!this.captions) }, h('span', {}, 'CC'));
+    this.noteText = h('span', {}, '');
+    this.el = h('div', { class: 'pv-exact' },
+      h('div', { class: 'stage' }, this.frame),
+      h('div', { class: 'controls' }, h('span', { style: { flex: 1 } }), this.ccBtn,
+        h('button', { title: 'Download (D)', onclick: () => panel.querySelector('.insp-head .dl-main')?.click() }, icon('download'))),
+      h('div', { class: 'src-note' }, h('span', { class: 'dot', style: { background: 'var(--ok)' } }), this.noteText));
+    this.status = 'Loading the product’s own player';
+    this.ticker = setInterval(() => !this.ready && !this.error && this.onStatus?.(), 1000);
+    this.frame.addEventListener('load', () => this.load(), { once: true });
+  }
+
+  get status() {
+    return `${this._status} · ${Math.round((Date.now() - this.t0) / 1000)}s`;
+  }
+
+  set status(s) {
+    this._status = s;
+    this.onStatus?.();
+  }
+
+  async load() {
+    try {
+      const live = this.frame.contentWindow?.autopsyLive;
+      if (!live?.available) throw new Error('the Exact player isn’t built — run npm run build:player');
+      const input = await getJson(`/api/player-input/${this.run.id}?root=${exactRoot(this.run)}&captions=${this.captions ? 1 : 0}`);
+      this.hasCaptions = Boolean(input.autopsy?.hasCaptions);
+      this.status = 'Loading every scene';
+      this.handle = await live.load(input, { controls: true });
+      this.ready = true;
+      clearInterval(this.ticker);
+      this.ccBtn.hidden = !this.hasCaptions;
+      this.ccBtn.classList.toggle('on', this.captions);
+      const story = !this.run.videoAssetId;
+      this.noteText.textContent = story
+        ? `The story · ${(this.handle.frames / this.handle.fps).toFixed(1)}s — every page drawn by the product's own components (clip, text, images) for its duration, with the voice-over and music; page transitions, music ducking and the story's caption style aren't reproduced`
+        : `The product’s own player · ${(this.handle.frames / this.handle.fps).toFixed(1)}s — text overlays, music and timing as the user saw them${this.hasCaptions ? ` · captions ${this.captions ? 'on' : 'off (CC)'}` : ''}`;
+      this.onStatus?.();
+      this.onReady?.();
+    } catch (err) {
+      clearInterval(this.ticker);
+      this.error = String(err?.message || err);
+      this.onStatus?.();
+    }
+  }
+
+  get fps() {
+    return this.handle?.fps || 24;
+  }
+  timeSec() {
+    return this.handle ? this.handle.player.getCurrentFrame() / this.fps : 0;
+  }
+  isPlaying() {
+    return Boolean(this.handle?.player.isPlaying());
+  }
+  seekFrame(f) {
+    this.handle?.player.seekTo(Math.max(0, Math.min((this.handle.frames || 1) - 1, Math.round(f))));
+  }
+
+  show(t, { play = true, muted = false } = {}) {
+    if (!this.handle) return;
+    this.shown = true;
+    this.el.classList.add('on');
+    const p = this.handle.player;
+    this.seekFrame(t * this.fps);
+    if (muted) p.mute();
+    else p.unmute();
+    if (!play) return;
+    p.play();
+    // Browsers can refuse sound without a click on the page: play muted and offer Unmute.
+    setTimeout(() => {
+      if (!this.shown || p.isPlaying()) return;
+      p.mute();
+      p.play();
+      const btn = h('button', { class: 'unmute', onclick: (e) => { e.stopPropagation(); p.unmute(); p.play(); btn.remove(); } }, icon('volume'), 'Unmute');
+      this.el.querySelector('.stage').append(btn);
+    }, 700);
+  }
+
+  hide() {
+    this.shown = false;
+    this.el.classList.remove('on');
+    this.handle?.player.pause();
+  }
+
+  // Captions are part of the composition's input: reload with or without them, same position.
+  async setCaptions(on) {
+    if (!this.ready) return;
+    const t = this.timeSec();
+    const playing = this.isPlaying();
+    this.captions = on;
+    this.ready = false;
+    this.t0 = Date.now();
+    this.status = on ? 'Adding captions' : 'Removing captions';
+    await this.load();
+    if (this.ready && this.shown) this.show(t, { play: playing });
+  }
+
+  // Player interface (keyboard: space, arrows, , .)
+  toggle() {
+    const p = this.handle?.player;
+    if (p) p.isPlaying() ? p.pause() : p.play();
+  }
+  seekBy(sec) {
+    if (this.handle) this.seekFrame(this.handle.player.getCurrentFrame() + sec * this.fps);
+  }
+  step(frames) {
+    if (!this.handle) return;
+    this.handle.player.pause();
+    this.seekFrame(this.handle.player.getCurrentFrame() + frames);
+  }
+  seekSec(sec) {
+    if (!this.handle) return;
+    this.seekFrame(sec * this.fps);
+    this.handle.player.play();
+  }
+  setScenes() {}
+
+  destroy() {
+    clearInterval(this.ticker);
+    try {
+      this.frame.contentWindow?.autopsyLive?.unload();
+    } catch {}
+    this.el.remove();
+  }
+}
+
+// Older player builds (no AutopsyLive): the product's own Remotion player in an iframe, on request.
 class LivePlayer {
   constructor(mount, run) {
     this.frame = h('iframe', { src: '/player/frame.html', allow: 'autoplay; fullscreen' });
@@ -758,7 +1045,9 @@ function outcome(r, d) {
     : h('span', { class: 'pill' }, icon('globe', 'sm'), 'Not published'));
   for (const f of d.feedback || []) pills.push(h('span', { class: `pill ${f.value === 'thumbs_up' ? 'ok' : 'err'}` }, icon(f.value === 'thumbs_up' ? 'up' : 'down', 'sm'), f.value === 'thumbs_up' ? 'Thumbs up' : 'Thumbs down', f.tags?.length ? ` · ${f.tags.join(', ')}` : ''));
   if (d.outOfFunds?.length) pills.push(h('span', { class: 'pill warn', title: d.outOfFunds.map((o) => o.message).join('\n') }, icon('card', 'sm'), `Out of credits ×${d.outOfFunds.length}`));
-  if (failedRun(r)) pills.push(h('span', { class: 'pill err' }, icon('alert', 'sm'), 'Generated but no finished video'));
+  if (failedRun(r)) pills.push(h('span', { class: 'pill err' }, icon('alert', 'sm'), `Tried, but made no ${(getExpected() || ['output']).map((t) => typeLabel(t).toLowerCase()).join(' or ')}`));
+  // What else it wrote, outside what the skill makes (not counted as its output).
+  if (r.otherOutputs?.length) pills.push(h('span', { class: 'pill', title: r.otherOutputs.map((o) => `${typeLabel(o.type)} · ${o.name || ''}`).join('\n') }, `Also made ${r.otherOutputs.length} ${[...new Set(r.otherOutputs.map((o) => typeLabel(o.type).toLowerCase()))].join(' / ')}${r.otherOutputs.length > 1 ? 's' : ''} — not what ${state.skill} makes`));
   return section('Outcome', null, h('div', { class: 'pills' }, pills));
 }
 
@@ -828,9 +1117,29 @@ function scenes(d) {
     h('div', { class: 'n' }, s.texts?.[0] || s.name)))));
 }
 
+// Which models this run used: per model, its calls, the time they took and what they cost (the
+// product's price list; see models.js), as bars against the run's slowest / most expensive model.
+function modelsSection(d) {
+  const stats = modelStats([detailSteps(d)]).sort((a, b) => b.ms - a.ms);
+  if (!stats.length) return null;
+  const maxMs = Math.max(1, ...stats.map((m) => m.ms));
+  const maxCost = Math.max(0.0001, ...stats.map((m) => m.cost));
+  const totalMs = stats.reduce((a, m) => a + m.ms, 0);
+  const totalCost = stats.reduce((a, m) => a + m.cost, 0);
+  return section('Models', `${dur(totalMs)} · ${money(totalCost)}`, h('div', { class: 'models' },
+    h('div', { class: 'model-row head' }, h('span', {}, 'Model'), h('span', {}, 'Time'), h('span', {}), h('span', {}, 'Cost'), h('span', {})),
+    ...stats.map((m) => h('div', { class: 'model-row', title: `${m.name} (${m.methods.join(', ')})\n${m.calls} call${m.calls === 1 ? '' : 's'}${m.fails ? `, ${m.fails} failed` : ''} · ${dur(m.avgMs)} each, slowest ${dur(m.maxMs)}\n${m.avgCost != null ? `${money(m.avgCost)} per successful call (list price)` : 'no price in the price list'}` },
+      h('span', { class: 'mn' }, h('i', { class: `mk ${m.kind}` }), h('b', {}, m.name), h('small', {}, `${m.calls}×${m.fails ? ` · ${m.fails} failed` : ''}`)),
+      h('span', { class: 'mbar' }, h('i', { style: { width: `${(m.ms / maxMs) * 100}%` } })),
+      h('span', { class: 'mv' }, dur(m.ms), m.calls > 1 ? h('small', {}, `${dur(m.avgMs)} each`) : null),
+      h('span', { class: 'mbar cost' }, h('i', { style: { width: `${(m.cost / maxCost) * 100}%` } })),
+      h('span', { class: 'mv' }, m.avgCost != null ? money(m.cost) : '–', m.calls > 1 && m.avgCost != null ? h('small', {}, `${money(m.avgCost)} each`) : null)))),
+    h('p', { class: 'desc', style: { margin: '6px 0 0' } }, 'Time is each call\'s own duration (the agent waits on it). Cost is the product\'s list price for what each successful call asked for (per second of video, or per generation); failed calls are counted as free.'));
+}
+
 function ids(r, d) {
   const row = (k, v) => (v ? [h('dt', {}, k), h('dd', {}, h('span', { class: 'mono', style: { cursor: 'copy' }, title: 'Click to copy', onclick: () => copy(v) }, v))] : null);
-  return section('Identifiers', null, h('dl', { class: 'kv' },
+  return h('details', { class: 'section ids' }, h('summary', {}, 'Identifiers & links'), h('dl', { class: 'kv' },
     row('Session', r.id), row('Project', r.projectId || d.projectId), row('Ad asset', r.adAssetId), row('MSID', r.msid || d.msid),
     row('User', r.userId), row('Account', r.accountId), row('Skill version', (r.codexVersions || []).join(', '))),
     h('div', { class: 'links', style: { marginTop: '10px' } },
@@ -839,9 +1148,18 @@ function ids(r, d) {
     ));
 }
 
+// Where this run's time went, from its first message to the end of its last counted turn (the run's
+// own steps; the list row's when the detail has none), every moment counted once.
+function timeSection(r, d) {
+  const t = d.timeSplit || r.time;
+  const bar = runTimeBar(t);
+  if (!bar) return null;
+  return section('Where the time went', dur(t.total * 1000), bar);
+}
+
 function details(r, d) {
   if (d.error) return [h('div', { class: 'loading-line' }, `Couldn't load this run: ${d.error}`)];
-  return [outcome(r, d), mood(d), request(d), errorsSection(d), scenes(d), ids(r, d)].filter(Boolean);
+  return [outcome(r, d), timeSection(r, d), request(d), modelsSection(d), errorsSection(d), mood(d), scenes(d), ids(r, d)].filter(Boolean);
 }
 
 export { worstMood };

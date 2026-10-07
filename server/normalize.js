@@ -1,4 +1,6 @@
 // Session bundle (admin API) → one run record the UI can render without further parsing.
+import { ownedAssetIds, writePath, jobTypes } from './own-assets.js';
+import { splitTime } from './time-split.js';
 
 const ms = (t) => (t ? Date.parse(t) : null);
 
@@ -100,8 +102,102 @@ function parseScrape(text) {
   };
 }
 
+// The session's asset evidence (admin API shapes; see own-assets.js): its events, and its write
+// tool results, which name every asset written ("Created project/assets/…, id: <id>") — the only
+// record of a sub-agent's writes, which aren't metered.
+const WRITTEN_ID = /id(?:: |":")([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/g;
+// A `sequence` (generate → write in one call, as story sub-agents do) carries its write steps' results
+// inside its own, which also hold other steps' output, so only the write header counts there.
+const SEQUENCE_WRITTEN = /(?:Created|Edited|Saved) project\/assets\/[^(]{0,300}\(type: [^,]{1,60}, id: ([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/g;
+function sessionAssetEvidence(events, entries) {
+  const writes = [];
+  const reported = [];
+  const mentioned = [];
+  for (const e of entries || []) {
+    const tool = e.entryType === 'TOOL_RESULT' ? e.toolResult?.toolName : null;
+    const out = tool === 'write' || tool === 'sequence' ? e.toolResult.result?.output : null;
+    if (typeof out !== 'string' || out.startsWith('Error')) continue;
+    for (const m of out.slice(0, 40000).matchAll(tool === 'write' ? WRITTEN_ID : SEQUENCE_WRITTEN)) reported.push(m[1]);
+  }
+  for (const ev of events || []) {
+    const p = ev.payload || {};
+    if (ev.eventType === 'WRITE_METERING' && p.outcome === 'written') {
+      const w = writePath(p.path);
+      if (w) writes.push(w);
+    }
+    if (ev.eventType === 'TURN_UPDATED_ASSETS') {
+      const arr = Array.isArray(p.assets) ? p.assets : parseJson(p.assets);
+      for (const a of Array.isArray(arr) ? arr : []) if (a?.id) reported.push(a.id);
+    }
+    if (ev.eventType === 'AGENT_MENTIONED_ASSETS') for (const id of Object.keys(p)) if (/^[0-9a-f-]{36}$/i.test(id)) mentioned.push(id);
+  }
+  return { writes, reported, mentioned };
+}
+
+// ---- stories ----
+// A STORY is pages, not a timeline: each visible page (children in indexInParent order, minus
+// externalConfig.hidden) shows for durationMs (else the root's defaultPageDurationMs), hard cuts
+// between them. A page's background is its Clip component (src: an mp4, or "" for a still page with
+// a poster) or design.background (image or color). Voice-over and music sit in the root's
+// externalConfig in milliseconds. The product exports exactly Σ floor(durationMs · fps / 1000)
+// frames, so timing here matches its story export. Text layers are not reproduced.
+const STORY_CLIP = 'bf89429d';
+function storyOutputs(root, list, sceneRecord) {
+  const ec = root.externalConfig || {};
+  const fps = Number(ec.fps) || 60;
+  const def = Number(ec.defaultPageDurationMs) || 3000;
+  const pages = list.filter((a) => a.parentId === root.id && !a.externalConfig?.hidden)
+    .sort((a, b) => (a.layout?.order?.indexInParent ?? 0) - (b.layout?.order?.indexInParent ?? 0));
+  const scenes = pages.map((p, i) => {
+    const clip = (p.components || []).find((c) => String(c.data?.extensionId || '').startsWith(STORY_CLIP))?.data?.props || {};
+    const playback = typeof clip.playback === 'string' ? parseJson(clip.playback) || {} : clip.playback || {};
+    const bg = p.design?.background || {};
+    const sec = Math.floor((Number(p.externalConfig?.durationMs ?? def) * fps) / 1000) / fps;
+    const base = sceneRecord(p);
+    return {
+      ...base,
+      clipUrl: /\.(mp4|webm|mov)(\?|$)/i.test(clip.src || '') ? clip.src : null,
+      clipVolume: playback.muted === false ? 1 : 0,
+      clipStartSec: Number(playback.startTime || 0),
+      stillUrl: clip.poster_url || clip.first_frame_image_url || bg.media?.image?.url || null,
+      color: bg.color || '#000000',
+      fit: bg.ratio === 'FIT',
+      thumbnailUrl: p.thumbnailUrl || clip.poster_url || clip.first_frame_image_url || bg.media?.image?.url || null,
+      // At the 24fps the review copies use; startSec/endSec are filled in like a video's scenes.
+      frames: null,
+      trimStart: 0,
+      trimEnd: 0,
+      playFrames: Math.round(sec * 24),
+      order: i,
+    };
+  });
+  const ms = (x) => Number(x || 0) / 1000;
+  const vo = ec.voiceover?.url ? [{ url: ec.voiceover.url, atSec: ms(ec.voiceover.startMs), volume: Number(ec.voiceover.volume ?? 1) }] : [];
+  const voices = [...vo, ...(ec.voiceoverClips || []).filter((c) => c?.url).map((c) => ({ url: c.url, atSec: ms(c.startMs ?? c.atMs), volume: Number(c.volume ?? 1) }))];
+  const music = (ec.musicClips?.length ? ec.musicClips : ec.backgroundMusic?.url && ec.backgroundMusic.enabled !== false ? [ec.backgroundMusic] : [])
+    .filter((c) => c?.url).map((c) => ({ url: c.url, atSec: ms(c.startMs ?? c.atMs), volume: Number(c.volume ?? 1), fadeOutSec: ms(c.fadeOutMs ?? 1500) }));
+  const sfx = (ec.sfx || []).filter((c) => c?.url).map((c) => ({ url: c.url, atSec: ms(c.atMs ?? c.startMs), volume: Number(c.volume ?? 1) }));
+  const dims = root.layout?.dimensions || { width: 1080, height: 1920 };
+  return {
+    kind: 'story',
+    rootAssetId: root.id,
+    name: root.name,
+    status: null,
+    thumbnailUrl: root.thumbnailUrl || scenes[0]?.thumbnailUrl || null,
+    width: dims.width,
+    height: dims.height,
+    aspect: `${dims.width}:${dims.height}`,
+    contentUpdatedAt: Math.max(...[root, ...pages].map((a) => ms(Date.parse(a.lastContentUpdatedDate || a.updatedDate || 0)) * 1000).filter(Number.isFinite), 0),
+    story: { fps, voices, music, sfx, duckVolume: Number(ec.voiceover?.musicDuckVolume ?? 1), captions: ec.captions?.enabled ? 'on' : 'off', style: ec.style || null },
+    music: null,
+    rootAudio: [],
+    scenes,
+  };
+}
+
 // ---- the record ----
-export function normalizeSession(bundle) {
+// `opts.rootId`: the run's own output to show as the root (from the list row), when known.
+export function normalizeSession(bundle, opts = {}) {
   const { meta, entries = [], events = [], assets } = bundle;
   const sorted = [...entries].sort((a, b) => Number(a.sequence) - Number(b.sequence));
 
@@ -259,7 +355,16 @@ export function normalizeSession(bundle) {
 
   // ---- outputs: the asset tree ----
   const list = Array.isArray(assets?.assets) ? assets.assets : [];
-  const root = list.find((a) => a.id === assets?.rootAssetId) || list.find((a) => a.type === 'VIDEO' && !a.parentId) || null;
+  // What this session made (own-assets.js): its own writes, the editor's per-turn reports and the
+  // assets it handed over. The project's root asset is often another session's work (a campaign's
+  // story next to this session's video), so the root shown and assembled is one of the session's
+  // own: the given one (the run's output from the list), else its video, else its story, else any.
+  const sorted0 = sorted.length ? ms(sorted[0].createdDate) : null;
+  const sortedN = sorted.length ? ms(sorted.at(-1).createdDate) : null;
+  const madeIds = ownedAssetIds({ ...sessionAssetEvidence(events, entries), jobs: jobTypes(steps.map((x) => x.method).filter(Boolean)) }, list.map((a) => ({ id: a.id, parentId: a.parentId || null, name: a.name, type: a.type, created: ms(a.createdDate), updated: ms(a.updatedDate) })),
+    (t) => Boolean(t) && sorted0 != null && t >= sorted0 - 60000 && t <= sortedN + 300000);
+  const made = list.filter((a) => !a.parentId && madeIds.has(a.id));
+  const root = (opts.rootId && list.find((a) => a.id === opts.rootId)) || made.find((a) => a.type === 'VIDEO') || made.find((a) => a.type === 'STORY') || made[0] || null;
   const scenes = root ? list.filter((a) => a.parentId === root.id) : [];
   // Timeline semantics from wixel-video-bm: scenes are hard cuts in layout.order.indexInParent
   // order; each plays (frameDuration - trim_start - trim_end) frames at 24fps starting trim_start
@@ -291,9 +396,10 @@ export function normalizeSession(bundle) {
       order: a.layout?.order?.indexInParent ?? Number(a.name?.match(/\d+/)?.[0] ?? 999),
     };
   };
-  const rootDims = root?.components?.[0]?.layout?.dimensions || null;
-  const outputs = root
+  const rootDims = root?.layout?.dimensions || root?.components?.[0]?.layout?.dimensions || null;
+  const outputs = root?.type === 'STORY' ? storyOutputs(root, list, sceneRecord) : root
     ? {
+        kind: 'video',
         rootAssetId: root.id,
         name: root.name,
         status: root.externalConfig?.status ?? null,
@@ -307,14 +413,21 @@ export function normalizeSession(bundle) {
         // Root audio tracks: a voiceover (extension "tts") and/or music ("audio-timeline"). Voice is
         // usually baked into scene clips, but some ads keep it here. A missing volume means 1; a
         // volume-0 tts is wixel-ads' muted captions carrier.
-        rootAudio: (root.components || []).map((c) => ({ ext: String(c.data?.extensionId || ''), p: c.data?.props || {} }))
-          .filter(({ p }) => /\.(mp3|wav|m4a|aac)(\?|$)/i.test(String(p.url || p.resultUrl || p.result_url || '')))
+        // Root audio tracks: a voiceover (extension 7572e63a…, older 7eebe4f0…) and/or music
+        // (80e9c773…). Their settings live in the component's externalConfig (trims and shift in
+        // 24fps frames), as the product's player reads them; older ads kept them in data.props. A
+        // missing volume means 1; a volume-0 voiceover is wixel-ads' muted captions carrier.
+        rootAudio: (root.components || []).map((c) => ({ ext: String(c.data?.extensionId || ''), p: { ...(c.data?.props || {}), ...(c.externalConfig || {}) } }))
+          .filter(({ p }) => p.enabled !== false && /\.(mp3|wav|m4a|aac)(\?|$)/i.test(String(p.resultUrl || p.result_url || p.url || '')))
           .map(({ ext, p }) => ({
-            kind: /tts/i.test(ext) || p.captionsUrl || p.captionsEnabled !== undefined ? 'voice' : 'music',
-            url: p.url || p.resultUrl || p.result_url,
+            kind: /^(7572e63a|7eebe4f0)/.test(ext) || /tts/i.test(ext) || p.captionsUrl || p.captionsEnabled !== undefined ? 'voice' : 'music',
+            url: p.resultUrl || p.result_url || p.url,
             volume: p.volume == null ? 1 : Number(p.volume),
             shiftSec: Number(p.frame_shift || 0) / 24,
             trimStartSec: Number(p.trim_start || 0) / 24,
+            // Where it ends on the timeline (the product runs the video until its last track ends).
+            durationSec: Number(p.duration) || null,
+            trimEndSec: Number(p.trim_end || 0) / 24,
           })),
         captions: root.externalConfig?.captionsStyle ?? null,
         styleGuidelines: root.externalConfig?.context?.style_guidelines ?? null,
@@ -328,6 +441,8 @@ export function normalizeSession(bundle) {
     name: a.name,
     thumbnailUrl: a.thumbnailUrl || null,
     updated: ms(a.updatedDate),
+    // Made by this session (else: other work in the same project).
+    own: madeIds.has(a.id),
     children: list.filter((c) => c.parentId === a.id)
       .sort((x, y) => (x.layout?.order?.indexInParent ?? 0) - (y.layout?.order?.indexInParent ?? 0))
       .map((c) => ({ id: c.id, name: c.name, type: String(c.type || '').toLowerCase(), thumbnailUrl: c.thumbnailUrl || null })),
@@ -505,6 +620,22 @@ export function normalizeSession(bundle) {
 // ownCtes). A turn loading the skill (skill tool or preload) claims the session; later turns stay
 // with it until one loads a skill outside `family`. `family: null` counts every turn. Turn order
 // is by start time.
+// Where the counted turns' time went (time-split.js), from the session's own steps: the run view's
+// bar, also for runs whose day hasn't got step data (the steps query can time out on a busy cluster).
+export function detailTimeSplit(rec) {
+  const owned = rec.scope && !rec.scope.whole ? new Set(rec.scope.owned) : null;
+  const mine = (turnId) => !owned || owned.has(turnId);
+  const steps = (rec.steps || []).filter((x) => mine(x.turnId) && x.startedAt);
+  const turns = (rec.turns || []).filter((t) => mine(t.turnId) && t.startedAt).map((t) => {
+    const last = Math.max(t.startedAt, ...steps.filter((x) => x.turnId === t.turnId).map((x) => x.endedAt || x.startedAt));
+    return [t.startedAt, t.endedAt || last];
+  });
+  return splitTime({
+    turns,
+    calls: steps.map((x) => ({ tool: x.tool, method: x.method, failed: x.status === 'failed', unfinished: x.jobStatus === 'IN_PROGRESS' && !x.resultUrl, start: x.startedAt, end: x.endedAt || x.startedAt + Number(x.durationMs || 0) })),
+  });
+}
+
 export function turnOwnership(rec, skill, family) {
   const loads = new Map();
   const firstAt = new Map();

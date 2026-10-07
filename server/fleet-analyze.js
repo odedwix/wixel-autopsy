@@ -521,13 +521,15 @@ function waitRows(c, weekF) {
 }
 
 // ---- opportunities: where the agent works harder than it needs to ----
+// Observations only. An audit against the codex and the raw calls (2026-10-07) found the saving
+// estimates unproven and several premises wrong, so these kinds were removed: "same call every
+// time" (identical arguments, different answers: ListCosts returns each user's credits), "file
+// busywork" (most re-reads are project state that must be re-read), "let the tool fix it" (the
+// agent's retries changed the inputs, it didn't repeat a slip), "re-attach" (the agent already
+// re-polls the same job) and "always loaded together" (co-loads changed with preloading). What's
+// left states what was measured and what would prove a change helps; no hours are claimed.
 function opportunities(c, skills, waits, issues, totals, weekF, pairs, codex) {
   const out = [];
-  const bySkill = new Map(skills.map((s) => [s.skill, s]));
-  const fleetIterMs = totals.iterations ? totals.thinkMs / totals.iterations : 0;
-  const fleetTpi = totals.iterations ? totals.inTokens / totals.iterations : 0;
-  const iterMsOf = (skill) => bySkill.get(skill)?.thinkMsPerIter || fleetIterMs;
-  const tpiOf = (skill) => bySkill.get(skill)?.tokensPerIter || fleetTpi;
   const turnsRow = (skill) => c.chains.get(keyOf(skill, 'turns', ''));
 
   // 1. Fixed chains → a scripted pipeline / macro tool.
@@ -536,111 +538,23 @@ function opportunities(c, skills, waits, issues, totals, weekF, pairs, codex) {
     const all = turnsRow(ch.owner);
     const share = all && num(all.turns) ? num(ch.turns) / num(all.turns) : 0;
     if (steps.length < 3 || num(ch.turns) * weekF < 20 || share < 0.15 || ch.owner === NO_SKILL) continue;
+    // A chain that waits on the user or a sub-agent can't be one scripted step.
+    if (steps.some((x) => /ask_user|\btask\b/.test(x))) continue;
     const iterPerTurn = num(ch.iterations) / num(ch.turns);
     // A macro tool still needs ~2 model iterations: decide the inputs, then answer.
-    const saveIter = Math.max(0, iterPerTurn - 2) * num(ch.turns) * weekF;
     const errRate = num(ch.with_errors) / num(ch.turns);
     out.push({
       id: `chain:${ch.owner}:${hashKey(ch.k)}`,
       kind: 'fixed-chain',
       title: `Make "${steps.slice(0, 4).join(' → ')}${steps.length > 4 ? ' → …' : ''}" one deterministic step`,
       skill: ch.owner,
-      detail: `${Math.round(share * 100)}% of ${ch.owner}'s turns run this exact chain of ${steps.length} steps, taking ${iterPerTurn.toFixed(1)} model iterations each. A pipeline (or one macro tool) where the agent only picks the inputs would cut that to ~2.`,
+      detail: `${Math.round(share * 100)}% of ${ch.owner}'s turns run this exact chain of ${steps.length} steps, taking ${iterPerTurn.toFixed(1)} model iterations each (measured).`,
+      unproven: 'How many iterations one step would save isn\'t measured: turns that already use `sequence` save about 1.6, not the ~' + Math.max(0, iterPerTurn - 2).toFixed(1) + ' a naive count suggests. Compare this chain\'s turns with and without `sequence` before changing the skill.',
       evidence: [`${Math.round(num(ch.turns) * weekF)} turns/week · ${num(ch.sessions)} sessions in the period`, `chain: ${ch.k}`, `${(num(ch.in_tokens) / Math.max(1, num(ch.iterations)) / 1000).toFixed(0)}k input tokens per iteration`],
-      savings: { iterationsPerWeek: saveIter, hPerWeek: (saveIter * iterMsOf(ch.owner)) / H, tokensPerWeek: saveIter * tpiOf(ch.owner) },
-      confidence: 'estimated',
+      savings: { iterationsPerWeek: 0, hPerWeek: 0, tokensPerWeek: 0, turnsPerWeek: num(ch.turns) * weekF },
+      confidence: 'observation',
       guard: errRate > 0.2 ? `${Math.round(errRate * 100)}% of these turns hit an error — fix the failing step first, then script it.` : null,
       chain: steps,
-    });
-  }
-
-  // 2. Constant arguments → default or precompute.
-  const byOp = new Map();
-  for (const t of c.timing.values()) {
-    const k = keyOf(t.tool, t.method);
-    const o = byOp.get(k) || { tool: t.tool, method: t.method, calls: 0, maxShapes: 0, maxVals: 0, owners: {} };
-    o.calls += num(t.calls);
-    o.maxShapes = Math.max(o.maxShapes, t.maxShapes);
-    o.maxVals = Math.max(0, ...Object.values(c.opDayVals.get(k) || {}));
-    o.owners = addMap(o.owners, t.owners);
-    byOp.set(k, o);
-  }
-  for (const o of byOp.values()) {
-    // File operations are excluded (same path, different moment); method/catalog lookups are not.
-    if (['read', 'write', 'list', 'grep', 'skill', 'send_feedback', 'ask_user', 'task', 'sequence'].includes(o.tool)) continue;
-    const perWeek = o.calls * weekF;
-    // Exact arguments (not just their shape): at most 5 distinct argument sets on any day.
-    if (perWeek < 100 || o.maxVals > 5) continue;
-    const name = o.method ? `${o.tool} ${o.method}` : o.tool;
-    const top = topEntries(o.owners, 3);
-    out.push({
-      id: `const:${hashKey(name)}`,
-      kind: 'constant-args',
-      title: `${name} is called the same way every time — give the agent the answer instead`,
-      skill: top[0]?.[0] || null,
-      detail: `${Math.round(perWeek).toLocaleString()} calls a week with at most ${o.maxVals} distinct argument set${o.maxVals === 1 ? '' : 's'} on any day — byte-identical calls. Precompute the answer and put it in the context (or have the platform call it): no agent decision is involved.`,
-      evidence: [`called by: ${top.map(([s, n]) => `${s} (${n})`).join(', ')}`],
-      savings: { iterationsPerWeek: perWeek, hPerWeek: (perWeek * fleetIterMs) / H, tokensPerWeek: perWeek * fleetTpi },
-      confidence: 'estimated',
-      guard: null,
-    });
-  }
-
-  // 3. Skills that always load together → preload or merge.
-  for (const p of pairs || []) {
-    const share = Number(p.together) / Number(p.a_turns);
-    if (share < 0.85 || Number(p.a_turns) < 30 || p.a === p.b) continue;
-    const perWeek = (Number(p.together) / 3) * 7; // pairs cover the last 3 days
-    const size = codex?.skillSize?.[p.b] || null;
-    out.push({
-      id: `coload:${p.a}:${p.b}`,
-      kind: 'co-load',
-      title: `${p.a} loads ${p.b} in ${Math.round(share * 100)}% of its turns — preload it`,
-      skill: p.a,
-      detail: `Each load is a tool call plus a model iteration, and the agent re-reads the skill text. Include ${p.b} in ${p.a}'s instructions (or load both as one), and drop the separate call.`,
-      evidence: [`${p.together} of ${p.a_turns} turns in the last 3 days`, size ? `${p.b} is ~${Math.round(size / 4 / 1000)}k tokens` : null].filter(Boolean),
-      savings: { iterationsPerWeek: perWeek, hPerWeek: (perWeek * iterMsOf(p.a)) / H, tokensPerWeek: perWeek * tpiOf(p.a) },
-      confidence: 'estimated',
-      guard: null,
-    });
-  }
-
-  // 4. Plumbing loops: lots of read/list/write per turn, files re-read.
-  for (const s of skills.filter((x) => x.major)) {
-    const tr = turnsRow(s.skill);
-    if (!tr || !num(tr.turns)) continue;
-    const perTurn = num(tr.plumbing) / num(tr.turns);
-    const reread = num(tr.reread) / num(tr.turns);
-    if (perTurn < 6 && reread < 0.5) continue;
-    const extra = (reread * num(tr.turns) + Math.max(0, perTurn - 4) * num(tr.turns) * 0.5) * weekF;
-    out.push({
-      id: `plumbing:${s.skill}`,
-      kind: 'plumbing',
-      title: `${s.skill} spends ${perTurn.toFixed(1)} file operations per turn${reread >= 0.5 ? `, re-reading the same file ${reread.toFixed(1)}× a turn` : ''}`,
-      skill: s.skill,
-      detail: 'Put what it always reads into the skill (or the first message) and keep it in context; batch the writes.',
-      evidence: [`${Math.round(num(tr.plumbing) * weekF).toLocaleString()} read/list/write calls a week`, `${Math.round(num(tr.reread) * weekF).toLocaleString()} repeated reads a week`],
-      savings: { iterationsPerWeek: extra, hPerWeek: (extra * iterMsOf(s.skill)) / H, tokensPerWeek: extra * tpiOf(s.skill) },
-      confidence: 'estimated',
-      guard: null,
-    });
-  }
-
-  // 5. Fix-and-retry loops: the agent recovers after a validation slip — the tool could fix it.
-  for (const i of issues.filter((x) => ['agent-misuse', 'validation', 'provider-params'].includes(x.cls.id))) {
-    const recovered = i.n - i.unrecovered;
-    if (i.perWeek < 50 || recovered / i.n < 0.6) continue;
-    out.push({
-      id: `retry:${i.key}`,
-      kind: 'auto-correct',
-      title: `Auto-correct "${i.sig.slice(0, 70)}" inside ${i.method || i.tool}`,
-      skill: i.owners[0]?.skill || null,
-      detail: `${Math.round((recovered / i.n) * 100)}% of the time the agent fixes this itself on the next try — so the fix is mechanical. Let the tool accept or repair the common slip and skip the round trip.`,
-      evidence: [`${Math.round(i.perWeek).toLocaleString()} times a week`, `${(i.lostHPerWeek).toFixed(1)} h/week lost to it`],
-      savings: { iterationsPerWeek: recovered * weekF, hPerWeek: i.lostHPerWeek, tokensPerWeek: recovered * weekF * fleetTpi },
-      confidence: 'measured time, estimated tokens',
-      guard: null,
-      issue: i.key,
     });
   }
 
@@ -660,8 +574,9 @@ function opportunities(c, skills, waits, issues, totals, weekF, pairs, codex) {
       skill: s.skill,
       detail: `${asked ? `${Math.round((asked / n) * 100)}% follow an explicit question. ` : ''}Most often after ${after?.k || 'a plan'}. If the answer is nearly always yes, proceed by default and let users opt in to approve.`,
       evidence: [`${Math.round(n * weekF)} turns/week`, `each costs a user round trip plus ${(turnMs / 1000).toFixed(0)} s of agent time`],
-      savings: { iterationsPerWeek: (sumBy(rows, (x) => x.iterations) * weekF), hPerWeek: (sumBy(rows, (x) => x.turn_ms) / H) * weekF, tokensPerWeek: sumBy(rows, (x) => x.in_tokens) * weekF },
-      confidence: 'measured',
+      savings: { iterationsPerWeek: 0, hPerWeek: 0, tokensPerWeek: 0 },
+      confidence: 'observation',
+      unproven: 'How often users say yes when asked isn\'t measured, nor whether the next step spends credits. Proceeding by default is only safe when the answer is nearly always yes and the step is free.',
       guard: 'Approvals protect spend (credits) — keep them where the next step is expensive.',
     });
   }
@@ -680,7 +595,8 @@ function opportunities(c, skills, waits, issues, totals, weekF, pairs, codex) {
       detail: 'Every model iteration re-reads the whole context. Trim the skill and resources it loads, move rarely-needed sections to files read on demand, and summarize long tool results.',
       evidence: [`${Math.round(iters).toLocaleString()} iterations a week`, codex?.skillSize?.[s.skill] ? `skill file ~${Math.round(codex.skillSize[s.skill] / 4 / 1000)}k tokens` : null].filter(Boolean),
       savings: { iterationsPerWeek: 0, hPerWeek: 0, tokensPerWeek: extra },
-      confidence: 'measured tokens',
+      confidence: 'observation',
+      unproven: 'Which part of the context could go isn\'t known from these numbers; read the skill and its resources first.',
       guard: 'Most of it is cached input; the saving is mostly latency and cache misses, not list price.',
     });
   }
@@ -698,32 +614,16 @@ function opportunities(c, skills, waits, issues, totals, weekF, pairs, codex) {
       detail: 'Users regenerate a lot before they keep something. Look at what the first results miss (Autopsy → the skill\'s runs with many generations): offer variations up front, ask the one question that matters before generating, or fix the prompt the skill writes.',
       evidence: [`${pct(s.keptRate)} of sessions with output are kept`, `${Math.round(s.kept * weekF)} kept outputs a week`],
       savings: { iterationsPerWeek: extra, hPerWeek: 0, tokensPerWeek: 0 },
-      confidence: 'measured counts, estimated savings',
+      confidence: 'observation',
+      unproven: 'Why users regenerate isn\'t in these numbers; open the runs with many generations first.',
       guard: 'Some skills are exploratory by design (variations are the product) — compare with thumbs and frustration first.',
       unit: 'generations',
     });
   }
 
-  // 9. Hidden timeouts → re-attach (links to Wait times).
-  for (const w of waits.filter((x) => x.hidden > 0)) {
-    const name = w.method ? `${w.tool} ${w.method}` : w.tool;
-    out.push({
-      id: `reattach:${w.key}`,
-      kind: 'reattach',
-      title: w.cap ? `${name}: waits ${fmtS(w.cap)}, then gives up on a job that's still running` : `${name}: returns while its job is still running`,
-      skill: w.owners[0]?.[0] || null,
-      detail: `${w.hidden} time${w.hidden === 1 ? '' : 's'} in the period the tool returned while the job was still in progress — the median success takes ${fmtS(w.p50)}. Poll the same job id instead of starting over, and cap the wait at ${w.recommend ? fmtS(w.recommend.tau) : 'a measured value'}.`,
-      evidence: [`p50 ${fmtS(w.p50)} · p99 ${fmtS(w.p99)}${w.cap ? ` · cap ${fmtS(w.cap)}` : ' · no duration recorded'}`],
-      savings: { iterationsPerWeek: 0, hPerWeek: w.recommend?.savedHPerWeek || ((w.hidden * (w.cap || 0)) / H) * weekF, tokensPerWeek: 0 },
-      confidence: 'measured',
-      guard: null,
-      wait: w.key,
-    });
-  }
-  return out.sort((a, b) => b.savings.hPerWeek - a.savings.hPerWeek || b.savings.tokensPerWeek - a.savings.tokensPerWeek);
+  return out.sort((a, b) => (b.savings.turnsPerWeek || b.savings.iterationsPerWeek || 0) - (a.savings.turnsPerWeek || a.savings.iterationsPerWeek || 0) || b.savings.tokensPerWeek - a.savings.tokensPerWeek);
 }
 const pct = (x) => (x == null ? '–' : `${Math.round(x * 100)}%`);
-const fmtS = (ms) => (ms == null ? '–' : ms < 60000 ? `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)} s` : `${(ms / 60000).toFixed(1)} min`);
 
 // ---- data health ----
 function health(files, days, c) {
@@ -853,18 +753,14 @@ export function analyze({ files, prevFiles, days, prevDays, aud = 'real', state 
   }
   const waits = waitRows(c, weekF);
   const opps = opportunities(c, skills, waits, issues, totals, weekF, pairs, codex);
-  const dismissed = new Set(Object.entries(state.opportunities || {}).filter(([, v]) => v.status === 'dismissed').map(([k]) => k));
   for (const o of opps) o.status = state.opportunities?.[o.id] || null;
 
-  // Do these first: issues, waits and opportunities on one scale (hours a week given back).
-  const actions = [
-    ...issues.filter((i) => i.score > 0 && i.cls.id !== 'hidden-timeout' && !['fixed', 'wontfix', 'duplicate'].includes(i.status?.status)).slice(0, 12)
-      .map((i) => ({ kind: 'issue', ref: i.key, title: i.sig, sub: `${i.cls.label} · ${i.method || i.tool} · ${i.owners.slice(0, 2).map((o) => o.skill).join(', ')}`, hPerWeek: i.savedHPerWeek, fix: i.cls.fix, owner: i.cls.owner })),
-    ...waits.filter((w) => w.recommend).slice(0, 4)
-      .map((w) => ({ kind: 'wait', ref: w.key, title: `Wait at most ${fmtS(w.recommend.tau)} for ${w.method || w.tool}${w.size ? ` (${w.size})` : ''}`, sub: `now ${w.cap ? `${fmtS(w.cap)} cap` : 'no cap'} · p50 ${fmtS(w.p50)} · p99 ${fmtS(w.p99)}`, hPerWeek: w.recommend.savedHPerWeek, fix: 'easy', owner: 'Platform (tool timeouts)' })),
-    ...opps.filter((o) => !dismissed.has(o.id) && o.kind !== 'reattach').slice(0, 6)
-      .map((o) => ({ kind: 'opportunity', ref: o.id, title: o.title, sub: o.detail.slice(0, 120), hPerWeek: o.savings.hPerWeek, tokensPerWeek: o.savings.tokensPerWeek, fix: 'medium', owner: 'Agent design' })),
-  ].sort((a, b) => b.hPerWeek - a.hPerWeek).slice(0, 10);
+  // The biggest problems by measured time lost (not "hours given back": whether a fix gives the
+  // time back is only known once a fix is proven, per skill — see fleet-skillfix.js).
+  const actions = issues
+    .filter((i) => i.cls.id !== 'credits' && i.cls.id !== 'hidden-timeout' && !['fixed', 'wontfix', 'duplicate'].includes(i.status?.status))
+    .sort((a, b) => b.lostHPerWeek - a.lostHPerWeek).slice(0, 10)
+    .map((i) => ({ kind: 'issue', ref: i.key, title: i.sig, sub: `${i.cls.label} · ${i.method || i.tool} · ${i.owners.slice(0, 2).map((o) => o.skill).join(', ')}`, hPerWeek: i.lostHPerWeek, fix: i.cls.fix, owner: i.cls.owner }));
 
   return {
     aud,

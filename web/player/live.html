@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Exact player</title>
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+    #root { width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <!-- The run view's Exact player: the product's own player (AutopsyLive, from the capture bundle
+       built by npm run build:player), loaded hidden by web/js/inspect.js while the regular copy
+       plays. Same origin, so the parent drives it directly through window.autopsyLive. -->
+  <div id="root"></div>
+  <script src="/player/capture-bootstrap.js"></script>
+  <script>
+    // The product's platform font CSS, which its own hosts load before any text renders.
+    var fontsReady = fetch('/player/fonts.json').then(function (r) { return r.json(); }).catch(function () { return []; }).then(function (urls) {
+      return Promise.all(urls.map(function (href) {
+        return new Promise(function (resolve) {
+          var l = document.createElement('link');
+          l.rel = 'stylesheet';
+          l.href = href;
+          l.onload = l.onerror = resolve;
+          document.head.appendChild(l);
+        });
+      }));
+    });
+    var handle = null;
+    window.autopsyLive = {
+      available: Boolean(window.AutopsyLive),
+      load: function (input, opts) {
+        if (!window.AutopsyLive) return Promise.reject(new Error('Exact player not built — run npm run build:player'));
+        return fontsReady.then(function () {
+          if (handle) handle.unmount();
+          return window.AutopsyLive.mount(document.getElementById('root'), input, opts || {});
+        }).then(function (h) {
+          handle = h;
+          return h;
+        });
+      },
+      unload: function () {
+        if (handle) handle.unmount();
+        handle = null;
+      },
+      get handle() {
+        return handle;
+      },
+    };
+    // Keys pressed with the focus in here (after a click on the player) go to the run view: ~ toggles
+    // full screen there (inspect.js togglePlayerFullscreen), so it works the same wherever the focus is.
+    window.addEventListener('keydown', function (e) {
+      if ((e.code === 'Backquote' || e.key === '`' || e.key === '~') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        parent.postMessage({ type: 'autopsy-key', code: 'Backquote' }, location.origin);
+      }
+    });
+  </script>
+</body>
+</html>
