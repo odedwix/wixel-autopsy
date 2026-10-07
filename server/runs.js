@@ -143,31 +143,46 @@ let accountTypes;
 let teamSet;
 // One lookup at a time: a second caller waits and then finds the accounts already resolved.
 let typesChain = Promise.resolve();
+let typesBusy = 0;
 export function resolveUserTypes(accountIds) {
-  const run = typesChain.then(() => lookUpUserTypes(accountIds));
+  typesBusy++;
+  const run = typesChain.then(() => lookUpUserTypes(accountIds)).finally(() => typesBusy--);
   typesChain = run.catch(() => {});
   return run;
 }
 // What's known now, without waiting for new accounts (they resolve in the background).
 const knownUserType = (id) => (!id ? 'unknown' : teamSet?.has(id) ? 'wixel-team' : accountTypes?.[id] || 'unknown');
+// The grid never waits long for user types, and never fails over them: past `ms`, or when the
+// lookup fails, accounts not resolved yet show as unknown until the day is next loaded.
+// Behind a lookup that's already running (a slow one takes a minute to fail), it doesn't wait at all.
 async function userTypesWithin(accountIds, ms) {
-  const work = resolveUserTypes(accountIds);
-  work.catch(() => {});
+  const busy = typesBusy > 0;
+  const work = resolveUserTypes(accountIds).catch(() => null);
+  if (busy && accountTypes && teamSet) return knownUserType;
   return (await Promise.race([work, new Promise((r) => setTimeout(() => r(null), ms))])) || knownUserType;
 }
+// When Trino is busy the base scan times out even for a handful of ids, and each try (retried once)
+// costs a minute; after a failure new accounts wait this long before the next try, and show as
+// unknown meanwhile.
+const TYPES_REST_MS = 2 * 60000;
+let typesFailedAt = 0;
 async function lookUpUserTypes(accountIds) {
   accountTypes ??= (await readCache('meta', 'account-types', Infinity)) || {};
   teamSet ??= new Set(await cached('meta', 'wixel-team', DAY, async () => ({
     value: (await sql('SELECT DISTINCT account_id FROM sandbox.www.slides_employees_team')).map((r) => r.account_id),
     ttlMs: DAY,
-  })));
+  }), { staleWhileRevalidate: true }));
   const missing = [...new Set(accountIds.filter((id) => id && !(id in accountTypes)))];
+  if (missing.length && Date.now() - typesFailedAt < TYPES_REST_MS) throw new Error(`user types: ${missing.length} new accounts wait for Trino (the last lookup timed out)`);
   // Each batch is saved as soon as it's resolved, and retried once on a timeout, so a busy
   // cluster costs at most the batch it was on (the next call picks up from there).
   for (let i = 0; i < missing.length; i += 500) {
     const ids = missing.slice(i, i + 500);
     const [row] = await retryOnce(() => sql(`SELECT array_join(array_agg(t.id), ',') AS missing FROM UNNEST(ARRAY[${ids.map(lit).join(',')}]) AS t(id)
-      LEFT JOIN prod.wt_accounts.base b ON b.account_id = t.id WHERE b.account_id IS NULL`));
+      LEFT JOIN prod.wt_accounts.base b ON b.account_id = t.id WHERE b.account_id IS NULL`)).catch((err) => {
+      typesFailedAt = Date.now();
+      throw err;
+    });
     const employees = new Set((row?.missing || '').split(',').filter(Boolean));
     for (const id of ids) accountTypes[id] = employees.has(id) ? 'employee' : 'real';
     await writeCache('meta', 'account-types', accountTypes, Infinity);
@@ -284,8 +299,8 @@ async function buildDayRows(scope, day, hours = [0, 24]) {
   // A top-up (a later hour window of the last day or two) skips the lagging dimension table and
   // doesn't wait for brand-new accounts' user types (looked up in the background).
   const topUpWindow = hours[0] > 0 && Date.parse(`${day}T00:00:00Z`) > Date.now() - 2 * DAY;
-  const types = resolveUserTypes(rows.map((r) => r.account_id));
-  if (topUpWindow) types.catch(() => {});
+  // A failed lookup leaves those accounts unknown; it never fails the day.
+  const types = resolveUserTypes(rows.map((r) => r.account_id)).catch(() => null);
   const [attrs] = await Promise.all([
     sessionAttrs(rows.map((r) => r.session_id), day, { skipDim: topUpWindow }),
     // Warm the account cache in parallel; listRuns reads it.
@@ -574,7 +589,9 @@ async function scopedDay(scope, day, sampleRate = 1, { fresh = false, fromHour =
   }
   const seen = new Set();
   const rows = rawRows.filter((r) => !seen.has(r.session_id) && seen.add(r.session_id));
-  const userType = fromHour != null ? await userTypesWithin(rows.map((r) => r.account_id), 3000) : await resolveUserTypes(rows.map((r) => r.account_id));
+  // A cached day's accounts are known already (a whole-day build warmed them above), so this is
+  // instant unless a lookup failed earlier.
+  const userType = await userTypesWithin(rows.map((r) => r.account_id), 3000);
   const bySession = new Map(stepRows.map((r) => [r.session_id, r]));
   const runs = rows.map((r) => ({ ...toRun(r, userType), ...stepFields(bySession.get(r.session_id)), sampleRate }));
   for (const r of runs) runIndex.set(r.id, r);
