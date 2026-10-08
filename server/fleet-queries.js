@@ -537,3 +537,128 @@ GROUP BY GROUPING SETS ((x.owner, x.aud), (x.intent, x.aud))
 HAVING grouping(x.owner) = 0 OR count(*) >= 3
 ORDER BY 4 DESC, 1, 2, 3`;
 }
+
+// ---- Q6: agent models per skill ----
+// Which model ran each iteration of a skill's turns (gpt-6-luna, gpt-6.1-sol, gemini flash, claude
+// sub-agents…): iterations, failed calls, tokens in / cached / out, and the model's own time (the
+// gap since the previous entry, under 10 minutes) — so "which model, how heavy, how slow" per skill.
+export function modelsQuery({ day, hours = [0, 24], ctx }) {
+  return `
+WITH ${attributed(day, hours, ctx)},
+m AS (
+  SELECT e.*, lag(created_date) OVER (PARTITION BY session_id ORDER BY sequence) AS prev_at FROM e
+)
+SELECT owner, aud, coalesce(model_call.model, '(unknown)') AS model, coalesce(model_call.purpose, '') AS purpose,
+  count(*) AS iterations,
+  count_if(model_call.status NOT LIKE '%SUCCESS%') AS fails,
+  sum(model_call.usage.input_tokens) AS in_tokens,
+  sum(model_call.usage.cached_input_tokens) AS cached_tokens,
+  sum(model_call.usage.output_tokens) AS out_tokens,
+  max(model_call.usage.input_tokens) AS max_in,
+  sum(${msDiff('created_date', 'prev_at')}) FILTER (WHERE prev_at IS NOT NULL AND created_date - prev_at < INTERVAL '10' MINUTE) AS think_ms,
+  count(DISTINCT session_id || turn_id) AS turns
+FROM m
+WHERE entry_type = 'MODEL_CALL'
+GROUP BY 1, 2, 3, 4
+ORDER BY 1, 2, 5 DESC`;
+}
+
+// ---- Q7: what the agent reads ----
+// Every read / grep / list per skill and file (a project's asset files folded into
+// "project/assets/*"): how often, how much it put into the context (characters), how often it
+// failed and why, and re-reads — the same file and section again in the same session, which the
+// context already holds. Plus the preloaded skill bodies per skill (row file = "(preload)"): how
+// big the skill is when the platform puts it into the session's first message.
+export function readsQuery({ day, hours = [0, 24], ctx }) {
+  const RT = arr(['read', 'grep', 'list']);
+  return `
+WITH ${attributed(day, hours, ctx)},
+c AS (
+  SELECT e.*, coalesce(tool_call.tool_call_id, tool_result.tool_call_id) AS cid FROM e
+  WHERE (entry_type = 'TOOL_CALL' AND contains(${RT}, tool_call.tool_name)) OR (entry_type = 'TOOL_RESULT' AND contains(${RT}, tool_result.tool_name))
+),
+p AS (
+  SELECT c.*,
+    max(CASE WHEN entry_type = 'TOOL_CALL' THEN coalesce(element_at(tool_call.arguments, 'path'), element_at(tool_call.arguments, 'filter'), '') END) OVER (PARTITION BY session_id, cid) AS path,
+    max(CASE WHEN entry_type = 'TOOL_CALL' THEN concat_ws(':', element_at(tool_call.arguments, 'offset'), element_at(tool_call.arguments, 'limit'), element_at(tool_call.arguments, 'section'), element_at(tool_call.arguments, 'pattern')) END) OVER (PARTITION BY session_id, cid) AS part
+  FROM c
+),
+r AS (
+  SELECT owner, aud, session_id, sequence, tool_result.tool_name AS tool, path, part,
+    CASE WHEN path LIKE 'project/assets/%' THEN 'project/assets/*' ELSE path END AS file,
+    length(element_at(tool_result.result, 'output')) AS chars,
+    coalesce(tool_result.status LIKE '%ERROR%' OR element_at(tool_result.result, 'output') LIKE 'Error%', false) AS failed,
+    element_at(tool_result.result, 'output') AS out
+  FROM p WHERE entry_type = 'TOOL_RESULT'
+),
+x AS (
+  SELECT r.*, row_number() OVER (PARTITION BY session_id, tool, path, part ORDER BY sequence) AS nth FROM r
+)
+SELECT owner, aud, tool, file,
+  count(*) AS reads, count_if(failed) AS fails, sum(chars) AS chars,
+  count_if(nth > 1 AND NOT failed) AS rereads, sum(chars) FILTER (WHERE nth > 1 AND NOT failed) AS reread_chars,
+  count(DISTINCT session_id) AS sessions,
+  arbitrary(substr(out, 1, 240)) FILTER (WHERE failed) AS example
+FROM x
+GROUP BY 1, 2, 3, 4
+UNION ALL
+SELECT owner, aud, 'preload' AS tool, '(preload)' AS file,
+  count(*) AS reads, 0 AS fails, sum(length(element_at(metadata, 'preloadedSkillBodies'))) AS chars, 0, 0,
+  count(DISTINCT session_id) AS sessions, NULL
+FROM e
+WHERE entry_type = 'USER_MESSAGE' AND element_at(metadata, 'preloadedSkillBodies') IS NOT NULL
+GROUP BY 1, 2
+ORDER BY 1, 2, 5 DESC`;
+}
+
+// ---- Q8: around a failure, and repeats ----
+// For every failed tool call (not the user's own tools): what the agent did just before (prev: the
+// turn's first call, a lookup of the method / file, the same operation, another tool) and right
+// after (next: the same call again unchanged, changed arguments, a lookup, asked the user, another
+// tool, or nothing — the turn ended). Time is the failed call's own duration. Rows with kind
+// 'repeat' count calls that exactly repeat an earlier successful call in the same turn (redundant
+// work); kind 'poll' counts repeated status polls of a running job and the time between them.
+export function followupsQuery({ day, hours = [0, 24], ctx }) {
+  const isRes = `entry_type = 'TOOL_RESULT'`;
+  const LOOKUP = arr(['read', 'grep', 'list', 'get_rpc_method_definition', 'list_rpc_methods', 'get_workflow_definition', 'skill']);
+  const POLL = `regexp_like(lower(concat(tool, ' ', coalesce(method, ''))), 'poll|status|run_result|get_workflow_run|getworkflowrun')`;
+  return `
+WITH ${attributed(day, hours, ctx)},
+${results()},
+q AS (
+  SELECT w.*,
+    lag(tool) OVER (PARTITION BY session_id, turn_id ORDER BY sequence) AS p_tool,
+    lag(method) OVER (PARTITION BY session_id, turn_id ORDER BY sequence) AS p_method,
+    lead(tool) OVER (PARTITION BY session_id, turn_id ORDER BY sequence) AS n_tool,
+    lead(method) OVER (PARTITION BY session_id, turn_id ORDER BY sequence) AS n_method,
+    lead(exact) OVER (PARTITION BY session_id, turn_id ORDER BY sequence) AS n_exact,
+    lag(created_date) OVER (PARTITION BY session_id, turn_id, tool, method ORDER BY sequence) AS same_prev_at,
+    count_if(NOT failed) OVER (PARTITION BY session_id, turn_id, tool, method, exact ORDER BY sequence ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS ok_before
+  FROM w WHERE ${isRes}
+),
+k AS (
+  SELECT owner, aud, tool, coalesce(method, '') AS method, failed, ms, created_date, same_prev_at,
+    CASE WHEN failed THEN 'fail'
+         WHEN ${POLL} AND same_prev_at IS NOT NULL THEN 'poll'
+         WHEN ok_before > 0 AND NOT contains(${arr(USER_TOOLS)}, tool) THEN 'repeat' END AS kind,
+    CASE WHEN p_tool IS NULL THEN 'first call'
+         WHEN p_tool = tool AND coalesce(p_method, '') = coalesce(method, '') THEN 'same operation'
+         WHEN contains(${LOOKUP}, p_tool) THEN 'after a lookup'
+         ELSE 'after another tool' END AS prev,
+    CASE WHEN n_tool IS NULL THEN 'turn ended'
+         WHEN n_tool = tool AND coalesce(n_method, '') = coalesce(method, '') AND n_exact = exact THEN 'same call again'
+         WHEN n_tool = tool AND coalesce(n_method, '') = coalesce(method, '') THEN 'changed the arguments'
+         WHEN contains(${arr(USER_TOOLS)}, n_tool) THEN 'asked the user'
+         WHEN contains(${LOOKUP}, n_tool) THEN 'looked something up'
+         ELSE 'another tool' END AS next
+  FROM q
+  WHERE NOT contains(${arr(USER_TOOLS)}, tool)
+)
+SELECT owner, aud, kind, tool, method, IF(kind = 'fail', prev, '') AS prev, IF(kind = 'fail', next, '') AS next,
+  count(*) AS n, sum(coalesce(ms, 0)) AS ms,
+  sum(${msDiff('created_date', 'same_prev_at')}) FILTER (WHERE kind = 'poll' AND created_date - same_prev_at < INTERVAL '30' MINUTE) AS gap_ms
+FROM k
+WHERE kind IS NOT NULL
+GROUP BY 1, 2, 3, 4, 5, 6, 7
+ORDER BY 1, 2, 8 DESC`;
+}

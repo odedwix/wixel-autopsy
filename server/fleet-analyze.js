@@ -121,6 +121,10 @@ function collect(files, aud) {
   const outcomes = new Map();
   const intents = new Map();
   const opDayVals = new Map();
+  const models = new Map();
+  const reads = new Map();
+  const followups = new Map();
+  let effDays = 0;
   const perDay = [];
   for (const f of files) {
     const day = { day: f.day, final: f.final, sessions: 0, turns: 0, calls: 0, fails: 0, hidden: 0, lostMs: 0, frustrated: 0 };
@@ -213,9 +217,36 @@ function collect(files, aud) {
       mergeNum(c, r);
       chains.set(k, c);
     }
+    // Efficiency parts (models, reads, follow-ups): days built before they existed have none.
+    if (f.models) {
+      effDays++;
+      for (const r of f.models) {
+        if (!ok(r)) continue;
+        const k = keyOf(r.owner, r.model);
+        const m = models.get(k) || { owner: r.owner, model: r.model, max_in: 0 };
+        mergeNum(m, r, ['max_in', 'purpose']);
+        m.max_in = Math.max(m.max_in, num(r.max_in));
+        models.set(k, m);
+      }
+      for (const r of f.reads || []) {
+        if (!ok(r)) continue;
+        const k = keyOf(r.owner, r.tool, r.file);
+        const x = reads.get(k) || { owner: r.owner, tool: r.tool, file: r.file };
+        mergeNum(x, r, ['file', 'example']);
+        x.example ??= r.example || undefined;
+        reads.set(k, x);
+      }
+      for (const r of f.followups || []) {
+        if (!ok(r)) continue;
+        const k = keyOf(r.owner, r.kind, r.tool, r.method, r.prev, r.next);
+        const x = followups.get(k) || { owner: r.owner, kind: r.kind, tool: r.tool, method: r.method, prev: r.prev, next: r.next };
+        mergeNum(x, r, ['prev', 'next']);
+        followups.set(k, x);
+      }
+    }
     perDay.push(day);
   }
-  return { usage, summary, timing, failures, chains, outcomes, intents, opDayVals, perDay, outcomeDays: files.filter((f) => f.outcomes?.length).length };
+  return { usage, summary, timing, failures, chains, outcomes, intents, opDayVals, perDay, outcomeDays: files.filter((f) => f.outcomes?.length).length, models, reads, followups, effDays };
 }
 const SKIP = new Set(['owner', 'aud', 'tool', 'method', 'model', 'size', 'sig', 'kind', 'k', 'days']);
 function mergeNum(target, row, skip = []) {
@@ -722,6 +753,89 @@ function shifts(perDay) {
 }
 
 // ---- the whole view ----
+// ---- efficiency: models, context, reads, and what the agent does around failures ----
+// Per skill, from the models / reads / follow-ups parts (only the days that have them, scaled to a
+// week). Tokens from characters are estimates (≈4 characters a token); model tokens are measured.
+const CHARS_PER_TOKEN = 4;
+function efficiency(c, skills, codex) {
+  const wf = c.effDays ? 7 / c.effDays : 0;
+  const byOwner = (map) => {
+    const g = new Map();
+    for (const x of map.values()) {
+      if (!g.has(x.owner)) g.set(x.owner, []);
+      g.get(x.owner).push(x);
+    }
+    return g;
+  };
+  const sum = (xs, k) => xs.reduce((a, x) => a + num(x[k]), 0);
+  const tally = (xs, k) => Object.fromEntries([...xs.reduce((m, x) => m.set(x[k], (m.get(x[k]) || 0) + num(x.n)), new Map())].sort((a, b) => b[1] - a[1]));
+  const M = byOwner(c.models);
+  const R = byOwner(c.reads);
+  const F = byOwner(c.followups);
+  const fleet = new Map();
+  const rows = [];
+  for (const s of skills) {
+    const ms = M.get(s.skill) || [];
+    const rs = R.get(s.skill) || [];
+    const fu = F.get(s.skill) || [];
+    if (!ms.length && !rs.length && !fu.length) continue;
+    const it = sum(ms, 'iterations');
+    const turns = sum(ms, 'turns');
+    for (const m of ms) {
+      const f = fleet.get(m.model) || { model: m.model, iterations: 0, in_tokens: 0, out_tokens: 0, think_ms: 0, fails: 0, skills: 0 };
+      for (const k of ['iterations', 'in_tokens', 'out_tokens', 'think_ms', 'fails']) f[k] += num(m[k]);
+      f.skills++;
+      fleet.set(m.model, f);
+    }
+    const models = ms.map((m) => {
+      const n = Math.max(1, num(m.iterations));
+      return { model: m.model, iterations: num(m.iterations) * wf, share: num(m.iterations) / Math.max(1, it), tokPerIter: num(m.in_tokens) / n, outPerIter: num(m.out_tokens) / n, thinkPerIter: num(m.think_ms) / n, failRate: num(m.fails) / n, maxIn: num(m.max_in) };
+    }).sort((a, b) => b.iterations - a.iterations);
+    const pre = rs.find((r) => r.tool === 'preload');
+    const files = rs.filter((r) => r.tool !== 'preload').map((r) => ({
+      tool: r.tool, file: r.file, reads: num(r.reads) * wf, tokens: (num(r.chars) / CHARS_PER_TOKEN) * wf, perRead: num(r.chars) / CHARS_PER_TOKEN / Math.max(1, num(r.reads)),
+      rereads: num(r.rereads) * wf, rereadTokens: (num(r.reread_chars) / CHARS_PER_TOKEN) * wf, fails: num(r.fails) * wf, example: r.example || null,
+    })).sort((a, b) => b.tokens - a.tokens);
+    const fails = fu.filter((x) => x.kind === 'fail');
+    const byOp = new Map();
+    for (const x of fails) {
+      const k = keyOf(x.tool, x.method);
+      const o = byOp.get(k) || { tool: x.tool, method: x.method, n: 0, ms: 0, next: {}, prev: {} };
+      o.n += num(x.n) * wf;
+      o.ms += num(x.ms) * wf;
+      o.next[x.next] = (o.next[x.next] || 0) + num(x.n) * wf;
+      o.prev[x.prev] = (o.prev[x.prev] || 0) + num(x.n) * wf;
+      byOp.set(k, o);
+    }
+    const kindRows = (kind) => fu.filter((x) => x.kind === kind).map((x) => ({ tool: x.tool, method: x.method, n: num(x.n) * wf, ms: num(x.ms) * wf, gapMs: num(x.gap_ms) * wf })).sort((a, b) => b.n - a.n);
+    const repeats = kindRows('repeat');
+    const polls = kindRows('poll');
+    const readTokens = sum(files, 'tokens');
+    const rereadTokens = sum(files, 'rereadTokens');
+    const tokPerIter = it ? sum(ms, 'in_tokens') / it : null;
+    const preloadTokens = pre ? num(pre.chars) / CHARS_PER_TOKEN / Math.max(1, num(pre.reads)) : null;
+    rows.push({
+      skill: s.skill, major: s.major, sessions: s.sessions,
+      iterationsPerWeek: it * wf, iterPerTurn: turns ? it / turns : null,
+      tokPerIter, cachedShare: sum(ms, 'in_tokens') ? sum(ms, 'cached_tokens') / sum(ms, 'in_tokens') : null,
+      outPerIter: it ? sum(ms, 'out_tokens') / it : null, thinkPerIter: it ? sum(ms, 'think_ms') / it : null,
+      inTokensPerWeek: sum(ms, 'in_tokens') * wf, modelFails: sum(ms, 'fails') * wf,
+      models, mainModel: models[0]?.model || null,
+      preloadTokens, preloadShare: preloadTokens && tokPerIter ? preloadTokens / tokPerIter : null, preloadsPerWeek: pre ? num(pre.reads) * wf : 0,
+      skillFileTokens: codex?.skillSize?.[s.skill] ? codex.skillSize[s.skill] / CHARS_PER_TOKEN : null,
+      files: files.slice(0, 60), readsPerWeek: sum(files, 'reads'), readTokensPerWeek: readTokens, readTokensPerTurn: turns ? (readTokens / wf) / turns : null,
+      rereadShare: readTokens ? rereadTokens / readTokens : null, rereadTokensPerWeek: rereadTokens, rereadsPerWeek: sum(files, 'rereads'), readFailsPerWeek: sum(files, 'fails'),
+      failuresPerWeek: sum(fails, 'n') * wf, failNext: Object.fromEntries(Object.entries(tally(fails, 'next')).map(([k, v]) => [k, v * wf])), failPrev: Object.fromEntries(Object.entries(tally(fails, 'prev')).map(([k, v]) => [k, v * wf])),
+      failOps: [...byOp.values()].sort((a, b) => b.n - a.n).slice(0, 15),
+      repeats: repeats.slice(0, 12), repeatCallsPerWeek: repeats.reduce((a, x) => a + x.n, 0), repeatHPerWeek: repeats.reduce((a, x) => a + x.ms, 0) / H,
+      polls: polls.slice(0, 8), pollsPerWeek: polls.reduce((a, x) => a + x.n, 0), pollWaitHPerWeek: polls.reduce((a, x) => a + x.gapMs, 0) / H,
+    });
+  }
+  const totalIt = [...fleet.values()].reduce((a, m) => a + m.iterations, 0);
+  const models = [...fleet.values()].map((m) => ({ model: m.model, iterations: m.iterations * wf, share: m.iterations / Math.max(1, totalIt), tokPerIter: m.in_tokens / Math.max(1, m.iterations), outPerIter: m.out_tokens / Math.max(1, m.iterations), thinkPerIter: m.think_ms / Math.max(1, m.iterations), failRate: m.fails / Math.max(1, m.iterations), skills: m.skills })).sort((a, b) => b.iterations - a.iterations);
+  return { days: c.effDays, models, skills: rows };
+}
+
 export function analyze({ files, prevFiles, days, prevDays, aud = 'real', state = {}, pairs = [], codex = null, majorPerWeek = 50 }) {
   const c = collect(files, aud);
   const prev = prevFiles?.length ? collect(prevFiles, aud) : null;
@@ -777,6 +891,7 @@ export function analyze({ files, prevFiles, days, prevDays, aud = 'real', state 
     health: health(files, days, c),
     shifts: shifts(c.perDay),
     intents: intentRows(c, totals, weekF).slice(0, 80),
+    efficiency: efficiency(c, skills, codex),
     edges: EDGES,
   };
 }

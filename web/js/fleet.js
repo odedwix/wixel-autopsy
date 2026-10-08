@@ -183,7 +183,7 @@ function draw() {
 }
 
 // The panel belongs to the tab its row lives on (Overview shows any of them).
-const PANEL_TABS = { issue: 'issues', wait: 'waits', opp: 'opps', skill: 'skills' };
+const PANEL_TABS = { issue: 'issues', wait: 'waits', opp: 'opps', skill: 'skills', eff: 'efficiency' };
 function drawDetail() {
   const el = $('#detail');
   if (!fs.sel || !view || (fs.tab !== 'overview' && PANEL_TABS[fs.sel.kind] !== fs.tab)) {
@@ -307,7 +307,7 @@ $('#textSize').addEventListener('click', () => {
   const cur = Number(fs.textScale) || 1;
   setFs({ textScale: steps[(steps.findIndex((s) => Math.abs(s - cur) < 0.01) + 1) % steps.length] || 1 });
 });
-const TABS = { o: 'overview', 1: 'issues', 2: 'waits', 3: 'opps', 4: 'skills', 5: 'data' };
+const TABS = { o: 'overview', 1: 'issues', 2: 'waits', 3: 'opps', 4: 'skills', 5: 'efficiency', 6: 'data' };
 document.addEventListener('keydown', (e) => {
   if (e.altKey && ['=', '+', '-', '0', '≠', '–', 'º'].includes(e.key)) {
     const cur = Number(fs.textScale) || 1;
