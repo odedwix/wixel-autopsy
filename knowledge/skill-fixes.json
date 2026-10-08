@@ -7,8 +7,8 @@
   "unproven": true,
   "reason": "The error doesn't name a parameter (INVALID_ARGUMENT / [400] wraps every provider error).",
   "prove": "Compare the failing and the successful calls: one parameter or value in ≥70% of the failures, failing ≥5× more often, that the skill prescribes.",
-  "n": 1297,
-  "share": 0.6408102766798419,
+  "n": 1308,
+  "share": 0.6449704142011834,
   "skillPath": "skills/image/single-page-design.md",
   "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md",
   "notes": [],
@@ -44,7 +44,7 @@
    },
    {
     "path": "skills/image/single-page-design.md",
-    "why": "skill single-page-design (1297 occurrences)",
+    "why": "skill single-page-design (1308 occurrences)",
     "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md"
    }
   ],
@@ -58,8 +58,8 @@
   "unproven": true,
   "reason": "The error doesn't name a parameter (INVALID_ARGUMENT / [400] wraps every provider error).",
   "prove": "Compare the failing and the successful calls: one parameter or value in ≥70% of the failures, failing ≥5× more often, that the skill prescribes.",
-  "n": 289,
-  "share": 0.14278656126482214,
+  "n": 300,
+  "share": 0.14792899408284024,
   "skillPath": "skills/brand/brand-kit.md",
   "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-kit.md",
   "notes": [],
@@ -77,7 +77,7 @@
    },
    {
     "path": "skills/brand/brand-kit.md",
-    "why": "skill brand-kit (289 occurrences)",
+    "why": "skill brand-kit (300 occurrences)",
     "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-kit.md"
    }
   ],
@@ -91,47 +91,14 @@
   "unproven": true,
   "reason": "The error doesn't name a parameter (INVALID_ARGUMENT / [400] wraps every provider error).",
   "prove": "Compare the failing and the successful calls: one parameter or value in ≥70% of the failures, failing ≥5× more often, that the skill prescribes.",
-  "n": 138,
-  "share": 0.06818181818181818,
-  "skillPath": "skills/video/wixel-ads.md",
-  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md",
-  "notes": [],
-  "files": [
-   {
-    "path": "skills/video/wixel-ads.md",
-    "why": "the wixel-ads skill",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "line": 24,
-    "why": "mentions edit_image: \"**Every named method is an `invoke_rpc` call — never a tool by that name.** `generateExpre\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L24"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "line": 84,
-    "why": "mentions edit_image: \"- **Physical product:** real harvested/uploaded pixels, composed large (≥55% of short edge\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L84"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "line": 93,
-    "why": "mentions edit_image: \"**Only image files enter the run** (entry sheet §Only image files): a URL whose path ends \"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L93"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "line": 105,
-    "why": "mentions edit_image: \"**A rejected `edit_image` gets ONE corrected retry — never the identical call.** Two provi\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L105"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "why": "skill wixel-ads (138 occurrences)",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md"
-   }
+  "n": 134,
+  "share": 0.06607495069033531,
+  "skillPath": null,
+  "skillUrl": null,
+  "notes": [
+   "wixel-ads's file doesn't mention `edit_image` by name; the call likely comes from a reference it includes, or from the agent improvising."
   ],
+  "files": [],
   "claude": null
  },
  {
@@ -140,10 +107,10 @@
   "skill": "single-page-design",
   "parked": true,
   "unproven": true,
-  "reason": "Not tied to where the image comes from: 190 of 779 calls with storage.googleapis.com, notagathering.com, scontent-iad6-1.cdninstagram.com image URLs failed this way (24.4%), against 48 of 6595 with Wix-hosted ones (0.7%), over the last day.",
+  "reason": "Not tied to where the image comes from: 189 of 714 calls with storage.googleapis.com, scontent-iad3-2.cdninstagram.com, scontent-iad3-1.cdninstagram.com image URLs failed this way (26.5%), against 7 of 6062 with Wix-hosted ones (0.1%), over the last day.",
   "prove": "A host class failing ≥5× the Wix rate and holding ≥70% of the failures (≥20) would prove it; otherwise it's the provider or a transient fetch.",
-  "n": 407,
-  "share": 0.30997715156131,
+  "n": 422,
+  "share": 0.2892392049348869,
   "skillPath": "skills/image/single-page-design.md",
   "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md",
   "notes": [
@@ -181,7 +148,7 @@
    },
    {
     "path": "skills/image/single-page-design.md",
-    "why": "skill single-page-design (407 occurrences)",
+    "why": "skill single-page-design (422 occurrences)",
     "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md"
    }
   ],
@@ -193,10 +160,10 @@
   "skill": "image-qr",
   "parked": true,
   "unproven": true,
-  "reason": "Not tied to where the image comes from: 190 of 779 calls with storage.googleapis.com, notagathering.com, scontent-iad6-1.cdninstagram.com image URLs failed this way (24.4%), against 48 of 6595 with Wix-hosted ones (0.7%), over the last day.",
+  "reason": "Not tied to where the image comes from: 189 of 714 calls with storage.googleapis.com, scontent-iad3-2.cdninstagram.com, scontent-iad3-1.cdninstagram.com image URLs failed this way (26.5%), against 7 of 6062 with Wix-hosted ones (0.1%), over the last day.",
   "prove": "A host class failing ≥5× the Wix rate and holding ≥70% of the failures (≥20) would prove it; otherwise it's the provider or a transient fetch.",
-  "n": 113,
-  "share": 0.08606245239908607,
+  "n": 148,
+  "share": 0.10143934201507881,
   "skillPath": "skills/image/image-qr.md",
   "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image-qr.md",
   "notes": [
@@ -234,7 +201,7 @@
    },
    {
     "path": "skills/image/image-qr.md",
-    "why": "skill image-qr (113 occurrences)",
+    "why": "skill image-qr (148 occurrences)",
     "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image-qr.md"
    }
   ],
@@ -243,476 +210,17 @@
  {
   "issue": "1b11ugo",
   "sig": "Failed to analyze image: description: INVALID_ARGUMENT: INVALID_ARGUMENT: Error invoking endpoint: [N] → invalid_value: Error while downloading file. Upstream s",
-  "skill": "image-generation-and-image-edit",
-  "parked": true,
-  "unproven": true,
-  "reason": "Not tied to where the image comes from: 190 of 779 calls with storage.googleapis.com, notagathering.com, scontent-iad6-1.cdninstagram.com image URLs failed this way (24.4%), against 48 of 6595 with Wix-hosted ones (0.7%), over the last day.",
-  "prove": "A host class failing ≥5× the Wix rate and holding ≥70% of the failures (≥20) would prove it; otherwise it's the provider or a transient fetch.",
-  "n": 100,
-  "share": 0.07616146230007616,
-  "skillPath": "skills/image/image.md",
-  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md",
-  "notes": [
-   "Most of the sampled failing URLs are on Wix media hosts."
-  ],
-  "files": [
-   {
-    "path": "skills/image/image.md",
-    "why": "the image-generation-and-image-edit skill",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md"
-   },
-   {
-    "path": "skills/image/image.md",
-    "line": 196,
-    "why": "mentions analyze_image: \"2. Size the asset from the tool's **returned** `width`/`height`: set both the image compon\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md#L196"
-   },
-   {
-    "path": "skills/image/image.md",
-    "line": 198,
-    "why": "mentions analyze_image: \"**Do not `analyze_image` your own fresh render.** `generate_image` / `edit_image` already \"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md#L198"
-   },
-   {
-    "path": "skills/image/image.md",
-    "line": 249,
-    "why": "mentions analyze_image: \"Stay on two separate calls whenever the flow needs you between the steps: an exact named f\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md#L249"
-   }
-  ],
-  "claude": null
- },
- {
-  "issue": "vjh5xi",
-  "sig": "Failed to analyze image: description: INVALID_ARGUMENT: INVALID_ARGUMENT: Error invoking endpoint: [N] → Cannot fetch content from the provided URL. Please ensu",
-  "skill": "wixel-ads",
-  "parked": true,
-  "unproven": true,
-  "reason": "Not tied to where the image comes from: 3 of 845 calls with non-Wix image URLs failed this way (0.4%), against 2 of 6530 with Wix-hosted ones (0.0%), over the last day.",
-  "prove": "A host class failing ≥5× the Wix rate and holding ≥70% of the failures (≥20) would prove it; otherwise it's the provider or a transient fetch.",
-  "n": 1141,
-  "share": 0.7576361221779548,
-  "skillPath": "skills/video/wixel-ads.md",
-  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md",
-  "notes": [
-   "The sampled failing calls pass cloud-storage links: storage.googleapis.com (2)."
-  ],
-  "files": [
-   {
-    "path": "skills/video/wixel-ads.md",
-    "why": "the wixel-ads skill",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "line": 24,
-    "why": "mentions analyze_image: \"**Every named method is an `invoke_rpc` call — never a tool by that name.** `generateExpre\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L24"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "line": 30,
-    "why": "mentions analyze_image: \"3. **Design preparation** — after harvest and entry have returned, `read` **`resources/vid\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L30"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "line": 93,
-    "why": "mentions analyze_image: \"**Only image files enter the run** (entry sheet §Only image files): a URL whose path ends \"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L93"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "line": 101,
-    "why": "mentions analyze_image: \"**Before ANY richtext write, in this order, no exceptions:** (a) the root read back in an \"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L101"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "why": "skill wixel-ads (1141 occurrences)",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md"
-   }
-  ],
-  "claude": null
- },
- {
-  "issue": "vjh5xi",
-  "sig": "Failed to analyze image: description: INVALID_ARGUMENT: INVALID_ARGUMENT: Error invoking endpoint: [N] → Cannot fetch content from the provided URL. Please ensu",
-  "skill": "video-creation",
-  "parked": true,
-  "unproven": true,
-  "reason": "Not tied to where the image comes from: 3 of 845 calls with non-Wix image URLs failed this way (0.4%), against 2 of 6530 with Wix-hosted ones (0.0%), over the last day.",
-  "prove": "A host class failing ≥5× the Wix rate and holding ≥70% of the failures (≥20) would prove it; otherwise it's the provider or a transient fetch.",
-  "n": 85,
-  "share": 0.05644090305444887,
-  "skillPath": "skills/video/video.md",
-  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md",
-  "notes": [
-   "The sampled failing calls pass cloud-storage links: storage.googleapis.com (2)."
-  ],
-  "files": [
-   {
-    "path": "skills/video/video.md",
-    "why": "the video-creation skill",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md"
-   },
-   {
-    "path": "skills/video/video.md",
-    "line": 325,
-    "why": "mentions analyze_image: \"- **Reserve the plan's own image spend before that number becomes a ceiling.** `ListCosts`\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L325"
-   },
-   {
-    "path": "skills/video/video.md",
-    "line": 363,
-    "why": "mentions analyze_image: \"3. **Compose and analyze the first frame after approval**, using `edit_image` when the use\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L363"
-   },
-   {
-    "path": "skills/video/video.md",
-    "line": 506,
-    "why": "mentions analyze_image: \"1. **Pre-allocate persistent reference UUIDs and finish approved ingredient forms** — one \"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L506"
-   },
-   {
-    "path": "skills/video/video.md",
-    "line": 524,
-    "why": "mentions analyze_image: \"For a shared location or recurring composed character, create one master plate first and d\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L524"
-   },
-   {
-    "path": "skills/video/video.md",
-    "why": "skill video-creation (85 occurrences)",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md"
-   }
-  ],
-  "claude": null
- },
- {
-  "issue": "vjh5xi",
-  "sig": "Failed to analyze image: description: INVALID_ARGUMENT: INVALID_ARGUMENT: Error invoking endpoint: [N] → Cannot fetch content from the provided URL. Please ensu",
-  "skill": "single-page-design",
-  "parked": true,
-  "unproven": true,
-  "reason": "Not tied to where the image comes from: 3 of 845 calls with non-Wix image URLs failed this way (0.4%), against 2 of 6530 with Wix-hosted ones (0.0%), over the last day.",
-  "prove": "A host class failing ≥5× the Wix rate and holding ≥70% of the failures (≥20) would prove it; otherwise it's the provider or a transient fetch.",
-  "n": 49,
-  "share": 0.03253652058432935,
-  "skillPath": "skills/image/single-page-design.md",
-  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md",
-  "notes": [
-   "The sampled failing calls pass cloud-storage links: storage.googleapis.com (1)."
-  ],
-  "files": [
-   {
-    "path": "skills/image/single-page-design.md",
-    "why": "the single-page-design skill",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md"
-   },
-   {
-    "path": "skills/image/single-page-design.md",
-    "line": 81,
-    "why": "mentions analyze_image: \"**`Crawler's logo guess:` is a candidate, never the answer.** When the block cannot isolat\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L81"
-   },
-   {
-    "path": "skills/image/single-page-design.md",
-    "line": 91,
-    "why": "mentions analyze_image: \"- **A URL is given or is the subject** (*\"a cover for wixel.com\"*, *\"a flyer for my site\"*\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L91"
-   },
-   {
-    "path": "skills/image/single-page-design.md",
-    "line": 92,
-    "why": "mentions analyze_image: \"- **A brand is connected** → take the palette and fonts from `brand-new`, and attach the b\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L92"
-   },
-   {
-    "path": "skills/image/single-page-design.md",
-    "line": 95,
-    "why": "mentions analyze_image: \"**Attach, don’t describe.** When a screenshot, logo, or reference is going into the genera\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L95"
-   }
-  ],
-  "claude": null
- },
- {
-  "issue": "1w1lpjy",
-  "sig": "Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: document 'resources/video/video-capability-catalog.md' not found in current",
-  "skill": "wixel-ads",
-  "parked": false,
-  "proof": "resources/video/video-capability-catalog.md isn't readable at runtime and the codex names it bare in 2 place(s).",
-  "n": 694,
-  "share": 0.6919242273180458,
-  "skillPath": "skills/video/wixel-ads.md",
-  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md",
-  "codexRef": "origin/HEAD @ ad2f3642",
-  "hosts": [],
-  "notes": [
-   "resources/video/video-capability-catalog.md is not in the codex, but references/video/video-capability-catalog.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.",
-   "It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:529, skills/video/video.md:655 — that wording is what sends the agent looking."
-  ],
-  "fix": [
-   "Reword wixel-ads's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/."
-  ],
-  "files": [
-   {
-    "path": "skills/video/wixel-ads.md",
-    "why": "the wixel-ads skill",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "line": 8,
-    "why": "mentions read: \"**Worker scope:** an assigned `symphony_worker_role` (`logo` or `ad`) reads `resources/vid\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L8"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "line": 10,
-    "why": "mentions read: \"Build the **Symphony creator-style ad** — **everything defaults to video**: every beat is \"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L10"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "line": 22,
-    "why": "mentions read: \"## Entry and required phase reads\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L22"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "line": 24,
-    "why": "mentions read: \"**Every named method is an `invoke_rpc` call — never a tool by that name.** `generateExpre\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L24"
-   },
-   {
-    "path": "references/video/video-capability-catalog.md",
-    "why": "where the file really is",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-capability-catalog.md"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "why": "skill wixel-ads (694 occurrences)",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md"
-   }
-  ],
-  "evals": [
-   "tests/video/video-ad-symphony.json",
-   "tests/video/video-ad-symphony-edge-cases.json",
-   "tests/stories/stories-symphony-routing.json",
-   "tests/video/video-ad-symphony-contracts.json"
-  ],
-  "prompt": "Fix a recurring failure in the `wixel-ads` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: document 'resources/video/video-capability-catalog.md' not found in current\nSize: 694 times in wixel-ads in the last 7 days (69% of this error across skills); the same operation never succeeded later in the turn 32% of the time.\n\nWhat the evidence shows:\n- resources/video/video-capability-catalog.md is not in the codex, but references/video/video-capability-catalog.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:529, skills/video/video.md:655 — that wording is what sends the agent looking.\n\nChange to make:\n- Reword wixel-ads's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only `skills/video/wixel-ads.md` and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/wixel-ads.md:8, skills/video/wixel-ads.md:10, skills/video/wixel-ads.md:22, skills/video/wixel-ads.md:24.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-capability-catalog.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-capability-catalog.md' not found in current version for base versio\n\nThen: add a case for this to the skill's eval set (tests/video/video-ad-symphony.json, tests/video/video-ad-symphony-edge-cases.json, tests/stories/stories-symphony-routing.json) built from the failing call above, and show me the diff before committing.",
-  "claude": null,
-  "claudeRunning": false
- },
- {
-  "issue": "1w1lpjy",
-  "sig": "Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: document 'resources/video/video-capability-catalog.md' not found in current",
-  "skill": "video-creation",
-  "parked": false,
-  "proof": "resources/video/video-capability-catalog.md isn't readable at runtime and the codex names it bare in 2 place(s).",
-  "n": 196,
-  "share": 0.19541375872382852,
-  "skillPath": "skills/video/video.md",
-  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md",
-  "codexRef": "origin/HEAD @ ad2f3642",
-  "hosts": [],
-  "notes": [
-   "resources/video/video-capability-catalog.md is not in the codex, but references/video/video-capability-catalog.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.",
-   "It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:529, skills/video/video.md:655 — that wording is what sends the agent looking."
-  ],
-  "fix": [
-   "Reword video-creation's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/."
-  ],
-  "files": [
-   {
-    "path": "skills/video/video.md",
-    "why": "the video-creation skill",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md"
-   },
-   {
-    "path": "skills/video/video.md",
-    "line": 26,
-    "why": "mentions read: \"> ## ⛔ ABSOLUTE RULES — read these before everything else\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L26"
-   },
-   {
-    "path": "skills/video/video.md",
-    "line": 28,
-    "why": "mentions read: \"> **0. Apply Specialist handoff intake first; an active handoff stays here instead of retu\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L28"
-   },
-   {
-    "path": "skills/video/video.md",
-    "line": 30,
-    "why": "mentions read: \"> **1. `write` only saves Assets, never Components.** You will only ever call `write` for \"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L30"
-   },
-   {
-    "path": "skills/video/video.md",
-    "line": 36,
-    "why": "mentions read: \"> **4. Read and update by the PATH the write returned — not by an id you invented.** Every\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L36"
-   },
-   {
-    "path": "references/video/video-capability-catalog.md",
-    "why": "where the file really is",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-capability-catalog.md"
-   },
-   {
-    "path": "skills/video/video.md",
-    "why": "mentions video-capability-catalog.md",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L655"
-   },
-   {
-    "path": "skills/video/video.md",
-    "why": "skill video-creation (196 occurrences)",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md"
-   }
-  ],
-  "evals": [
-   "tests/video/video-core-flows.json",
-   "tests/video/video-creation-e2e.json",
-   "tests/video/video-planning-quality.json",
-   "tests/video/video-plan-approval.json",
-   "tests/video/creative-world-routing.json",
-   "tests/video/stable-graph-policy.json",
-   "tests/video/video-credits-stop-cleanup.json",
-   "tests/video/example-video-test-set.json",
-   "tests/export/export-edge-cases.json",
-   "tests/video/video-edge-cases.json"
-  ],
-  "prompt": "Fix a recurring failure in the `video-creation` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: document 'resources/video/video-capability-catalog.md' not found in current\nSize: 196 times in video-creation in the last 7 days (20% of this error across skills); the same operation never succeeded later in the turn 32% of the time.\n\nWhat the evidence shows:\n- resources/video/video-capability-catalog.md is not in the codex, but references/video/video-capability-catalog.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:529, skills/video/video.md:655 — that wording is what sends the agent looking.\n\nChange to make:\n- Reword video-creation's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only `skills/video/video.md` and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/video.md:26, skills/video/video.md:28, skills/video/video.md:30, skills/video/video.md:36.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-capability-catalog.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-capability-catalog.md' not found in current version for base versio\n\nThen: add a case for this to the skill's eval set (tests/video/video-core-flows.json, tests/video/video-creation-e2e.json, tests/video/video-planning-quality.json) built from the failing call above, and show me the diff before committing.",
-  "claude": null,
-  "claudeRunning": false
- },
- {
-  "issue": "1w1lpjy",
-  "sig": "Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: document 'resources/video/video-capability-catalog.md' not found in current",
-  "skill": "video-regen",
-  "parked": false,
-  "proof": "resources/video/video-capability-catalog.md isn't readable at runtime and the codex names it bare in 2 place(s).",
-  "n": 80,
-  "share": 0.07976071784646062,
-  "skillPath": "skills/video/video-edit.md",
-  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md",
-  "codexRef": "origin/HEAD @ ad2f3642",
-  "hosts": [],
-  "notes": [
-   "resources/video/video-capability-catalog.md is not in the codex, but references/video/video-capability-catalog.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.",
-   "It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:529, skills/video/video.md:655 — that wording is what sends the agent looking."
-  ],
-  "fix": [
-   "Reword video-regen's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/."
-  ],
-  "files": [
-   {
-    "path": "skills/video/video-edit.md",
-    "why": "the video-regen skill",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md"
-   },
-   {
-    "path": "skills/video/video-edit.md",
-    "line": 14,
-    "why": "mentions read: \"> ⛔ **A generation call has three outcomes, not two — this governs every call below.** `CO\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L14"
-   },
-   {
-    "path": "skills/video/video-edit.md",
-    "line": 40,
-    "why": "mentions read: \"**Self-heal stuck generation first (before the user's new request).** A previous turn can \"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L40"
-   },
-   {
-    "path": "skills/video/video-edit.md",
-    "line": 42,
-    "why": "mentions read: \"For every video-rendering edit, re-read the root after self-healing and snapshot every roo\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L42"
-   },
-   {
-    "path": "skills/video/video-edit.md",
-    "line": 62,
-    "why": "mentions read: \"- If any scene required for the decision has no `src` or returns an analysis error, stop b\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L62"
-   },
-   {
-    "path": "references/video/video-capability-catalog.md",
-    "why": "where the file really is",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-capability-catalog.md"
-   },
-   {
-    "path": "skills/video/video-edit.md",
-    "why": "mentions video-capability-catalog.md",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L529"
-   },
-   {
-    "path": "skills/video/video-edit.md",
-    "why": "skill video-regen (80 occurrences)",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md"
-   }
-  ],
-  "evals": [
-   "tests/video/video-edit-v2v-routing.json",
-   "tests/video/video-core-flows.json",
-   "tests/video/root-timeline-refit.json",
-   "tests/video/video-credits-stop-cleanup.json",
-   "tests/video/video-edge-cases.json"
-  ],
-  "prompt": "Fix a recurring failure in the `video-regen` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: document 'resources/video/video-capability-catalog.md' not found in current\nSize: 80 times in video-regen in the last 7 days (8% of this error across skills); the same operation never succeeded later in the turn 32% of the time.\n\nWhat the evidence shows:\n- resources/video/video-capability-catalog.md is not in the codex, but references/video/video-capability-catalog.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:529, skills/video/video.md:655 — that wording is what sends the agent looking.\n\nChange to make:\n- Reword video-regen's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only `skills/video/video-edit.md` and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/video-edit.md:14, skills/video/video-edit.md:40, skills/video/video-edit.md:42, skills/video/video-edit.md:62.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-capability-catalog.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-capability-catalog.md' not found in current version for base versio\n\nThen: add a case for this to the skill's eval set (tests/video/video-edit-v2v-routing.json, tests/video/video-core-flows.json, tests/video/root-timeline-refit.json) built from the failing call above, and show me the diff before committing.",
-  "claude": null,
-  "claudeRunning": false
- },
- {
-  "issue": "ttppvn",
-  "sig": "Sequence rejected before any step ran: unknown tool \"functions.edit_image\" in step \"gen\" — it is not available in this session.",
-  "skill": "single-page-design",
-  "parked": true,
-  "unproven": true,
-  "reason": "The codex never writes `functions.edit_image`: the agent adds the prefix itself, and a skill that already shows the right call still gets it.",
-  "prove": "The sure fix is in the tool (accept the prefix) — outside the skills.",
-  "n": 516,
-  "share": 0.9791271347248577,
-  "skillPath": "skills/image/single-page-design.md",
-  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md",
-  "notes": [
-   "The agent wrote the tool name as `functions.edit_image`. Inside a sequence, step tools are bare names."
-  ],
-  "files": [
-   {
-    "path": "skills/image/single-page-design.md",
-    "why": "the single-page-design skill",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md"
-   },
-   {
-    "path": "skills/image/single-page-design.md",
-    "line": 352,
-    "why": "mentions sequence: \"**One call, not two — chain the generation into the write with `sequence`.** When the `seq\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L352"
-   },
-   {
-    "path": "skills/image/single-page-design.md",
-    "why": "skill single-page-design (516 occurrences)",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md"
-   }
-  ],
-  "claude": null
- },
- {
-  "issue": "ttppvn",
-  "sig": "Sequence rejected before any step ran: unknown tool \"functions.edit_image\" in step \"gen\" — it is not available in this session.",
   "skill": "stories-creation",
   "parked": true,
   "unproven": true,
-  "reason": "The codex never writes `functions.edit_image`: the agent adds the prefix itself, and a skill that already shows the right call still gets it.",
-  "prove": "The sure fix is in the tool (accept the prefix) — outside the skills.",
-  "n": 10,
-  "share": 0.018975332068311195,
+  "reason": "Not tied to where the image comes from: 189 of 714 calls with storage.googleapis.com, scontent-iad3-2.cdninstagram.com, scontent-iad3-1.cdninstagram.com image URLs failed this way (26.5%), against 7 of 6062 with Wix-hosted ones (0.1%), over the last day.",
+  "prove": "A host class failing ≥5× the Wix rate and holding ≥70% of the failures (≥20) would prove it; otherwise it's the provider or a transient fetch.",
+  "n": 112,
+  "share": 0.07676490747087046,
   "skillPath": "skills/stories/stories-creation.md",
   "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/stories/stories-creation.md",
   "notes": [
-   "The agent wrote the tool name as `functions.edit_image`. Inside a sequence, step tools are bare names.",
-   "stories-creation's file doesn't mention `sequence` by name; the call likely comes from a reference it includes, or from the agent improvising."
+   "Most of the sampled failing URLs are on Wix media hosts."
   ],
   "files": [
    {
@@ -722,291 +230,18 @@
    },
    {
     "path": "skills/stories/stories-creation.md",
-    "why": "skill stories-creation (10 occurrences)",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/stories/stories-creation.md"
+    "line": 170,
+    "why": "mentions analyze_image: \"2. **Pick, don't pour.** From the pool take the logo, **at most three** images (one per pa\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/stories/stories-creation.md#L170"
+   },
+   {
+    "path": "skills/stories/stories-creation.md",
+    "line": 173,
+    "why": "mentions analyze_image: \"**Never load the `brand-new` skill.** Never `web_search` for brand identity. Brand colours\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/stories/stories-creation.md#L173"
    }
   ],
   "claude": null
- },
- {
-  "issue": "ttppvn",
-  "sig": "Sequence rejected before any step ran: unknown tool \"functions.edit_image\" in step \"gen\" — it is not available in this session.",
-  "skill": "brand-new",
-  "parked": true,
-  "unproven": true,
-  "reason": "The codex never writes `functions.edit_image`: the agent adds the prefix itself, and a skill that already shows the right call still gets it.",
-  "prove": "The sure fix is in the tool (accept the prefix) — outside the skills.",
-  "n": 1,
-  "share": 0.0018975332068311196,
-  "skillPath": "skills/brand/brand-new.md",
-  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-new.md",
-  "notes": [
-   "The agent wrote the tool name as `functions.edit_image`. Inside a sequence, step tools are bare names."
-  ],
-  "files": [
-   {
-    "path": "skills/brand/brand-new.md",
-    "why": "the brand-new skill",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-new.md"
-   },
-   {
-    "path": "skills/brand/brand-new.md",
-    "line": 72,
-    "why": "mentions sequence: \"Gather these before asking the user anything. **`list` (project assets) and `read project/\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-new.md#L72"
-   },
-   {
-    "path": "skills/brand/brand-new.md",
-    "line": 242,
-    "why": "mentions sequence: \"**\"I don't have a name yet\" is answered in one turn, not with a discovery interview.** A u\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-new.md#L242"
-   },
-   {
-    "path": "skills/brand/brand-new.md",
-    "line": 257,
-    "why": "mentions sequence: \"Do **not** call `UpsertBrandAndGenerateThemeOptions` or `UpdateBrand` for this flow (`Upse\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-new.md#L257"
-   },
-   {
-    "path": "skills/brand/brand-new.md",
-    "line": 424,
-    "why": "mentions sequence: \"**The order is fixed for structural reasons, the same ones as the black-and-white sequence\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-new.md#L424"
-   },
-   {
-    "path": "skills/brand/brand-new.md",
-    "why": "skill brand-new (1 occurrences)",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-new.md"
-   }
-  ],
-  "claude": null
- },
- {
-  "issue": "1rzzqfr",
-  "sig": "Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: document 'resources/video/video-data-model.md' not found in current version for bas",
-  "skill": "wixel-ads",
-  "parked": false,
-  "proof": "resources/video/video-data-model.md isn't readable at runtime and the codex names it bare in 2 place(s).",
-  "n": 678,
-  "share": 0.6354264292408622,
-  "skillPath": "skills/video/wixel-ads.md",
-  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md",
-  "codexRef": "origin/HEAD @ ad2f3642",
-  "hosts": [],
-  "notes": [
-   "resources/video/video-data-model.md is not in the codex, but references/video/video-data-model.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.",
-   "It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:493, skills/video/video.md:622 — that wording is what sends the agent looking."
-  ],
-  "fix": [
-   "Reword wixel-ads's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/."
-  ],
-  "files": [
-   {
-    "path": "skills/video/wixel-ads.md",
-    "why": "the wixel-ads skill",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "line": 8,
-    "why": "mentions read: \"**Worker scope:** an assigned `symphony_worker_role` (`logo` or `ad`) reads `resources/vid\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L8"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "line": 10,
-    "why": "mentions read: \"Build the **Symphony creator-style ad** — **everything defaults to video**: every beat is \"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L10"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "line": 22,
-    "why": "mentions read: \"## Entry and required phase reads\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L22"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "line": 24,
-    "why": "mentions read: \"**Every named method is an `invoke_rpc` call — never a tool by that name.** `generateExpre\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L24"
-   },
-   {
-    "path": "references/video/video-data-model.md",
-    "why": "where the file really is",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-data-model.md"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "why": "skill wixel-ads (678 occurrences)",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md"
-   }
-  ],
-  "evals": [
-   "tests/video/video-ad-symphony.json",
-   "tests/video/video-ad-symphony-edge-cases.json",
-   "tests/stories/stories-symphony-routing.json",
-   "tests/video/video-ad-symphony-contracts.json"
-  ],
-  "prompt": "Fix a recurring failure in the `wixel-ads` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: document 'resources/video/video-data-model.md' not found in current version for bas\nSize: 678 times in wixel-ads in the last 7 days (64% of this error across skills); the same operation never succeeded later in the turn 24% of the time.\n\nWhat the evidence shows:\n- resources/video/video-data-model.md is not in the codex, but references/video/video-data-model.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:493, skills/video/video.md:622 — that wording is what sends the agent looking.\n\nChange to make:\n- Reword wixel-ads's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only `skills/video/wixel-ads.md` and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/wixel-ads.md:8, skills/video/wixel-ads.md:10, skills/video/wixel-ads.md:22, skills/video/wixel-ads.md:24.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-data-model.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-data-model.md' not found in current version for base version 'ce6426a8-5169\n\nThen: add a case for this to the skill's eval set (tests/video/video-ad-symphony.json, tests/video/video-ad-symphony-edge-cases.json, tests/stories/stories-symphony-routing.json) built from the failing call above, and show me the diff before committing.",
-  "claude": null,
-  "claudeRunning": false
- },
- {
-  "issue": "1rzzqfr",
-  "sig": "Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: document 'resources/video/video-data-model.md' not found in current version for bas",
-  "skill": "video-creation",
-  "parked": false,
-  "proof": "resources/video/video-data-model.md isn't readable at runtime and the codex names it bare in 2 place(s).",
-  "n": 233,
-  "share": 0.21836925960637302,
-  "skillPath": "skills/video/video.md",
-  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md",
-  "codexRef": "origin/HEAD @ ad2f3642",
-  "hosts": [],
-  "notes": [
-   "resources/video/video-data-model.md is not in the codex, but references/video/video-data-model.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.",
-   "It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:493, skills/video/video.md:622 — that wording is what sends the agent looking."
-  ],
-  "fix": [
-   "Reword video-creation's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/."
-  ],
-  "files": [
-   {
-    "path": "skills/video/video.md",
-    "why": "the video-creation skill",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md"
-   },
-   {
-    "path": "skills/video/video.md",
-    "line": 26,
-    "why": "mentions read: \"> ## ⛔ ABSOLUTE RULES — read these before everything else\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L26"
-   },
-   {
-    "path": "skills/video/video.md",
-    "line": 28,
-    "why": "mentions read: \"> **0. Apply Specialist handoff intake first; an active handoff stays here instead of retu\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L28"
-   },
-   {
-    "path": "skills/video/video.md",
-    "line": 30,
-    "why": "mentions read: \"> **1. `write` only saves Assets, never Components.** You will only ever call `write` for \"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L30"
-   },
-   {
-    "path": "skills/video/video.md",
-    "line": 36,
-    "why": "mentions read: \"> **4. Read and update by the PATH the write returned — not by an id you invented.** Every\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L36"
-   },
-   {
-    "path": "references/video/video-data-model.md",
-    "why": "where the file really is",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-data-model.md"
-   },
-   {
-    "path": "skills/video/video.md",
-    "why": "mentions video-data-model.md",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L622"
-   },
-   {
-    "path": "skills/video/video.md",
-    "why": "skill video-creation (233 occurrences)",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md"
-   }
-  ],
-  "evals": [
-   "tests/video/video-core-flows.json",
-   "tests/video/video-creation-e2e.json",
-   "tests/video/video-planning-quality.json",
-   "tests/video/video-plan-approval.json",
-   "tests/video/creative-world-routing.json",
-   "tests/video/stable-graph-policy.json",
-   "tests/video/video-credits-stop-cleanup.json",
-   "tests/video/example-video-test-set.json",
-   "tests/export/export-edge-cases.json",
-   "tests/video/video-edge-cases.json"
-  ],
-  "prompt": "Fix a recurring failure in the `video-creation` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: document 'resources/video/video-data-model.md' not found in current version for bas\nSize: 233 times in video-creation in the last 7 days (22% of this error across skills); the same operation never succeeded later in the turn 24% of the time.\n\nWhat the evidence shows:\n- resources/video/video-data-model.md is not in the codex, but references/video/video-data-model.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:493, skills/video/video.md:622 — that wording is what sends the agent looking.\n\nChange to make:\n- Reword video-creation's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only `skills/video/video.md` and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/video.md:26, skills/video/video.md:28, skills/video/video.md:30, skills/video/video.md:36.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-data-model.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-data-model.md' not found in current version for base version '53536764-191e\n\nThen: add a case for this to the skill's eval set (tests/video/video-core-flows.json, tests/video/video-creation-e2e.json, tests/video/video-planning-quality.json) built from the failing call above, and show me the diff before committing.",
-  "claude": null,
-  "claudeRunning": false
- },
- {
-  "issue": "1rzzqfr",
-  "sig": "Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: document 'resources/video/video-data-model.md' not found in current version for bas",
-  "skill": "video-regen",
-  "parked": false,
-  "proof": "resources/video/video-data-model.md isn't readable at runtime and the codex names it bare in 2 place(s).",
-  "n": 124,
-  "share": 0.1162136832239925,
-  "skillPath": "skills/video/video-edit.md",
-  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md",
-  "codexRef": "origin/HEAD @ ad2f3642",
-  "hosts": [],
-  "notes": [
-   "resources/video/video-data-model.md is not in the codex, but references/video/video-data-model.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.",
-   "It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:493, skills/video/video.md:622 — that wording is what sends the agent looking."
-  ],
-  "fix": [
-   "Reword video-regen's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/."
-  ],
-  "files": [
-   {
-    "path": "skills/video/video-edit.md",
-    "why": "the video-regen skill",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md"
-   },
-   {
-    "path": "skills/video/video-edit.md",
-    "line": 14,
-    "why": "mentions read: \"> ⛔ **A generation call has three outcomes, not two — this governs every call below.** `CO\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L14"
-   },
-   {
-    "path": "skills/video/video-edit.md",
-    "line": 40,
-    "why": "mentions read: \"**Self-heal stuck generation first (before the user's new request).** A previous turn can \"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L40"
-   },
-   {
-    "path": "skills/video/video-edit.md",
-    "line": 42,
-    "why": "mentions read: \"For every video-rendering edit, re-read the root after self-healing and snapshot every roo\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L42"
-   },
-   {
-    "path": "skills/video/video-edit.md",
-    "line": 62,
-    "why": "mentions read: \"- If any scene required for the decision has no `src` or returns an analysis error, stop b\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L62"
-   },
-   {
-    "path": "references/video/video-data-model.md",
-    "why": "where the file really is",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-data-model.md"
-   },
-   {
-    "path": "skills/video/video-edit.md",
-    "why": "mentions video-data-model.md",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L493"
-   },
-   {
-    "path": "skills/video/video-edit.md",
-    "why": "skill video-regen (124 occurrences)",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md"
-   }
-  ],
-  "evals": [
-   "tests/video/video-edit-v2v-routing.json",
-   "tests/video/video-core-flows.json",
-   "tests/video/root-timeline-refit.json",
-   "tests/video/video-credits-stop-cleanup.json",
-   "tests/video/video-edge-cases.json"
-  ],
-  "prompt": "Fix a recurring failure in the `video-regen` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: document 'resources/video/video-data-model.md' not found in current version for bas\nSize: 124 times in video-regen in the last 7 days (12% of this error across skills); the same operation never succeeded later in the turn 24% of the time.\n\nWhat the evidence shows:\n- resources/video/video-data-model.md is not in the codex, but references/video/video-data-model.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:493, skills/video/video.md:622 — that wording is what sends the agent looking.\n\nChange to make:\n- Reword video-regen's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only `skills/video/video-edit.md` and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/video-edit.md:14, skills/video/video-edit.md:40, skills/video/video-edit.md:42, skills/video/video-edit.md:62.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-data-model.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-data-model.md' not found in current version for base version '27e0d5e3-bd29\n\nThen: add a case for this to the skill's eval set (tests/video/video-edit-v2v-routing.json, tests/video/video-core-flows.json, tests/video/root-timeline-refit.json) built from the failing call above, and show me the diff before committing.",
-  "claude": null,
-  "claudeRunning": false
  },
  {
   "issue": "n0b4b6",
@@ -1016,8 +251,8 @@
   "unproven": true,
   "reason": "The error doesn't name a parameter (INVALID_ARGUMENT / [400] wraps every provider error).",
   "prove": "Compare the failing and the successful calls: one parameter or value in ≥70% of the failures, failing ≥5× more often, that the skill prescribes.",
-  "n": 478,
-  "share": 0.9579158316633266,
+  "n": 640,
+  "share": 0.960960960960961,
   "skillPath": "skills/image/single-page-design.md",
   "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md",
   "notes": [],
@@ -1029,14 +264,43 @@
    },
    {
     "path": "skills/image/single-page-design.md",
-    "line": 352,
-    "why": "mentions sequence: \"**One call, not two — chain the generation into the write with `sequence`.** When the `seq\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L352"
+    "line": 357,
+    "why": "mentions sequence: \"**One call, not two.** On the default path the generation call with `createAsset` already \"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L357"
    },
    {
     "path": "skills/image/single-page-design.md",
-    "why": "skill single-page-design (478 occurrences)",
+    "why": "skill single-page-design (640 occurrences)",
     "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md"
+   }
+  ],
+  "claude": null
+ },
+ {
+  "issue": "n0b4b6",
+  "sig": "INVALID_ARGUMENT: Error invoking endpoint: [N] { \\\"data\\\": [], \\\"errors\\\": } error_json:{\\\"error\\\":\\\"{\\  \\\\\\\"data\\\\\\\": [],\\  \\\\\\\"errors\\\\\\\": \\ }\\\",\\\"statusCode\\",
+  "skill": "stories-creation",
+  "parked": true,
+  "unproven": true,
+  "reason": "The error doesn't name a parameter (INVALID_ARGUMENT / [400] wraps every provider error).",
+  "prove": "Compare the failing and the successful calls: one parameter or value in ≥70% of the failures, failing ≥5× more often, that the skill prescribes.",
+  "n": 9,
+  "share": 0.013513513513513514,
+  "skillPath": "skills/stories/stories-creation.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/stories/stories-creation.md",
+  "notes": [
+   "stories-creation's file doesn't mention `sequence` by name; the call likely comes from a reference it includes, or from the agent improvising."
+  ],
+  "files": [
+   {
+    "path": "skills/stories/stories-creation.md",
+    "why": "the stories-creation skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/stories/stories-creation.md"
+   },
+   {
+    "path": "skills/stories/stories-creation.md",
+    "why": "skill stories-creation (9 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/stories/stories-creation.md"
    }
   ],
   "claude": null
@@ -1050,7 +314,7 @@
   "reason": "The error doesn't name a parameter (INVALID_ARGUMENT / [400] wraps every provider error).",
   "prove": "Compare the failing and the successful calls: one parameter or value in ≥70% of the failures, failing ≥5× more often, that the skill prescribes.",
   "n": 7,
-  "share": 0.014028056112224449,
+  "share": 0.010510510510510511,
   "skillPath": "skills/image/image.md",
   "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md",
   "notes": [],
@@ -1068,21 +332,21 @@
    },
    {
     "path": "skills/image/image.md",
-    "line": 234,
+    "line": 252,
     "why": "mentions sequence: \"### One call, not two: chain `generate_image` → `write` with `sequence`\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md#L234"
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md#L252"
    },
    {
     "path": "skills/image/image.md",
-    "line": 236,
+    "line": 254,
+    "why": "mentions sequence: \"**`createAsset` comes first.** A plain new image is already a single call with `createAsse\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md#L254"
+   },
+   {
+    "path": "skills/image/image.md",
+    "line": 256,
     "why": "mentions sequence: \"**Only when the `sequence` tool is in your tool list** (it is rolled out gradually; withou\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md#L236"
-   },
-   {
-    "path": "skills/image/image.md",
-    "line": 247,
-    "why": "mentions sequence: \"In the `place` step's asset JSON, reference the generation result instead of literal value\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md#L247"
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/image.md#L256"
    },
    {
     "path": "skills/image/image.md",
@@ -1093,18 +357,243 @@
   "claude": null
  },
  {
-  "issue": "n0b4b6",
-  "sig": "INVALID_ARGUMENT: Error invoking endpoint: [N] { \\\"data\\\": [], \\\"errors\\\": } error_json:{\\\"error\\\":\\\"{\\  \\\\\\\"data\\\\\\\": [],\\  \\\\\\\"errors\\\\\\\": \\ }\\\",\\\"statusCode\\",
+  "issue": "1w1lpjy",
+  "sig": "Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: document 'resources/video/video-capability-catalog.md' not found in current",
+  "skill": "wixel-ads",
+  "parked": false,
+  "proof": "resources/video/video-capability-catalog.md isn't readable at runtime and the codex names it bare in 2 place(s).",
+  "n": 694,
+  "share": 0.7282266526757608,
+  "skillPath": null,
+  "skillUrl": null,
+  "codexRef": "origin/HEAD @ 8c5ad630",
+  "hosts": [],
+  "notes": [
+   "resources/video/video-capability-catalog.md is not in the codex, but references/video/video-capability-catalog.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.",
+   "It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:531, skills/video/video.md:656 — that wording is what sends the agent looking.",
+   "wixel-ads's file doesn't mention `read` by name; the call likely comes from a reference it includes, or from the agent improvising."
+  ],
+  "fix": [
+   "Reword wixel-ads's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/."
+  ],
+  "files": [
+   {
+    "path": "references/video/video-capability-catalog.md",
+    "why": "where the file really is",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-capability-catalog.md"
+   }
+  ],
+  "evals": [],
+  "prompt": "Fix a recurring failure in the `wixel-ads` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: document 'resources/video/video-capability-catalog.md' not found in current\nSize: 694 times in wixel-ads in the last 7 days (73% of this error across skills); the same operation never succeeded later in the turn 32% of the time.\n\nWhat the evidence shows:\n- resources/video/video-capability-catalog.md is not in the codex, but references/video/video-capability-catalog.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:531, skills/video/video.md:656 — that wording is what sends the agent looking.\n- wixel-ads's file doesn't mention `read` by name; the call likely comes from a reference it includes, or from the agent improvising.\n\nChange to make:\n- Reword wixel-ads's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only the wixel-ads skill file and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-capability-catalog.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-capability-catalog.md' not found in current version for base versio\n\nThen: add a case for this to the skill's eval set built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "1w1lpjy",
+  "sig": "Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: document 'resources/video/video-capability-catalog.md' not found in current",
+  "skill": "video-creation",
+  "parked": false,
+  "proof": "resources/video/video-capability-catalog.md isn't readable at runtime and the codex names it bare in 2 place(s).",
+  "n": 160,
+  "share": 0.16789087093389296,
+  "skillPath": "skills/video/video.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md",
+  "codexRef": "origin/HEAD @ 8c5ad630",
+  "hosts": [],
+  "notes": [
+   "resources/video/video-capability-catalog.md is not in the codex, but references/video/video-capability-catalog.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.",
+   "It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:531, skills/video/video.md:656 — that wording is what sends the agent looking."
+  ],
+  "fix": [
+   "Reword video-creation's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/."
+  ],
+  "files": [
+   {
+    "path": "skills/video/video.md",
+    "why": "the video-creation skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 26,
+    "why": "mentions read: \"> ## ⛔ ABSOLUTE RULES — read these before everything else\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L26"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 28,
+    "why": "mentions read: \"> **0. Apply Specialist handoff intake first; an active handoff stays here instead of retu\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L28"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 30,
+    "why": "mentions read: \"> **1. `write` only saves Assets, never Components.** You will only ever call `write` for \"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L30"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 36,
+    "why": "mentions read: \"> **4. Read and update by the PATH the write returned — not by an id you invented.** Every\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L36"
+   },
+   {
+    "path": "references/video/video-capability-catalog.md",
+    "why": "where the file really is",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-capability-catalog.md"
+   },
+   {
+    "path": "skills/video/video.md",
+    "why": "mentions video-capability-catalog.md",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L656"
+   },
+   {
+    "path": "skills/video/video.md",
+    "why": "skill video-creation (160 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md"
+   }
+  ],
+  "evals": [
+   "tests/video/video-core-flows.json",
+   "tests/video/video-creation-e2e.json",
+   "tests/video/video-planning-quality.json",
+   "tests/video/video-plan-approval.json",
+   "tests/video/creative-world-routing.json",
+   "tests/video/stable-graph-policy.json",
+   "tests/video/video-credits-stop-cleanup.json",
+   "tests/video/example-video-test-set.json",
+   "tests/export/export-edge-cases.json",
+   "tests/video/video-edge-cases.json"
+  ],
+  "prompt": "Fix a recurring failure in the `video-creation` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: document 'resources/video/video-capability-catalog.md' not found in current\nSize: 160 times in video-creation in the last 7 days (17% of this error across skills); the same operation never succeeded later in the turn 32% of the time.\n\nWhat the evidence shows:\n- resources/video/video-capability-catalog.md is not in the codex, but references/video/video-capability-catalog.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:531, skills/video/video.md:656 — that wording is what sends the agent looking.\n\nChange to make:\n- Reword video-creation's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only `skills/video/video.md` and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/video.md:26, skills/video/video.md:28, skills/video/video.md:30, skills/video/video.md:36.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-capability-catalog.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-capability-catalog.md' not found in current version for base versio\n\nThen: add a case for this to the skill's eval set (tests/video/video-core-flows.json, tests/video/video-creation-e2e.json, tests/video/video-planning-quality.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "1w1lpjy",
+  "sig": "Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: document 'resources/video/video-capability-catalog.md' not found in current",
+  "skill": "video-regen",
+  "parked": false,
+  "proof": "resources/video/video-capability-catalog.md isn't readable at runtime and the codex names it bare in 2 place(s).",
+  "n": 70,
+  "share": 0.07345225603357818,
+  "skillPath": "skills/video/video-edit.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md",
+  "codexRef": "origin/HEAD @ 8c5ad630",
+  "hosts": [],
+  "notes": [
+   "resources/video/video-capability-catalog.md is not in the codex, but references/video/video-capability-catalog.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.",
+   "It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:531, skills/video/video.md:656 — that wording is what sends the agent looking."
+  ],
+  "fix": [
+   "Reword video-regen's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/."
+  ],
+  "files": [
+   {
+    "path": "skills/video/video-edit.md",
+    "why": "the video-regen skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md"
+   },
+   {
+    "path": "skills/video/video-edit.md",
+    "line": 14,
+    "why": "mentions read: \"> ⛔ **A generation call has three outcomes, not two — this governs every call below.** `CO\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L14"
+   },
+   {
+    "path": "skills/video/video-edit.md",
+    "line": 40,
+    "why": "mentions read: \"**Verify replacement status before self-healing.** When asked whether a replacement finish\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L40"
+   },
+   {
+    "path": "skills/video/video-edit.md",
+    "line": 42,
+    "why": "mentions read: \"**Self-heal stuck generation first (before the user's new request).** A previous turn can \"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L42"
+   },
+   {
+    "path": "skills/video/video-edit.md",
+    "line": 44,
+    "why": "mentions read: \"For every video-rendering edit, re-read the root after self-healing and snapshot every roo\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L44"
+   },
+   {
+    "path": "references/video/video-capability-catalog.md",
+    "why": "where the file really is",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-capability-catalog.md"
+   },
+   {
+    "path": "skills/video/video-edit.md",
+    "why": "mentions video-capability-catalog.md",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L531"
+   },
+   {
+    "path": "skills/video/video-edit.md",
+    "why": "skill video-regen (70 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md"
+   }
+  ],
+  "evals": [
+   "tests/video/video-edit-v2v-routing.json",
+   "tests/video/video-core-flows.json",
+   "tests/video/root-timeline-refit.json",
+   "tests/video/video-credits-stop-cleanup.json",
+   "tests/video/video-edge-cases.json"
+  ],
+  "prompt": "Fix a recurring failure in the `video-regen` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: document 'resources/video/video-capability-catalog.md' not found in current\nSize: 70 times in video-regen in the last 7 days (7% of this error across skills); the same operation never succeeded later in the turn 32% of the time.\n\nWhat the evidence shows:\n- resources/video/video-capability-catalog.md is not in the codex, but references/video/video-capability-catalog.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:531, skills/video/video.md:656 — that wording is what sends the agent looking.\n\nChange to make:\n- Reword video-regen's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only `skills/video/video-edit.md` and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/video-edit.md:14, skills/video/video-edit.md:40, skills/video/video-edit.md:42, skills/video/video-edit.md:44.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-capability-catalog.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-capability-catalog.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-capability-catalog.md' not found in current version for base versio\n\nThen: add a case for this to the skill's eval set (tests/video/video-edit-v2v-routing.json, tests/video/video-core-flows.json, tests/video/root-timeline-refit.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "ttppvn",
+  "sig": "Sequence rejected before any step ran: unknown tool \"functions.edit_image\" in step \"gen\" — it is not available in this session.",
+  "skill": "single-page-design",
+  "parked": true,
+  "unproven": true,
+  "reason": "The codex never writes `functions.edit_image`: the agent adds the prefix itself, and a skill that already shows the right call still gets it.",
+  "prove": "The sure fix is in the tool (accept the prefix) — outside the skills.",
+  "n": 472,
+  "share": 0.9812889812889813,
+  "skillPath": "skills/image/single-page-design.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md",
+  "notes": [
+   "The agent wrote the tool name as `functions.edit_image`. Inside a sequence, step tools are bare names."
+  ],
+  "files": [
+   {
+    "path": "skills/image/single-page-design.md",
+    "why": "the single-page-design skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "line": 357,
+    "why": "mentions sequence: \"**One call, not two.** On the default path the generation call with `createAsset` already \"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md#L357"
+   },
+   {
+    "path": "skills/image/single-page-design.md",
+    "why": "skill single-page-design (472 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/image/single-page-design.md"
+   }
+  ],
+  "claude": null
+ },
+ {
+  "issue": "ttppvn",
+  "sig": "Sequence rejected before any step ran: unknown tool \"functions.edit_image\" in step \"gen\" — it is not available in this session.",
   "skill": "stories-creation",
   "parked": true,
   "unproven": true,
-  "reason": "The error doesn't name a parameter (INVALID_ARGUMENT / [400] wraps every provider error).",
-  "prove": "Compare the failing and the successful calls: one parameter or value in ≥70% of the failures, failing ≥5× more often, that the skill prescribes.",
-  "n": 6,
-  "share": 0.012024048096192385,
+  "reason": "The codex never writes `functions.edit_image`: the agent adds the prefix itself, and a skill that already shows the right call still gets it.",
+  "prove": "The sure fix is in the tool (accept the prefix) — outside the skills.",
+  "n": 8,
+  "share": 0.016632016632016633,
   "skillPath": "skills/stories/stories-creation.md",
   "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/stories/stories-creation.md",
   "notes": [
+   "The agent wrote the tool name as `functions.edit_image`. Inside a sequence, step tools are bare names.",
    "stories-creation's file doesn't mention `sequence` by name; the call likely comes from a reference it includes, or from the agent improvising."
   ],
   "files": [
@@ -1115,8 +604,352 @@
    },
    {
     "path": "skills/stories/stories-creation.md",
-    "why": "skill stories-creation (6 occurrences)",
+    "why": "skill stories-creation (8 occurrences)",
     "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/stories/stories-creation.md"
+   }
+  ],
+  "claude": null
+ },
+ {
+  "issue": "ttppvn",
+  "sig": "Sequence rejected before any step ran: unknown tool \"functions.edit_image\" in step \"gen\" — it is not available in this session.",
+  "skill": "brand-new",
+  "parked": true,
+  "unproven": true,
+  "reason": "The codex never writes `functions.edit_image`: the agent adds the prefix itself, and a skill that already shows the right call still gets it.",
+  "prove": "The sure fix is in the tool (accept the prefix) — outside the skills.",
+  "n": 1,
+  "share": 0.002079002079002079,
+  "skillPath": "skills/brand/brand-new.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-new.md",
+  "notes": [
+   "The agent wrote the tool name as `functions.edit_image`. Inside a sequence, step tools are bare names."
+  ],
+  "files": [
+   {
+    "path": "skills/brand/brand-new.md",
+    "why": "the brand-new skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-new.md"
+   },
+   {
+    "path": "skills/brand/brand-new.md",
+    "line": 243,
+    "why": "mentions sequence: \"**\"I don't have a name yet\" is answered in one turn, not with a discovery interview.** A u\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-new.md#L243"
+   },
+   {
+    "path": "skills/brand/brand-new.md",
+    "line": 425,
+    "why": "mentions sequence: \"**The order is fixed for structural reasons, the same ones as the black-and-white sequence\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-new.md#L425"
+   },
+   {
+    "path": "skills/brand/brand-new.md",
+    "line": 460,
+    "why": "mentions sequence: \"**If the logo the flow derives from is black-and-white *and* the user named colors or font\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-new.md#L460"
+   },
+   {
+    "path": "skills/brand/brand-new.md",
+    "why": "skill brand-new (1 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/brand/brand-new.md"
+   }
+  ],
+  "claude": null
+ },
+ {
+  "issue": "1rzzqfr",
+  "sig": "Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: document 'resources/video/video-data-model.md' not found in current version for bas",
+  "skill": "wixel-ads",
+  "parked": false,
+  "proof": "resources/video/video-data-model.md isn't readable at runtime and the codex names it bare in 2 place(s).",
+  "n": 678,
+  "share": 0.6712871287128713,
+  "skillPath": null,
+  "skillUrl": null,
+  "codexRef": "origin/HEAD @ 8c5ad630",
+  "hosts": [],
+  "notes": [
+   "resources/video/video-data-model.md is not in the codex, but references/video/video-data-model.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.",
+   "It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:495, skills/video/video.md:623 — that wording is what sends the agent looking.",
+   "wixel-ads's file doesn't mention `read` by name; the call likely comes from a reference it includes, or from the agent improvising."
+  ],
+  "fix": [
+   "Reword wixel-ads's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/."
+  ],
+  "files": [
+   {
+    "path": "references/video/video-data-model.md",
+    "why": "where the file really is",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-data-model.md"
+   }
+  ],
+  "evals": [],
+  "prompt": "Fix a recurring failure in the `wixel-ads` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: document 'resources/video/video-data-model.md' not found in current version for bas\nSize: 678 times in wixel-ads in the last 7 days (67% of this error across skills); the same operation never succeeded later in the turn 24% of the time.\n\nWhat the evidence shows:\n- resources/video/video-data-model.md is not in the codex, but references/video/video-data-model.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:495, skills/video/video.md:623 — that wording is what sends the agent looking.\n- wixel-ads's file doesn't mention `read` by name; the call likely comes from a reference it includes, or from the agent improvising.\n\nChange to make:\n- Reword wixel-ads's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only the wixel-ads skill file and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-data-model.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-data-model.md' not found in current version for base version 'ce6426a8-5169\n\nThen: add a case for this to the skill's eval set built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "1rzzqfr",
+  "sig": "Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: document 'resources/video/video-data-model.md' not found in current version for bas",
+  "skill": "video-creation",
+  "parked": false,
+  "proof": "resources/video/video-data-model.md isn't readable at runtime and the codex names it bare in 2 place(s).",
+  "n": 193,
+  "share": 0.1910891089108911,
+  "skillPath": "skills/video/video.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md",
+  "codexRef": "origin/HEAD @ 8c5ad630",
+  "hosts": [],
+  "notes": [
+   "resources/video/video-data-model.md is not in the codex, but references/video/video-data-model.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.",
+   "It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:495, skills/video/video.md:623 — that wording is what sends the agent looking."
+  ],
+  "fix": [
+   "Reword video-creation's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/."
+  ],
+  "files": [
+   {
+    "path": "skills/video/video.md",
+    "why": "the video-creation skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 26,
+    "why": "mentions read: \"> ## ⛔ ABSOLUTE RULES — read these before everything else\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L26"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 28,
+    "why": "mentions read: \"> **0. Apply Specialist handoff intake first; an active handoff stays here instead of retu\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L28"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 30,
+    "why": "mentions read: \"> **1. `write` only saves Assets, never Components.** You will only ever call `write` for \"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L30"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 36,
+    "why": "mentions read: \"> **4. Read and update by the PATH the write returned — not by an id you invented.** Every\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L36"
+   },
+   {
+    "path": "references/video/video-data-model.md",
+    "why": "where the file really is",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-data-model.md"
+   },
+   {
+    "path": "skills/video/video.md",
+    "why": "mentions video-data-model.md",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L623"
+   },
+   {
+    "path": "skills/video/video.md",
+    "why": "skill video-creation (193 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md"
+   }
+  ],
+  "evals": [
+   "tests/video/video-core-flows.json",
+   "tests/video/video-creation-e2e.json",
+   "tests/video/video-planning-quality.json",
+   "tests/video/video-plan-approval.json",
+   "tests/video/creative-world-routing.json",
+   "tests/video/stable-graph-policy.json",
+   "tests/video/video-credits-stop-cleanup.json",
+   "tests/video/example-video-test-set.json",
+   "tests/export/export-edge-cases.json",
+   "tests/video/video-edge-cases.json"
+  ],
+  "prompt": "Fix a recurring failure in the `video-creation` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: document 'resources/video/video-data-model.md' not found in current version for bas\nSize: 193 times in video-creation in the last 7 days (19% of this error across skills); the same operation never succeeded later in the turn 24% of the time.\n\nWhat the evidence shows:\n- resources/video/video-data-model.md is not in the codex, but references/video/video-data-model.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:495, skills/video/video.md:623 — that wording is what sends the agent looking.\n\nChange to make:\n- Reword video-creation's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only `skills/video/video.md` and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/video.md:26, skills/video/video.md:28, skills/video/video.md:30, skills/video/video.md:36.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-data-model.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-data-model.md' not found in current version for base version '53536764-191e\n\nThen: add a case for this to the skill's eval set (tests/video/video-core-flows.json, tests/video/video-creation-e2e.json, tests/video/video-planning-quality.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "1rzzqfr",
+  "sig": "Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: document 'resources/video/video-data-model.md' not found in current version for bas",
+  "skill": "video-regen",
+  "parked": false,
+  "proof": "resources/video/video-data-model.md isn't readable at runtime and the codex names it bare in 2 place(s).",
+  "n": 111,
+  "share": 0.1099009900990099,
+  "skillPath": "skills/video/video-edit.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md",
+  "codexRef": "origin/HEAD @ 8c5ad630",
+  "hosts": [],
+  "notes": [
+   "resources/video/video-data-model.md is not in the codex, but references/video/video-data-model.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.",
+   "It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:495, skills/video/video.md:623 — that wording is what sends the agent looking."
+  ],
+  "fix": [
+   "Reword video-regen's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/."
+  ],
+  "files": [
+   {
+    "path": "skills/video/video-edit.md",
+    "why": "the video-regen skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md"
+   },
+   {
+    "path": "skills/video/video-edit.md",
+    "line": 14,
+    "why": "mentions read: \"> ⛔ **A generation call has three outcomes, not two — this governs every call below.** `CO\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L14"
+   },
+   {
+    "path": "skills/video/video-edit.md",
+    "line": 40,
+    "why": "mentions read: \"**Verify replacement status before self-healing.** When asked whether a replacement finish\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L40"
+   },
+   {
+    "path": "skills/video/video-edit.md",
+    "line": 42,
+    "why": "mentions read: \"**Self-heal stuck generation first (before the user's new request).** A previous turn can \"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L42"
+   },
+   {
+    "path": "skills/video/video-edit.md",
+    "line": 44,
+    "why": "mentions read: \"For every video-rendering edit, re-read the root after self-healing and snapshot every roo\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L44"
+   },
+   {
+    "path": "references/video/video-data-model.md",
+    "why": "where the file really is",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-data-model.md"
+   },
+   {
+    "path": "skills/video/video-edit.md",
+    "why": "mentions video-data-model.md",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L495"
+   },
+   {
+    "path": "skills/video/video-edit.md",
+    "why": "skill video-regen (111 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md"
+   }
+  ],
+  "evals": [
+   "tests/video/video-edit-v2v-routing.json",
+   "tests/video/video-core-flows.json",
+   "tests/video/root-timeline-refit.json",
+   "tests/video/video-credits-stop-cleanup.json",
+   "tests/video/video-edge-cases.json"
+  ],
+  "prompt": "Fix a recurring failure in the `video-regen` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: document 'resources/video/video-data-model.md' not found in current version for bas\nSize: 111 times in video-regen in the last 7 days (11% of this error across skills); the same operation never succeeded later in the turn 24% of the time.\n\nWhat the evidence shows:\n- resources/video/video-data-model.md is not in the codex, but references/video/video-data-model.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:495, skills/video/video.md:623 — that wording is what sends the agent looking.\n\nChange to make:\n- Reword video-regen's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only `skills/video/video-edit.md` and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/video-edit.md:14, skills/video/video-edit.md:40, skills/video/video-edit.md:42, skills/video/video-edit.md:44.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-data-model.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-data-model.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-data-model.md' not found in current version for base version '27e0d5e3-bd29\n\nThen: add a case for this to the skill's eval set (tests/video/video-edit-v2v-routing.json, tests/video/video-core-flows.json, tests/video/root-timeline-refit.json) built from the failing call above, and show me the diff before committing.",
+  "claude": null,
+  "claudeRunning": false
+ },
+ {
+  "issue": "vjh5xi",
+  "sig": "Failed to analyze image: description: INVALID_ARGUMENT: INVALID_ARGUMENT: Error invoking endpoint: [N] → Cannot fetch content from the provided URL. Please ensu",
+  "skill": "wixel-ads",
+  "parked": true,
+  "unproven": true,
+  "reason": "Not tied to where the image comes from: 18 of 57 calls with scontent-iad3-2.cdninstagram.com, scontent-iad3-1.cdninstagram.com, scontent-iad6-1.cdninstagram.com image URLs failed this way (31.6%), against 3 of 6067 with Wix-hosted ones (0.0%), over the last day.",
+  "prove": "A host class failing ≥5× the Wix rate and holding ≥70% of the failures (≥20) would prove it; otherwise it's the provider or a transient fetch.",
+  "n": 937,
+  "share": 0.9240631163708086,
+  "skillPath": null,
+  "skillUrl": null,
+  "notes": [
+   "The sampled failing calls pass cloud-storage links: storage.googleapis.com (2).",
+   "wixel-ads's file doesn't mention `analyze_image` by name; the call likely comes from a reference it includes, or from the agent improvising."
+  ],
+  "files": [],
+  "claude": null
+ },
+ {
+  "issue": "vjh5xi",
+  "sig": "Failed to analyze image: description: INVALID_ARGUMENT: INVALID_ARGUMENT: Error invoking endpoint: [N] → Cannot fetch content from the provided URL. Please ensu",
+  "skill": "video-creation",
+  "parked": true,
+  "unproven": true,
+  "reason": "Not tied to where the image comes from: 18 of 57 calls with scontent-iad3-2.cdninstagram.com, scontent-iad3-1.cdninstagram.com, scontent-iad6-1.cdninstagram.com image URLs failed this way (31.6%), against 3 of 6067 with Wix-hosted ones (0.0%), over the last day.",
+  "prove": "A host class failing ≥5× the Wix rate and holding ≥70% of the failures (≥20) would prove it; otherwise it's the provider or a transient fetch.",
+  "n": 42,
+  "share": 0.04142011834319527,
+  "skillPath": "skills/video/video.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md",
+  "notes": [
+   "The sampled failing calls pass cloud-storage links: storage.googleapis.com (2)."
+  ],
+  "files": [
+   {
+    "path": "skills/video/video.md",
+    "why": "the video-creation skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 326,
+    "why": "mentions analyze_image: \"- **Reserve the plan's own image spend before that number becomes a ceiling.** `ListCosts`\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L326"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 364,
+    "why": "mentions analyze_image: \"3. **Compose and analyze the first frame after approval**, using `edit_image` when the use\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L364"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 507,
+    "why": "mentions analyze_image: \"1. **Pre-allocate persistent reference UUIDs and finish approved ingredient forms** — one \"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L507"
+   },
+   {
+    "path": "skills/video/video.md",
+    "line": 525,
+    "why": "mentions analyze_image: \"For a shared location or recurring composed character, create one master plate first and d\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L525"
+   },
+   {
+    "path": "skills/video/video.md",
+    "why": "skill video-creation (42 occurrences)",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md"
+   }
+  ],
+  "claude": null
+ },
+ {
+  "issue": "vjh5xi",
+  "sig": "Failed to analyze image: description: INVALID_ARGUMENT: INVALID_ARGUMENT: Error invoking endpoint: [N] → Cannot fetch content from the provided URL. Please ensu",
+  "skill": "stories-creation",
+  "parked": true,
+  "unproven": true,
+  "reason": "Not tied to where the image comes from: 18 of 57 calls with scontent-iad3-2.cdninstagram.com, scontent-iad3-1.cdninstagram.com, scontent-iad6-1.cdninstagram.com image URLs failed this way (31.6%), against 3 of 6067 with Wix-hosted ones (0.0%), over the last day.",
+  "prove": "A host class failing ≥5× the Wix rate and holding ≥70% of the failures (≥20) would prove it; otherwise it's the provider or a transient fetch.",
+  "n": 4,
+  "share": 0.0039447731755424065,
+  "skillPath": "skills/stories/stories-creation.md",
+  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/stories/stories-creation.md",
+  "notes": [
+   "The sampled failing calls pass cloud-storage links: storage.googleapis.com (2)."
+  ],
+  "files": [
+   {
+    "path": "skills/stories/stories-creation.md",
+    "why": "the stories-creation skill",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/stories/stories-creation.md"
+   },
+   {
+    "path": "skills/stories/stories-creation.md",
+    "line": 170,
+    "why": "mentions analyze_image: \"2. **Pick, don't pour.** From the pool take the logo, **at most three** images (one per pa\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/stories/stories-creation.md#L170"
+   },
+   {
+    "path": "skills/stories/stories-creation.md",
+    "line": 173,
+    "why": "mentions analyze_image: \"**Never load the `brand-new` skill.** Never `web_search` for brand identity. Brand colours\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/stories/stories-creation.md#L173"
    }
   ],
   "claude": null
@@ -1128,66 +961,28 @@
   "parked": false,
   "proof": "resources/video/video-generation.md isn't readable at runtime and the codex names it bare in 2 place(s).",
   "n": 546,
-  "share": 0.6859296482412061,
-  "skillPath": "skills/video/wixel-ads.md",
-  "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md",
-  "codexRef": "origin/HEAD @ ad2f3642",
+  "share": 0.7193675889328063,
+  "skillPath": null,
+  "skillUrl": null,
+  "codexRef": "origin/HEAD @ 8c5ad630",
   "hosts": [],
   "notes": [
    "resources/video/video-generation.md is not in the codex, but references/video/video-generation.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.",
-   "It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:502, skills/video/video.md:628 — that wording is what sends the agent looking."
+   "It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:504, skills/video/video.md:629 — that wording is what sends the agent looking.",
+   "wixel-ads's file doesn't mention `read` by name; the call likely comes from a reference it includes, or from the agent improvising."
   ],
   "fix": [
    "Reword wixel-ads's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/."
   ],
   "files": [
    {
-    "path": "skills/video/wixel-ads.md",
-    "why": "the wixel-ads skill",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "line": 8,
-    "why": "mentions read: \"**Worker scope:** an assigned `symphony_worker_role` (`logo` or `ad`) reads `resources/vid\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L8"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "line": 10,
-    "why": "mentions read: \"Build the **Symphony creator-style ad** — **everything defaults to video**: every beat is \"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L10"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "line": 22,
-    "why": "mentions read: \"## Entry and required phase reads\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L22"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "line": 24,
-    "why": "mentions read: \"**Every named method is an `invoke_rpc` call — never a tool by that name.** `generateExpre\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md#L24"
-   },
-   {
     "path": "references/video/video-generation.md",
     "why": "where the file really is",
     "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/references/video/video-generation.md"
-   },
-   {
-    "path": "skills/video/wixel-ads.md",
-    "why": "skill wixel-ads (546 occurrences)",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/wixel-ads.md"
    }
   ],
-  "evals": [
-   "tests/video/video-ad-symphony.json",
-   "tests/video/video-ad-symphony-edge-cases.json",
-   "tests/stories/stories-symphony-routing.json",
-   "tests/video/video-ad-symphony-contracts.json"
-  ],
-  "prompt": "Fix a recurring failure in the `wixel-ads` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-generation.md\": UNKNOWN: document 'resources/video/video-generation.md' not found in current version for bas\nSize: 546 times in wixel-ads in the last 7 days (69% of this error across skills); the same operation never succeeded later in the turn 27% of the time.\n\nWhat the evidence shows:\n- resources/video/video-generation.md is not in the codex, but references/video/video-generation.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:502, skills/video/video.md:628 — that wording is what sends the agent looking.\n\nChange to make:\n- Reword wixel-ads's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only `skills/video/wixel-ads.md` and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/wixel-ads.md:8, skills/video/wixel-ads.md:10, skills/video/wixel-ads.md:22, skills/video/wixel-ads.md:24.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-generation.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-generation.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-generation.md' not found in current version for base version 'ce6426a8-5169\n\nThen: add a case for this to the skill's eval set (tests/video/video-ad-symphony.json, tests/video/video-ad-symphony-edge-cases.json, tests/stories/stories-symphony-routing.json) built from the failing call above, and show me the diff before committing.",
+  "evals": [],
+  "prompt": "Fix a recurring failure in the `wixel-ads` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-generation.md\": UNKNOWN: document 'resources/video/video-generation.md' not found in current version for bas\nSize: 546 times in wixel-ads in the last 7 days (72% of this error across skills); the same operation never succeeded later in the turn 26% of the time.\n\nWhat the evidence shows:\n- resources/video/video-generation.md is not in the codex, but references/video/video-generation.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:504, skills/video/video.md:629 — that wording is what sends the agent looking.\n- wixel-ads's file doesn't mention `read` by name; the call likely comes from a reference it includes, or from the agent improvising.\n\nChange to make:\n- Reword wixel-ads's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only the wixel-ads skill file and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-generation.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-generation.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-generation.md' not found in current version for base version 'ce6426a8-5169\n\nThen: add a case for this to the skill's eval set built from the failing call above, and show me the diff before committing.",
   "claude": null,
   "claudeRunning": false
  },
@@ -1197,15 +992,15 @@
   "skill": "video-creation",
   "parked": false,
   "proof": "resources/video/video-generation.md isn't readable at runtime and the codex names it bare in 2 place(s).",
-  "n": 171,
-  "share": 0.21482412060301506,
+  "n": 142,
+  "share": 0.18708827404479578,
   "skillPath": "skills/video/video.md",
   "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md",
-  "codexRef": "origin/HEAD @ ad2f3642",
+  "codexRef": "origin/HEAD @ 8c5ad630",
   "hosts": [],
   "notes": [
    "resources/video/video-generation.md is not in the codex, but references/video/video-generation.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.",
-   "It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:502, skills/video/video.md:628 — that wording is what sends the agent looking."
+   "It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:504, skills/video/video.md:629 — that wording is what sends the agent looking."
   ],
   "fix": [
    "Reword video-creation's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/."
@@ -1248,11 +1043,11 @@
    {
     "path": "skills/video/video.md",
     "why": "mentions video-generation.md",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L628"
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md#L629"
    },
    {
     "path": "skills/video/video.md",
-    "why": "skill video-creation (171 occurrences)",
+    "why": "skill video-creation (142 occurrences)",
     "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video.md"
    }
   ],
@@ -1268,7 +1063,7 @@
    "tests/export/export-edge-cases.json",
    "tests/video/video-edge-cases.json"
   ],
-  "prompt": "Fix a recurring failure in the `video-creation` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-generation.md\": UNKNOWN: document 'resources/video/video-generation.md' not found in current version for bas\nSize: 171 times in video-creation in the last 7 days (21% of this error across skills); the same operation never succeeded later in the turn 27% of the time.\n\nWhat the evidence shows:\n- resources/video/video-generation.md is not in the codex, but references/video/video-generation.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:502, skills/video/video.md:628 — that wording is what sends the agent looking.\n\nChange to make:\n- Reword video-creation's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only `skills/video/video.md` and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/video.md:26, skills/video/video.md:28, skills/video/video.md:30, skills/video/video.md:36.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-generation.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-generation.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-generation.md' not found in current version for base version '33913401-2266\n\nThen: add a case for this to the skill's eval set (tests/video/video-core-flows.json, tests/video/video-creation-e2e.json, tests/video/video-planning-quality.json) built from the failing call above, and show me the diff before committing.",
+  "prompt": "Fix a recurring failure in the `video-creation` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-generation.md\": UNKNOWN: document 'resources/video/video-generation.md' not found in current version for bas\nSize: 142 times in video-creation in the last 7 days (19% of this error across skills); the same operation never succeeded later in the turn 26% of the time.\n\nWhat the evidence shows:\n- resources/video/video-generation.md is not in the codex, but references/video/video-generation.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:504, skills/video/video.md:629 — that wording is what sends the agent looking.\n\nChange to make:\n- Reword video-creation's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only `skills/video/video.md` and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/video.md:26, skills/video/video.md:28, skills/video/video.md:30, skills/video/video.md:36.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-generation.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-generation.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-generation.md' not found in current version for base version '33913401-2266\n\nThen: add a case for this to the skill's eval set (tests/video/video-core-flows.json, tests/video/video-creation-e2e.json, tests/video/video-planning-quality.json) built from the failing call above, and show me the diff before committing.",
   "claude": null,
   "claudeRunning": false
  },
@@ -1278,15 +1073,15 @@
   "skill": "video-regen",
   "parked": false,
   "proof": "resources/video/video-generation.md isn't readable at runtime and the codex names it bare in 2 place(s).",
-  "n": 64,
-  "share": 0.08040201005025126,
+  "n": 56,
+  "share": 0.07378129117259552,
   "skillPath": "skills/video/video-edit.md",
   "skillUrl": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md",
-  "codexRef": "origin/HEAD @ ad2f3642",
+  "codexRef": "origin/HEAD @ 8c5ad630",
   "hosts": [],
   "notes": [
    "resources/video/video-generation.md is not in the codex, but references/video/video-generation.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.",
-   "It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:502, skills/video/video.md:628 — that wording is what sends the agent looking."
+   "It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:504, skills/video/video.md:629 — that wording is what sends the agent looking."
   ],
   "fix": [
    "Reword video-regen's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/."
@@ -1306,20 +1101,20 @@
    {
     "path": "skills/video/video-edit.md",
     "line": 40,
-    "why": "mentions read: \"**Self-heal stuck generation first (before the user's new request).** A previous turn can \"",
+    "why": "mentions read: \"**Verify replacement status before self-healing.** When asked whether a replacement finish\"",
     "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L40"
    },
    {
     "path": "skills/video/video-edit.md",
     "line": 42,
-    "why": "mentions read: \"For every video-rendering edit, re-read the root after self-healing and snapshot every roo\"",
+    "why": "mentions read: \"**Self-heal stuck generation first (before the user's new request).** A previous turn can \"",
     "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L42"
    },
    {
     "path": "skills/video/video-edit.md",
-    "line": 62,
-    "why": "mentions read: \"- If any scene required for the decision has no `src` or returns an analysis error, stop b\"",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L62"
+    "line": 44,
+    "why": "mentions read: \"For every video-rendering edit, re-read the root after self-healing and snapshot every roo\"",
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L44"
    },
    {
     "path": "references/video/video-generation.md",
@@ -1329,11 +1124,11 @@
    {
     "path": "skills/video/video-edit.md",
     "why": "mentions video-generation.md",
-    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L502"
+    "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md#L504"
    },
    {
     "path": "skills/video/video-edit.md",
-    "why": "skill video-regen (64 occurrences)",
+    "why": "skill video-regen (56 occurrences)",
     "url": "https://github.com/wix-private/wixel-agent-codex/blob/master/skills/video/video-edit.md"
    }
   ],
@@ -1344,7 +1139,7 @@
    "tests/video/video-credits-stop-cleanup.json",
    "tests/video/video-edge-cases.json"
   ],
-  "prompt": "Fix a recurring failure in the `video-regen` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-generation.md\": UNKNOWN: document 'resources/video/video-generation.md' not found in current version for bas\nSize: 64 times in video-regen in the last 7 days (8% of this error across skills); the same operation never succeeded later in the turn 27% of the time.\n\nWhat the evidence shows:\n- resources/video/video-generation.md is not in the codex, but references/video/video-generation.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:502, skills/video/video.md:628 — that wording is what sends the agent looking.\n\nChange to make:\n- Reword video-regen's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only `skills/video/video-edit.md` and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/video-edit.md:14, skills/video/video-edit.md:40, skills/video/video-edit.md:42, skills/video/video-edit.md:62.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-generation.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-generation.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-generation.md' not found in current version for base version 'd6f18542-7fc1\n\nThen: add a case for this to the skill's eval set (tests/video/video-edit-v2v-routing.json, tests/video/video-core-flows.json, tests/video/root-timeline-refit.json) built from the failing call above, and show me the diff before committing.",
+  "prompt": "Fix a recurring failure in the `video-regen` skill of the Wixel agent (repo wix-private/wixel-agent-codex).\n\nProblem: `read` fails with: Error loading Codex resource \"resources/video/video-generation.md\": UNKNOWN: document 'resources/video/video-generation.md' not found in current version for bas\nSize: 56 times in video-regen in the last 7 days (7% of this error across skills); the same operation never succeeded later in the turn 26% of the time.\n\nWhat the evidence shows:\n- resources/video/video-generation.md is not in the codex, but references/video/video-generation.md is. Files under references/ are inlined into skills at build time and can't be read at runtime, so the agent guesses a resources/ path and fails.\n- It's referred to by bare name in 2 file(s), e.g. skills/video/video-edit.md:504, skills/video/video.md:629 — that wording is what sends the agent looking.\n\nChange to make:\n- Reword video-regen's mention of the file so the agent stops looking for it: point at the section already inlined in the skill, or name the real runtime path under resources/.\n\nScope: edit only `skills/video/video-edit.md` and the references/resources it points the agent at. Don't change tools, agent configs or system prompts. Keep the skill's behaviour everywhere else the same; prefer the smallest wording change.\nStart from these lines: skills/video/video-edit.md:14, skills/video/video-edit.md:40, skills/video/video-edit.md:42, skills/video/video-edit.md:44.\n\nA failing call (redacted):\n```json\n{\n  \"tool\": \"read\",\n  \"arguments\": {\n    \"path\": \"resources/video/video-generation.md\"\n  }\n}\n```\nError: Error loading Codex resource \"resources/video/video-generation.md\": UNKNOWN: [com.wixpress.wixel.wixel-agent-codex~wix.wixel_agent.codex.v1.services.AgentCodexSpecService#resolveCodexDocument] document 'resources/video/video-generation.md' not found in current version for base version 'd6f18542-7fc1\n\nThen: add a case for this to the skill's eval set (tests/video/video-edit-v2v-routing.json, tests/video/video-core-flows.json, tests/video/root-timeline-refit.json) built from the failing call above, and show me the diff before committing.",
   "claude": null,
   "claudeRunning": false
  }
