@@ -1,6 +1,6 @@
 import { $, h, icon, getJson, debounce } from './util.js';
 import { toast, popover, closePopover, copyText, mailto } from './ui.js';
-import { renderTab, renderDetail, fleetSummary, renderReport, nameOf } from './fleet-views.js';
+import { renderTab, renderDetail, fleetSummary, renderReport, nameOf, skillSummary, renderSkillReport } from './fleet-views.js';
 
 // Fleet: every major skill at once. View state lives in the URL hash (#f=…) so any view is a
 // link, and in localStorage so a reload restores it. Data comes from /api/fleet (daily rollups,
@@ -213,6 +213,7 @@ function drawDetail() {
 
 // ---- actions the views call ----
 export const act = {
+  shareSkill: (anchor, skill) => shareSkill(anchor, skill),
   select: (kind, key) => setFs({ sel: fs.sel?.kind === kind && fs.sel?.key === key ? null : { kind, key } }),
   open: (kind, key, tab) => setFs({ sel: { kind, key }, ...(tab ? { tab } : {}) }),
   close: () => setFs({ sel: null }),
@@ -259,16 +260,34 @@ function share(anchor) {
     item('copy', 'Copy link', 'This view (tab, period, filters, selection) — opens for anyone running Autopsy', () => copyText(fleetLink(), 'Link')),
     item('copy', 'Copy summary', 'Top actions, issues, wait times and opportunities as text', () => copyText(fleetSummary(view, fs), 'Summary')),
     item('external', 'Email…', 'Opens your mail app with the summary', () => mailto({ subject: `[Autopsy Fleet] ${periodText()}`, body: fleetSummary(view, fs) })),
-    item('download', 'Export PDF', 'The digest: actions, issues, wait times, opportunities, skills — saved to Downloads', () => exportPdf(name)),
+    item('download', 'Export PDF', 'The digest: actions, issues, wait times, opportunities, skills — saved to Downloads', () => exportPdf(name, { sel: null })),
   ), { align: 'right', width: 340 });
 }
 
-async function exportPdf(name) {
+// One skill: its numbers, efficiency, issues, wait times and patterns (fleet-views.js skillSummary /
+// renderSkillReport). The link and the PDF open on that skill's panel.
+function shareSkill(anchor, skill) {
+  const item = (ic, label, sub, fn) => h('button', { class: 'sh-row', onclick: () => { fn(); closePopover(); } }, icon(ic), h('span', {}, h('b', {}, label), h('small', {}, sub)));
+  const sel = { kind: 'skill', key: skill };
+  const link = fleetLink({ tab: 'skills', sel });
+  const text = () => skillSummary(view, fs, skill, { link });
+  const name = `Autopsy Fleet · ${nameOf(skill)} · ${periodText()} · ${audLabel()}`;
+  popover(anchor, h('div', { class: 'sh-pop' },
+    h('div', { class: 'sh-h' }, `Share ${nameOf(skill)}`),
+    item('copy', 'Copy link', 'This skill\'s panel in Fleet (same period and users) — opens for anyone running Autopsy', () => copyText(link, 'Link')),
+    item('copy', 'Copy summary', 'Its numbers, efficiency (models, context, reads, failures), issues, wait times and patterns, as text', () => copyText(text(), 'Summary')),
+    item('external', 'Email…', 'Opens your mail app with the summary', () => mailto({ subject: `[Autopsy Fleet] ${nameOf(skill)} · ${periodText()}`, body: text() })),
+    item('download', 'Export PDF', 'The full skill report with every table — saved to Downloads', () => exportPdf(name, { tab: 'skills', sel })),
+  ), { align: 'right', width: 360 });
+}
+
+async function exportPdf(name, patch = {}) {
   const file = `${name} · ${new Date().toISOString().slice(0, 10)}`.replace(/[/:*?"<>|]+/g, '-');
+  const st = { ...linkState(), ...patch };
   const started = Date.now();
   const tick = setInterval(() => toast(`Building the PDF… ${Math.round((Date.now() - started) / 1000)}s`, { ms: 120000 }), 1000);
   try {
-    const res = await fetch(`api/report.pdf?kind=fleet&name=${encodeURIComponent(file)}&view=${encodeURIComponent(`#f=${encodeURIComponent(JSON.stringify(linkState()))}`)}`);
+    const res = await fetch(`api/report.pdf?kind=fleet&name=${encodeURIComponent(file)}&view=${encodeURIComponent(`#f=${encodeURIComponent(JSON.stringify(st))}`)}`);
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
     const blob = await res.blob();
     const a = h('a', { href: URL.createObjectURL(blob), download: `${file}.pdf` });
@@ -278,7 +297,7 @@ async function exportPdf(name) {
     toast(`Saved to Downloads: ${a.download}`, { ms: 5000 });
   } catch (err) {
     toast(`No headless Chrome (${err.message}) — opening the print dialog`, { ms: 4000 });
-    location.href = `fleet.html?report=fleet#f=${encodeURIComponent(JSON.stringify(linkState()))}`;
+    location.href = `fleet.html?report=fleet#f=${encodeURIComponent(JSON.stringify(st))}`;
   } finally {
     clearInterval(tick);
   }
@@ -355,8 +374,12 @@ async function runReport() {
     return;
   }
   clearTimeout(progressTimer);
-  $('#body').replaceChildren(renderReport(view, fs, { periodText: periodText(), audLabel: audLabel() }));
-  document.title = `Autopsy Fleet · ${periodText()}`;
+  // A skill's report when the link carries a skill (Share skill → Export PDF), else the digest.
+  const skill = ['skill', 'eff'].includes(fs.sel?.kind) ? fs.sel.key : null;
+  $('#body').replaceChildren(skill
+    ? renderSkillReport(view, fs, skill, { periodText: periodText(), audLabel: audLabel(), link: fleetLink({ tab: 'skills', sel: { kind: 'skill', key: skill } }) })
+    : renderReport(view, fs, { periodText: periodText(), audLabel: audLabel() }));
+  document.title = skill ? `Autopsy Fleet · ${nameOf(skill)} · ${periodText()}` : `Autopsy Fleet · ${periodText()}`;
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   if (window.__AUTOPSY_HEADLESS) window.__reportState = { title: document.title };
   else setTimeout(() => window.print(), 100);

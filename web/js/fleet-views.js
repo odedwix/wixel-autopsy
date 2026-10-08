@@ -644,7 +644,8 @@ function effDetail(e, view, fs, act) {
       kv(kTok(e.inTokensPerWeek), 'input tokens a week'))),
     h('div', { class: 'section links' },
       h('a', { class: 'btn primary', href: autopsyLink(e.skill, { days: view.period.days.length }), target: '_blank' }, icon('external'), 'Open runs in Autopsy'),
-      h('button', { class: 'btn', onclick: () => act.open('skill', e.skill, 'skills') }, 'Skill overview')),
+      h('button', { class: 'btn', onclick: () => act.open('skill', e.skill, 'skills') }, 'Skill overview'),
+      h('button', { class: 'btn', title: 'Everything Fleet knows about this skill: link, summary, email or PDF', onclick: (ev) => act.shareSkill?.(ev.currentTarget, e.skill) }, icon('copy'), 'Share skill')),
     e.models.length ? sect('Models', h('table', { class: 'fl' },
       h('thead', {}, h('tr', {}, h('th', { class: 'l' }, 'Model'), h('th', {}, 'Share'), h('th', {}, 'Tokens in / iter.'), h('th', {}, 'Largest call'), h('th', {}, 'Out / iter.'), h('th', {}, 'Model time / iter.'), h('th', {}, 'Failed'))),
       h('tbody', {}, e.models.map((m) => h('tr', { style: { cursor: 'default' } }, h('td', { class: 'l mono' }, m.model), h('td', {}, pct(m.share)), h('td', {}, kTok(m.tokPerIter)), h('td', {}, kTok(m.maxIn)), h('td', {}, fmtN(m.outPerIter)), h('td', {}, sec(m.thinkPerIter)), h('td', {}, pct(m.failRate, 1))))))) : null,
@@ -1006,7 +1007,8 @@ function skillDetail(s, view, fs, act) {
     h('div', { class: 'section links' },
       s.skill !== NO_SKILL ? h('a', { class: 'btn primary', href: autopsyLink(s.skill, { days: view.period.days.length }), target: '_blank' }, icon('external'), 'Open runs in Autopsy') : null,
       s.skill !== NO_SKILL ? h('button', { class: 'btn', onclick: () => act.saveState('pin', s.skill, { pinned: !pinned }) }, icon('pin'), pinned ? 'Unpin' : 'Pin as major') : null,
-      h('button', { class: 'btn', onclick: () => act.set({ tab: 'issues', q: s.skill === NO_SKILL ? '' : s.skill }) }, 'Its issues')),
+      h('button', { class: 'btn', onclick: () => act.set({ tab: 'issues', q: s.skill === NO_SKILL ? '' : s.skill }) }, 'Its issues'),
+      h('button', { class: 'btn', title: 'Everything Fleet knows about this skill: link, summary, email or PDF', onclick: (ev) => act.shareSkill?.(ev.currentTarget, s.skill) }, icon('copy'), 'Share skill')),
     issues.length ? sect('Top issues', h('div', {}, issues.map((i) => h('div', { class: 'rep', onclick: () => act.open('issue', i.key, 'issues') }, h('span', { class: 't' }, fixTag(i.cls.fix), ' ', i.sig), h('span', { class: 'n' }, `${fmtN(i.owners.find((o) => o.skill === s.skill)?.n)} · ${hrs(i.lostHPerWeek)}/wk`))))) : null,
     s.ops?.length ? sect('Tools it calls', h('table', { class: 'fl' },
       h('thead', {}, h('tr', {}, h('th', { class: 'l' }, 'Tool'), h('th', {}, 'Calls'), h('th', {}, 'Fail'), h('th', {}, 'Hidden t/o'), h('th', {}, 'Time lost'), h('th', {}, 'Arg. sets / day'))),
@@ -1111,4 +1113,93 @@ export function renderReport(view, fs, meta) {
     sec2('Top issues', issues),
     sec2('Wait times', waits),
     sec2('Patterns worth a look (observations)', opps));
+}
+
+
+// ---------- one skill, shared: everything Fleet knows about it ----------
+// The skill's numbers, its efficiency (models, context, reads, failures, repeats, polls), its top
+// issues with examples, the wait times of its operations and the patterns seen in it — as text
+// (copy / email) and as a printable report (PDF).
+const skillWaits = (view, skill) => view.waits.filter((w) => (w.owners || []).some(([o]) => o === skill) && (w.recommend || w.hidden || w.heavyTail)).slice(0, 8);
+const skillIssues = (view, skill) => view.issues.filter((i) => i.owners.some((o) => o.skill === skill) && i.cls.id !== 'credits').slice(0, 15);
+const perc = (o) => { const t = Object.values(o || {}).reduce((a, n) => a + n, 0); return t ? Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${pct(n / t)}`).join(' · ') : '–'; };
+
+export function skillSummary(view, fs, skill, { link } = {}) {
+  const s = view.skills.find((x) => x.skill === skill);
+  const e = view.efficiency?.skills.find((x) => x.skill === skill);
+  const days = `${view.period.days[0]} → ${view.period.days.at(-1)} (${view.period.have.length} days)`;
+  const L = [`${nameOf(skill)} — Autopsy Fleet skill report`, `${days} · ${fs.aud === 'real' ? 'real users' : fs.aud}`];
+  if (link) L.push(`Open in Fleet: ${link}`);
+  if (s) {
+    L.push('', 'At a glance:',
+      `- ${fmtN(s.sessions)} sessions · ${fmtN(s.turns)} turns · ${pct(s.failRate, 1)} of tool calls failing · ${pct(s.failedTurnRate, 1)} of turns failed · ${hrs(s.lostHPerWeek)}/wk lost to failures · ${fmtN(s.hidden)} hidden timeouts`,
+      `- ${pct(s.frustration, 1)} frustrated turns · thumbs ${fmtN(s.thumbsUp)} up / ${fmtN(s.thumbsDown)} down · outputs kept ${s.keptRate != null ? pct(s.keptRate) : '–'} · tried, no output ${s.noOutputRate != null ? pct(s.noOutputRate) : '–'} · ${s.gensPerKept != null ? s.gensPerKept.toFixed(1) : '–'} generations per kept output`);
+  }
+  if (e) {
+    L.push('', `Efficiency (${view.efficiency.days} day(s) measured; file tokens estimated, model tokens measured):`,
+      `- Context: ${kTok(e.tokPerIter)} tokens into every iteration (${pct(e.cachedShare)} cached) · ${e.iterPerTurn?.toFixed(1)} iterations a turn · ${sec(e.thinkPerIter)} model time an iteration · ${fmtN(e.outPerIter)} tokens written an iteration`,
+      `- Preloaded skill: ${e.preloadTokens ? `${kTok(e.preloadTokens)} tokens (${pct(e.preloadShare)} of an iteration)` : 'none'}${e.skillFileTokens ? ` · skill files in the codex ${kTok(e.skillFileTokens)}` : ''}`,
+      `- Models: ${e.models.slice(0, 4).map((m) => `${m.model} ${pct(m.share)} (${kTok(m.tokPerIter)}/iter., largest ${kTok(m.maxIn)}, ${sec(m.thinkPerIter)})`).join(' · ')}`,
+      `- Reads: ${kTok(e.readTokensPerTurn)} tokens a turn from files · ${fmtN(e.rereadsPerWeek)} re-reads/wk · ${fmtN(e.readFailsPerWeek)} failed reads/wk`,
+      ...e.files.slice(0, 6).map((f) => `  - ${f.file}: ${fmtN(f.reads)} reads/wk, ${kTok(f.perRead)} tokens a read${f.rereads >= 1 ? `, ${fmtN(f.rereads)} re-reads` : ''}${f.fails >= 1 ? `, ${fmtN(f.fails)} failed ("${shortSig(f.example || '', 100)}")` : ''}`),
+      `- After a failed call (${fmtN(e.failuresPerWeek)}/wk): ${perc(e.failNext)}`,
+      `- Just before it: ${perc(e.failPrev)}`);
+    if (e.repeats.length) L.push(`- Identical calls repeated after they succeeded: ${e.repeats.slice(0, 4).map((r) => `${opName(r.tool, r.method)} ×${fmtN(r.n)}/wk`).join(' · ')}`);
+    if (e.polls.length) L.push(`- Status polling: ${e.polls.slice(0, 3).map((r) => `${opName(r.tool, r.method)} ${fmtN(r.n)} polls/wk, ${hrs(r.gapMs / 3600000)} waiting`).join(' · ')}`);
+  }
+  const iss = skillIssues(view, skill);
+  if (iss.length) {
+    L.push('', 'Top issues in this skill:');
+    iss.slice(0, 10).forEach((i, k) => {
+      const here = i.owners.find((o) => o.skill === skill)?.n || 0;
+      L.push(`${k + 1}. [${i.cls.label}, ${i.cls.fix} fix] ${shortSig(i.sig, 160)} — ${fmtN(here * view.period.weekFactor)}/wk here · ${hrs(i.lostHPerWeek)}/wk lost (all skills) · ${opName(i.tool, i.method)}${i.trend?.dir && i.trend.dir !== 'flat' ? ` · ${i.trend.dir}` : ''}`);
+      if (i.example) L.push(`   e.g. ${shortSig(String(i.example).replace(/\s+/g, ' '), 220)}`);
+    });
+  }
+  if (s?.ops?.length) L.push('', 'Tools it calls:', ...s.ops.slice(0, 10).map((o) => `- ${opName(o.tool, o.method)}: ${fmtN(o.calls)} calls, ${pct(o.fails / Math.max(1, o.calls), 1)} failing${o.hidden ? `, ${fmtN(o.hidden)} hidden timeouts` : ''}, ${hrs(o.lostH)}/wk lost`));
+  const ws = skillWaits(view, skill);
+  if (ws.length) L.push('', 'Wait times of its operations:', ...ws.map((w) => `- ${opName(w.tool, w.method)}${w.size ? ` (${w.size})` : ''}: p50 ${sec(w.p50)}, p99 ${sec(w.p99)}${w.hidden ? `, ${w.hidden} hidden timeouts` : ''}${w.recommend ? ` → wait ≤ ${sec(w.recommend.tau)} (~${hrs(w.recommend.savedHPerWeek)}/wk)` : ''}`));
+  const opps = view.opportunities.filter((o) => o.skill === skill);
+  if (opps.length) L.push('', 'Patterns worth a look (observations, not proven fixes):', ...opps.map((o) => `- ${o.title}`));
+  if (s?.chains?.length) L.push('', 'Most common work chains (per turn):', ...s.chains.slice(0, 4).map((c) => `- ${c.k} — ${fmtN(c.turns)} turns, ${pct(c.withErrors / Math.max(1, c.turns))} hit an error`));
+  L.push('', 'Counts, durations and tokens are measured from the agent\'s entries; per-week numbers are scaled from the days in the period.');
+  return L.join('\n');
+}
+
+// Printable: the skill's own panels (Skills and Efficiency), its issues with examples, the wait
+// times of its operations and the patterns seen in it, one after the other.
+export function renderSkillReport(view, fs, skill, meta) {
+  const act0 = { select() {}, open() {}, tab() {}, set() {}, sort() {}, toggleIn() {}, saveState() {}, close() {}, view: () => view };
+  // A panel's sections, without its buttons and link rows (the report's header has the links) and
+  // without the short issue list (the report lists every issue with its example below).
+  const bodyOf = (node) => {
+    const b = node?.querySelector('.insp-body');
+    b?.querySelectorAll('button, .section.links').forEach((x) => x.remove());
+    b?.querySelectorAll('.section').forEach((x) => { if (x.querySelector('h4')?.textContent === 'Top issues') x.remove(); });
+    return b ? [...b.children] : [];
+  };
+  const s = view.skills.find((x) => x.skill === skill);
+  const e = view.efficiency?.skills.find((x) => x.skill === skill);
+  const sec2 = (title, ...c) => h('section', { class: 'fl-rp-sec' }, h('h2', {}, title), ...c);
+  const iss = skillIssues(view, skill);
+  const ws = skillWaits(view, skill);
+  const opps = view.opportunities.filter((o) => o.skill === skill);
+  return h('div', { class: 'fl-skill-report' },
+    h('div', { class: 'fl-rp-head' }, h('h1', {}, `${nameOf(skill)}`), h('span', { class: 'dim', style: { color: 'var(--text-3)' } }, `Autopsy Fleet skill report · ${meta.periodText} · ${meta.audLabel} · generated ${new Date().toLocaleString()}`)),
+    h('div', { class: 'section links' },
+      meta.link ? h('a', { class: 'btn', href: meta.link, target: '_blank' }, icon('external'), 'Open in Fleet') : null,
+      skill !== NO_SKILL ? h('a', { class: 'btn', href: autopsyLink(skill, { days: view.period.days.length }), target: '_blank' }, icon('external'), 'Open runs in Autopsy') : null),
+    s ? sec2('The skill', ...bodyOf(skillDetail(s, view, fs, act0))) : null,
+    e ? sec2('Efficiency', ...bodyOf(effDetail(e, view, fs, act0))) : null,
+    iss.length ? sec2('Issues in this skill', h('div', {}, iss.map((i) => {
+      const here = i.owners.find((o) => o.skill === skill)?.n || 0;
+      return h('div', { class: 'fl-card', style: { marginBottom: '8px' } },
+        h('h3', {}, fixTag(i.cls.fix), ' ', i.sig),
+        h('p', { class: 'desc' }, `${i.cls.label} · ${opName(i.tool, i.method)} · ${fmtN(here * view.period.weekFactor)}/wk in ${nameOf(skill)} · ${fmtN(i.perWeek)}/wk in all skills · ${hrs(i.lostHPerWeek)}/wk lost · ${i.pattern?.label || ''}${i.trend?.dir && i.trend.dir !== 'flat' ? ` · ${i.trend.dir}` : ''}`),
+        i.example ? h('pre', { class: 'fl-example' }, String(i.example).slice(0, 900)) : null);
+    }))) : null,
+    ws.length ? sec2('Wait times of its operations', h('table', { class: 'fl' },
+      h('thead', {}, h('tr', {}, h('th', { class: 'l' }, 'Operation'), h('th', {}, 'p50'), h('th', {}, 'p99'), h('th', {}, 'Hidden timeouts'), h('th', { class: 'l' }, 'Recommendation'))),
+      h('tbody', {}, ws.map((w) => h('tr', { style: { cursor: 'default' } }, h('td', { class: 'l' }, opName(w.tool, w.method), w.size ? h('span', { class: 'dim' }, ` ${w.size}`) : null), h('td', {}, sec(w.p50)), h('td', {}, sec(w.p99)), h('td', {}, w.hidden ? fmtN(w.hidden) : '–'), h('td', { class: 'l' }, w.recommend ? `wait ≤ ${sec(w.recommend.tau)} (~${hrs(w.recommend.savedHPerWeek)}/wk)` : '–')))))) : null,
+    opps.length ? sec2('Patterns worth a look (observations)', h('div', { class: 'fl-cols' }, opps.map((o) => oppCard(o, view, fs, act0, { full: true })))) : null);
 }
