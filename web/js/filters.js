@@ -5,6 +5,9 @@
 // expectedTypes: a wixel-ads run that only made an image hasn't made its video).
 export const hasAd = (r) => (Array.isArray(r.outputs) ? r.outputs.length > 0 : Boolean(r.adAssetId || r.thumbnail));
 export const hasOutput = hasAd;
+// A paid Wixel plan right now (server/runs.js planOf): anything but free, former or unknown.
+export const paying = (r) => Boolean(r.plan) && !['free', 'former'].includes(r.plan);
+export const PLAN_LABEL = { basic: 'Basic', pro: 'Pro', max: 'Max', 'top-up': 'Top-Up', paying: 'Paying' };
 // It "tried" when it called something that makes an asset: a media job, an image tool, or a write.
 const MAKERS = new Set(['generate_image', 'edit_image', 'convert_image_format', 'write']);
 export const attempted = (r) => r.generations > 0 || Boolean(r.steps?.some((x) => MAKERS.has(x[0]) && x[3] > 0));
@@ -144,6 +147,20 @@ export const FACETS = [
       { value: 'real', label: 'Real users', test: (r) => r.userType === 'real' },
       { value: 'employee', label: 'Wix employees', test: (r) => r.userType === 'employee' },
       { value: 'wixel-team', label: 'Wixel team', test: (r) => r.userType === 'wixel-team' },
+    ],
+  },
+  // Wixel's paid plans per account (today's plan, not the one at the time of the run).
+  {
+    key: 'plan',
+    label: 'Plan',
+    options: [
+      { value: 'paying', label: 'Paying (any plan)', test: paying },
+      { value: 'basic', label: 'Basic', test: (r) => r.plan === 'basic' },
+      { value: 'pro', label: 'Pro', test: (r) => r.plan === 'pro' },
+      { value: 'max', label: 'Max', test: (r) => r.plan === 'max' },
+      { value: 'top-up', label: 'Top-Up', test: (r) => r.plan === 'top-up' },
+      { value: 'former', label: 'Used to pay', test: (r) => r.plan === 'former' },
+      { value: 'free', label: 'Free', test: (r) => r.plan === 'free' },
     ],
   },
   {
