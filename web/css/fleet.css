@@ -211,3 +211,10 @@ body.fl-report .fl-body { overflow: visible; padding: 18px 22px; }
 .fl-stack i { display: block; height: 100%; }
 .fl-find .t { display: block; -webkit-line-clamp: unset; overflow: visible; }
 table.fl td.fl-wrap { white-space: normal; overflow-wrap: anywhere; max-width: 340px; }
+/* A shared skill's report: examples wrap; nothing interactive on paper. */
+.fl-example { margin: 6px 0 0; padding: 7px 9px; border-radius: 5px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-2); font: calc(11px * var(--fs)) / 1.45 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+body.fl-report .fl-skill-report .section { padding: 6px 0; }
+body.fl-report .fl-skill-report table.fl td.fl-wrap { max-width: 520px; }
+.fl-rp-sec > h2, .fl-skill-report .section > h4 { break-after: avoid; }
+.fl-skill-report .fl-card { break-inside: avoid; }
+.fl-skill-report .fl-kv, .fl-skill-report .fl-kv div { break-inside: avoid; }
