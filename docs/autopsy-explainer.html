@@ -1,0 +1,1230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Autopsy, explained</title>
+<meta name="description" content="What Autopsy is, what it shows, and how everyone working on Wixel can use it: runs, outputs, failures, wasted time, what the agent does, what users want, Fleet and sharing.">
+<style>
+:root{
+  --bg:#f5f6fa; --bg2:#eceef5; --surface:#ffffff; --surface2:#f7f8fc; --line:#e1e4ee; --line2:#d3d7e4;
+  --text:#141823; --muted:#5b6275; --faint:#8a90a2;
+  --accent:#6a5cff; --accent2:#00a3d9; --accent-soft:rgba(106,92,255,.10);
+  --green:#12a56b; --amber:#d98a00; --red:#e0384b; --pink:#d4489c; --cyan:#0aa6c9; --blue:#3a7bff; --violet:#8b5cf6; --slate:#7b8296;
+  --shadow:0 1px 2px rgba(20,24,35,.05),0 8px 28px rgba(20,24,35,.06);
+  --hero1:#ece9ff; --hero2:#e3f6ff;
+  --code:#f0f1f7;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0b0d13; --bg2:#10131b; --surface:#141822; --surface2:#191e2a; --line:#242a38; --line2:#2f3647;
+    --text:#e9ecf4; --muted:#a3abbf; --faint:#727a8f;
+    --accent:#8d80ff; --accent2:#3fd0ff; --accent-soft:rgba(141,128,255,.14);
+    --green:#3ddc97; --amber:#ffb547; --red:#ff5d6c; --pink:#ff7ac6; --cyan:#3fd0ff; --blue:#6aa0ff; --violet:#a78bfa; --slate:#8a93a8;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+    --hero1:#1b1740; --hero2:#0c2633;
+    --code:#1c2130;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0b0d13; --bg2:#10131b; --surface:#141822; --surface2:#191e2a; --line:#242a38; --line2:#2f3647;
+  --text:#e9ecf4; --muted:#a3abbf; --faint:#727a8f;
+  --accent:#8d80ff; --accent2:#3fd0ff; --accent-soft:rgba(141,128,255,.14);
+  --green:#3ddc97; --amber:#ffb547; --red:#ff5d6c; --pink:#ff7ac6; --cyan:#3fd0ff; --blue:#6aa0ff; --violet:#a78bfa; --slate:#8a93a8;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 10px 30px rgba(0,0,0,.35);
+  --hero1:#1b1740; --hero2:#0c2633;
+  --code:#1c2130;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:72px}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code,kbd,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.86em}
+code{background:var(--code);padding:.1em .4em;border-radius:5px}
+kbd{display:inline-block;min-width:1.6em;text-align:center;padding:.05em .45em;border:1px solid var(--line2);border-bottom-width:2px;border-radius:6px;background:var(--surface);color:var(--text);font-size:.8em;line-height:1.5}
+h1,h2,h3,h4{line-height:1.2;margin:0 0 .5em;letter-spacing:-.01em}
+h2{font-size:clamp(1.6rem,3.2vw,2.2rem)}
+h3{font-size:1.15rem}
+p{margin:0 0 1em}
+ul{margin:0 0 1em;padding-left:1.2em}
+li{margin:.25em 0}
+.wrap{max-width:1180px;margin:0 auto;padding:0 16px}
+
+/* top bar */
+.top{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:saturate(1.4) blur(12px);-webkit-backdrop-filter:saturate(1.4) blur(12px);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;align-items:center;gap:14px;height:58px}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;color:var(--text)}
+.logo:hover{text-decoration:none}
+.logo-mark{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;color:#fff;font-size:15px;box-shadow:0 4px 14px color-mix(in srgb,var(--accent) 40%,transparent)}
+.topnav{display:flex;gap:2px;margin-left:auto;overflow-x:auto;scrollbar-width:none}
+.topnav::-webkit-scrollbar{display:none}
+.topnav a{color:var(--muted);font-size:.86rem;padding:6px 10px;border-radius:8px;white-space:nowrap}
+.topnav a:hover,.topnav a.on{color:var(--text);background:var(--accent-soft);text-decoration:none}
+.iconbtn{border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:9px;height:34px;min-width:34px;display:grid;place-items:center;cursor:pointer;font-size:15px}
+.iconbtn:hover{border-color:var(--accent)}
+.menu-btn{display:none}
+@media (max-width:980px){
+  .topnav{position:fixed;top:58px;left:0;right:0;flex-direction:column;background:var(--surface);border-bottom:1px solid var(--line);padding:8px 16px 14px;display:none;box-shadow:var(--shadow);max-height:calc(100vh - 58px);overflow:auto}
+  .topnav.open{display:flex}
+  .menu-btn{display:grid;margin-left:auto}
+}
+
+/* hero */
+.hero{position:relative;overflow:hidden;background:radial-gradient(1200px 500px at 15% -10%,var(--hero1),transparent 60%),radial-gradient(900px 500px at 95% 10%,var(--hero2),transparent 60%);border-bottom:1px solid var(--line)}
+.hero .wrap{padding-top:64px;padding-bottom:56px}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:.8rem;font-weight:600;color:var(--accent);background:var(--accent-soft);padding:5px 12px;border-radius:99px;margin-bottom:18px}
+.hero h1{font-size:clamp(2.3rem,6vw,4rem);letter-spacing:-.03em;margin-bottom:.3em}
+.grad{background:linear-gradient(100deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.lead{font-size:clamp(1.05rem,2vw,1.28rem);color:var(--muted);max-width:760px}
+.cta{display:flex;flex-wrap:wrap;gap:10px;margin:26px 0 36px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:10px 16px;border-radius:11px;font-weight:600;font-size:.95rem;border:1px solid var(--line2);background:var(--surface);color:var(--text);cursor:pointer}
+.btn:hover{text-decoration:none;border-color:var(--accent)}
+.btn.primary{background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 60%,var(--accent2)));color:#fff;border:0;box-shadow:0 6px 20px color-mix(in srgb,var(--accent) 35%,transparent)}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+@media (max-width:780px){.stats{grid-template-columns:repeat(2,1fr)}}
+.stat{background:color-mix(in srgb,var(--surface) 85%,transparent);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.stat b{display:block;font-size:1.6rem;letter-spacing:-.02em}
+.stat span{font-size:.82rem;color:var(--muted)}
+.footnote{font-size:.78rem;color:var(--faint);margin-top:10px}
+
+/* sections */
+section{padding:72px 0;border-bottom:1px solid var(--line)}
+section:nth-of-type(even){background:var(--bg2)}
+.sec-head{max-width:820px;margin-bottom:28px}
+.kicker{font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:var(--accent);margin-bottom:8px}
+.sec-head p{color:var(--muted);font-size:1.06rem}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+@media (max-width:900px){.grid3,.grid4{grid-template-columns:1fr 1fr}}
+@media (max-width:640px){.grid2,.grid3,.grid4{grid-template-columns:1fr}}
+.grid2>*,.grid3>*,.grid4>*,.facets>*,.step>*{min-width:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:var(--shadow);min-width:0}
+.card h3{display:flex;align-items:center;gap:10px}
+.card p:last-child,.card ul:last-child{margin-bottom:0}
+.card .muted,.muted{color:var(--muted)}
+.ico{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;font-size:18px;flex:none;background:var(--accent-soft)}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:.74rem;font-weight:600;padding:2px 9px;border-radius:99px;background:var(--surface2);border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.pill.g{color:var(--green);border-color:color-mix(in srgb,var(--green) 35%,transparent);background:color-mix(in srgb,var(--green) 10%,transparent)}
+.pill.r{color:var(--red);border-color:color-mix(in srgb,var(--red) 35%,transparent);background:color-mix(in srgb,var(--red) 10%,transparent)}
+.pill.a{color:var(--amber);border-color:color-mix(in srgb,var(--amber) 35%,transparent);background:color-mix(in srgb,var(--amber) 10%,transparent)}
+.pill.v{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 35%,transparent);background:var(--accent-soft)}
+.pill.c{color:var(--cyan);border-color:color-mix(in srgb,var(--cyan) 35%,transparent);background:color-mix(in srgb,var(--cyan) 10%,transparent)}
+.callout{border-left:3px solid var(--accent);background:var(--accent-soft);padding:12px 16px;border-radius:0 12px 12px 0;margin:16px 0;color:var(--text)}
+.callout.warn{border-color:var(--amber);background:color-mix(in srgb,var(--amber) 10%,transparent)}
+.callout.ok{border-color:var(--green);background:color-mix(in srgb,var(--green) 10%,transparent)}
+.demo-label{font-size:.72rem;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);margin:0 0 10px;display:flex;align-items:center;gap:8px}
+.demo-label::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px color-mix(in srgb,var(--green) 22%,transparent)}
+
+/* tabs */
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.tab{border:1px solid var(--line);background:var(--surface);color:var(--muted);padding:7px 13px;border-radius:10px;font-weight:600;font-size:.88rem;cursor:pointer;display:inline-flex;align-items:center;gap:7px}
+.tab:hover{color:var(--text);border-color:var(--line2)}
+.tab.on{color:#fff;background:var(--accent);border-color:var(--accent)}
+.tab kbd{background:transparent;color:inherit;border-color:currentColor;opacity:.7}
+.pane{display:none}
+.pane.on{display:block;animation:fade .25s ease}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* levels */
+.levels{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;position:relative}
+@media (max-width:900px){.levels{grid-template-columns:1fr 1fr}}
+@media (max-width:540px){.levels{grid-template-columns:1fr}}
+.level{cursor:pointer;transition:transform .15s,border-color .15s}
+.level:hover{transform:translateY(-2px);border-color:var(--accent)}
+.level .n{font-size:.75rem;font-weight:700;color:var(--accent);letter-spacing:.08em}
+.level.on{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft),var(--shadow)}
+.level-detail{margin-top:16px}
+
+/* app frame mock */
+.frame{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);overflow:hidden}
+.frame-bar{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--surface2);flex-wrap:wrap}
+.dots{display:flex;gap:6px}
+.dots i{width:10px;height:10px;border-radius:50%;background:var(--line2);display:block}
+.dots i:nth-child(1){background:#ff5f57}.dots i:nth-child(2){background:#febc2e}.dots i:nth-child(3){background:#28c840}
+.fake-input{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:4px 10px;font-size:.8rem;color:var(--muted);display:inline-flex;gap:6px;align-items:center}
+.frame-body{padding:14px}
+
+/* run cards */
+.runs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.run{position:relative;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface);cursor:pointer;transition:transform .15s,box-shadow .15s}
+.run:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+.run.fail{border-top:3px solid var(--red)}
+.thumb{aspect-ratio:9/12;position:relative;display:grid;place-items:center;overflow:hidden}
+.thumb .art{position:absolute;inset:0}
+.thumb .badge{position:absolute;top:8px;left:8px;font-size:.66rem;font-weight:700;padding:2px 7px;border-radius:6px;background:rgba(0,0,0,.55);color:#fff;letter-spacing:.03em}
+.thumb .count{position:absolute;bottom:16px;right:8px;font-size:.66rem;padding:2px 7px;border-radius:6px;background:rgba(0,0,0,.45);color:#fff}
+.thumb .play{position:absolute;left:8px;right:8px;bottom:8px;height:3px;border-radius:3px;background:rgba(255,255,255,.3);overflow:hidden}
+.thumb .play i{display:block;height:100%;width:0;background:#fff}
+.run:hover .thumb .play i{animation:play 3s linear infinite}
+@keyframes play{to{width:100%}}
+.thumb .why{position:relative;color:#fff;font-size:.78rem;overflow-wrap:anywhere;text-align:center;padding:10px;font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,.4)}
+.meta{padding:8px 10px;font-size:.74rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}
+.meta b{color:var(--text);font-weight:600}
+.sig{display:inline-flex;gap:4px}
+.utype{font-size:.66rem;font-weight:700;padding:1px 6px;border-radius:5px;background:var(--surface2);border:1px solid var(--line);color:var(--muted)}
+.utype.plan{color:var(--amber);border-color:color-mix(in srgb,var(--amber) 40%,transparent)}
+
+/* inspect drawer */
+.inspect{margin-top:16px;border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden}
+.inspect-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.inspect-body{padding:14px}
+.kv{display:grid;grid-template-columns:140px 1fr;gap:6px 14px;font-size:.88rem}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0}
+@media (max-width:540px){.kv{grid-template-columns:1fr}.kv dt{margin-top:6px}}
+
+/* waterfall */
+.wf{font-size:.78rem}
+.wf-row{display:grid;grid-template-columns:150px 1fr;gap:10px;align-items:center;padding:3px 0}
+.wf-row .lbl{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wf-track{position:relative;height:16px;background:var(--surface2);border-radius:4px}
+.wf-bar{position:absolute;top:2px;height:12px;border-radius:3px;cursor:help}
+.wf-bar.fail{background:repeating-linear-gradient(45deg,var(--red),var(--red) 4px,color-mix(in srgb,var(--red) 60%,transparent) 4px,color-mix(in srgb,var(--red) 60%,transparent) 8px)}
+@media (max-width:540px){.wf-row{grid-template-columns:90px 1fr}}
+
+/* time split */
+.split{display:flex;height:34px;border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+.split div{height:100%;transition:flex-grow .4s ease;cursor:pointer;position:relative}
+.split div:hover{filter:brightness(1.15)}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:12px;font-size:.84rem}
+.legend span{display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
+.legend i{width:11px;height:11px;border-radius:3px;display:inline-block}
+.split-read{margin-top:10px;font-size:.92rem;min-height:1.6em}
+
+/* tables */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.86rem}
+th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:.74rem;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);font-weight:700;background:var(--surface2);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+tbody tr{transition:background .12s}
+tbody tr:hover{background:var(--accent-soft)}
+tr.clickable{cursor:pointer}
+
+/* bars */
+.hbar{display:grid;grid-template-columns:minmax(110px,170px) 1fr auto;gap:10px;align-items:center;font-size:.86rem;margin:6px 0}
+.hbar .t{height:10px;background:var(--surface2);border-radius:6px;overflow:hidden}
+.hbar .t i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.hbar .v{font-variant-numeric:tabular-nums;color:var(--muted);white-space:nowrap}
+
+/* turns demo */
+.turns{display:flex;flex-direction:column;gap:8px}
+.turn{display:grid;grid-template-columns:34px 1fr auto;gap:12px;align-items:center;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);transition:opacity .25s,border-color .25s}
+.turn .tn{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-weight:700;font-size:.8rem;background:var(--surface2)}
+.turn.counted{border-color:color-mix(in srgb,var(--green) 55%,transparent)}
+.turn.counted .tn{background:color-mix(in srgb,var(--green) 18%,transparent);color:var(--green)}
+.turn.out{opacity:.45}
+.turn small{color:var(--muted);display:block}
+.toggle{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
+.toggle button{border:0;background:transparent;color:var(--muted);padding:7px 12px;font-weight:600;cursor:pointer;font-size:.85rem}
+.toggle button.on{background:var(--accent);color:#fff}
+
+/* filters demo */
+.facets{display:grid;grid-template-columns:260px 1fr;gap:16px}
+@media (max-width:760px){.facets{grid-template-columns:1fr}}
+.facet{margin-bottom:12px}
+.facet h4{font-size:.74rem;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);color:var(--text);padding:4px 10px;border-radius:99px;font-size:.8rem;margin:0 6px 6px 0;cursor:pointer;user-select:none}
+.chip .c{color:var(--faint);font-variant-numeric:tabular-nums}
+.chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.chip.on .c{color:rgba(255,255,255,.8)}
+.chip.zero{opacity:.4}
+.result-list{display:flex;flex-direction:column;gap:6px}
+.rrow{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:.84rem}
+.rrow .dot{width:9px;height:9px;border-radius:50%}
+.active-chips{display:flex;flex-wrap:wrap;gap:6px;min-height:28px;margin-bottom:10px;align-items:center}
+.achip{background:var(--accent-soft);color:var(--accent);border-radius:99px;padding:3px 10px;font-size:.78rem;font-weight:600;cursor:pointer}
+
+/* graph mock */
+.graph{position:relative;min-height:260px}
+.graph svg{width:100%;height:auto;display:block}
+.node rect{fill:var(--surface);stroke:var(--line2);stroke-width:1.2}
+.node.crit rect{stroke:var(--accent);stroke-width:2}
+.node.fail rect{stroke:var(--red);stroke-width:2}
+.node.skip rect{stroke-dasharray:4 3}
+.node text{fill:var(--text);font-size:11px;font-family:inherit}
+.node .sub{fill:var(--muted);font-size:9.5px}
+.node{cursor:pointer}
+.node:hover rect{stroke:var(--accent2)}
+.edge{stroke:var(--line2);stroke-width:1.5;fill:none}
+.edge.crit{stroke:var(--accent);stroke-width:2.2}
+
+/* wait chart */
+.chart svg{width:100%;height:auto;display:block}
+.range{width:100%;accent-color:var(--accent)}
+.readout{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px}
+@media (max-width:540px){.readout{grid-template-columns:1fr}}
+.readout div{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:.82rem;color:var(--muted)}
+.readout b{display:block;color:var(--text);font-size:1.1rem}
+
+/* fleet */
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+@media (max-width:760px){.tiles{grid-template-columns:repeat(2,1fr)}}
+.tile{background:var(--surface2);border:1px solid var(--line);border-radius:12px;padding:12px}
+.tile b{display:block;font-size:1.3rem;letter-spacing:-.02em}
+.tile span{font-size:.76rem;color:var(--muted)}
+.tile em{font-style:normal;font-size:.72rem;font-weight:700}
+.up{color:var(--red)}.down{color:var(--green)}
+
+/* steps */
+.steps{counter-reset:s;display:grid;gap:12px}
+.step{display:grid;grid-template-columns:40px 1fr;gap:14px;align-items:start}
+.step::before{counter-increment:s;content:counter(s);width:36px;height:36px;border-radius:50%;display:grid;place-items:center;font-weight:700;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
+.step h4{margin:.35em 0 .2em}
+.step p{margin:0;color:var(--muted)}
+pre{background:var(--code);border:1px solid var(--line);border-radius:12px;padding:14px;overflow-x:auto;font-size:.84rem;margin:0 0 1em}
+pre code{background:transparent;padding:0}
+
+/* share mock */
+.share-menu{border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:6px;box-shadow:var(--shadow);max-width:420px}
+.share-item{display:grid;grid-template-columns:30px 1fr;gap:10px;padding:9px 10px;border-radius:9px;cursor:pointer;align-items:center}
+.share-item:hover{background:var(--accent-soft)}
+.share-item b{display:block;font-size:.9rem}
+.share-item span{font-size:.78rem;color:var(--muted)}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:.88rem;opacity:0;pointer-events:none;transition:all .25s;z-index:100;max-width:calc(100vw - 32px)}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* accordion */
+details{border:1px solid var(--line);border-radius:12px;background:var(--surface);margin-bottom:10px;overflow:hidden}
+summary{cursor:pointer;padding:14px 16px;font-weight:600;list-style:none;display:flex;justify-content:space-between;gap:10px}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";color:var(--accent);font-size:1.2rem;line-height:1}
+details[open] summary::after{content:"–"}
+details .body{padding:0 16px 14px;color:var(--muted)}
+details .body p:last-child{margin-bottom:0}
+
+/* glossary */
+.gloss{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.gloss div{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:.88rem}
+.gloss b{display:block;margin-bottom:2px}
+.gloss span{color:var(--muted)}
+
+/* shortcuts overlay */
+.overlay{position:fixed;inset:0;background:rgba(5,7,12,.55);display:none;place-items:center;z-index:90;padding:16px}
+.overlay.on{display:grid}
+.overlay .card{max-width:620px;width:100%;max-height:85vh;overflow:auto}
+.sc{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;font-size:.88rem}
+@media (max-width:540px){.sc{grid-template-columns:1fr}}
+.sc div{display:flex;justify-content:space-between;gap:10px;padding:4px 0;border-bottom:1px dashed var(--line)}
+
+footer{padding:40px 0 60px;color:var(--muted);font-size:.88rem}
+.flow{display:flex;align-items:stretch;gap:10px;flex-wrap:wrap}
+.flow .card{flex:1 1 180px}
+.arrow{align-self:center;color:var(--faint);font-size:1.4rem}
+@media (max-width:640px){.arrow{display:none}}
+.reason{display:grid;grid-template-columns:28px 1fr;gap:10px;padding:8px 0;border-bottom:1px dashed var(--line);font-size:.9rem}
+.reason:last-child{border-bottom:0}
+.reason .rn{width:24px;height:24px;border-radius:7px;background:var(--surface2);display:grid;place-items:center;font-size:.75rem;font-weight:700;color:var(--muted)}
+.quote{border-left:3px solid var(--pink);padding:6px 12px;margin:8px 0;font-style:italic;color:var(--text);background:color-mix(in srgb,var(--pink) 7%,transparent);border-radius:0 8px 8px 0;font-size:.9rem}
+.mini{font-size:.8rem;color:var(--faint)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="#top"><span class="logo-mark">✚</span> Autopsy</a>
+    <nav class="topnav" id="topnav">
+      <a href="#what">What it is</a>
+      <a href="#who">Who it's for</a>
+      <a href="#outputs">See outputs</a>
+      <a href="#wrong">What's wrong</a>
+      <a href="#time">Wasted time</a>
+      <a href="#agent">The agent</a>
+      <a href="#users">Users</a>
+      <a href="#filters">Filters</a>
+      <a href="#insights">Insights</a>
+      <a href="#fleet">Fleet</a>
+      <a href="#sharing">Sharing</a>
+      <a href="#logic">Logic</a>
+      <a href="#start">Get started</a>
+    </nav>
+    <button class="iconbtn menu-btn" id="menuBtn" aria-label="Menu">☰</button>
+    <button class="iconbtn" id="keysBtn" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">⌨</button>
+    <button class="iconbtn" id="themeBtn" title="Switch theme" aria-label="Switch theme">◐</button>
+  </div>
+</header>
+
+<div class="hero" id="top">
+  <div class="wrap">
+    <div class="eyebrow">For everyone working on Wixel</div>
+    <h1>Take a Wixel skill's runs <span class="grad">apart</span>.</h1>
+    <p class="lead">Autopsy shows what every run of every Wixel agent skill actually made, what went wrong, where the time went and what the user wanted, from the grid of runs down to a single node inside a Genix graph. <b>Fleet</b> then puts every major skill side by side, so we fix what costs the most first.</p>
+    <div class="cta">
+      <a class="btn primary" href="#what">Take the tour →</a>
+      <a class="btn" href="#fleet">Jump to Fleet</a>
+      <a class="btn" href="#start">How to open it</a>
+    </div>
+    <div class="stats">
+      <div class="stat"><b data-count="71081">71,081</b><span>sessions in one week, every one of them inspectable</span></div>
+      <div class="stat"><b data-count="699104">699,104</b><span>tool calls measured that week</span></div>
+      <div class="stat"><b>523 h</b><span>a week lost to failing calls, measured</span></div>
+      <div class="stat"><b>33%</b><span>of sessions that produced something kept it</span></div>
+    </div>
+    <p class="footnote">Real users, Oct 1–7, 2026, from Fleet's daily rollups. Every number on this page comes from the agent's own entries unless it says "estimate". Run cards, requests and quotes on this page are made up for illustration; the app shows the real ones.</p>
+  </div>
+</div>
+
+<!-- WHAT -->
+<section id="what">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">What it is</div>
+      <h2>One place to see what the agent really did</h2>
+      <p>The Wixel admin page shows one session at a time, as raw entries. Autopsy reads the same data and turns it into something you can scan: hundreds of runs as a grid of their actual outputs, each one opening into a full story of the run. It's built in levels. Click one.</p>
+    </div>
+    <div class="levels" id="levels">
+      <div class="card level on" data-l="0"><div class="n">LEVEL 1</div><h3>The grid</h3><p class="muted">Every run of a skill as a card showing what it made. Hover to play.</p></div>
+      <div class="card level" data-l="1"><div class="n">LEVEL 2</div><h3>The run</h3><p class="muted">The request, every step and its timing, errors, mood, scenes, brand, media.</p></div>
+      <div class="card level" data-l="2"><div class="n">LEVEL 3</div><h3>The graph run</h3><p class="muted">The Genix graph behind one generation: every node, its cost, time and failure cause.</p></div>
+      <div class="card level" data-l="3"><div class="n">ACROSS SKILLS</div><h3>Fleet</h3><p class="muted">Every major skill at once: what fails, what it costs, and the proven fixes.</p></div>
+    </div>
+    <div class="card level-detail" id="levelDetail"></div>
+  </div>
+</section>
+
+<!-- WHO -->
+<section id="who">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Who it's for</div>
+      <h2>Something for every role on Wixel</h2>
+      <p>Different people ask different questions about the agent. Pick yours.</p>
+    </div>
+    <div class="tabs" id="roleTabs">
+      <button class="tab on" data-p="r-skill">Skill authors</button>
+      <button class="tab" data-p="r-pm">Product managers</button>
+      <button class="tab" data-p="r-platform">Platform & tool owners</button>
+      <button class="tab" data-p="r-design">Design & content</button>
+      <button class="tab" data-p="r-qa">QA & support</button>
+      <button class="tab" data-p="r-lead">Leadership</button>
+    </div>
+    <div class="pane on" id="r-skill"><div class="grid2">
+      <div class="card"><h3><span class="ico">✍️</span>See your skill through users' eyes</h3><ul>
+        <li>Every run of your skill, with what it produced, in one grid. No more opening sessions one by one.</li>
+        <li>Turn by turn: only the turns that belong to your skill count, so another skill's logo or slideshow doesn't pollute your numbers.</li>
+        <li>Which skill version did better or worse, straight from Insights.</li></ul></div>
+      <div class="card"><h3><span class="ico">🛠️</span>Fix what's proven</h3><ul>
+        <li>Fleet's <b>Fix per skill</b>: the exact lines in your skill that mention the failing tool, with GitHub links.</li>
+        <li>A ready-to-paste Claude Code prompt limited to your skill's files, with a redacted failing call and an eval case to add.</li>
+        <li>Missing resource files traced in the codex (the top issue this week: 23 h lost to one missing <code>resources/video/…</code> file).</li></ul></div>
+    </div></div>
+    <div class="pane" id="r-pm"><div class="grid2">
+      <div class="card"><h3><span class="ico">🎯</span>Know what users want</h3><ul>
+        <li>The user's own words for every run, follow-ups included, mood per turn, thumbs and their tags.</li>
+        <li>"Asks that end badly": what people ask for most and how often they keep the result (e.g. "generate logo": 11.7k a week, 25% kept).</li>
+        <li>Paying users (Basic / Pro / Max / Top-Up) vs free, as a filter on every view.</li></ul></div>
+      <div class="card"><h3><span class="ico">📈</span>Watch the funnel</h3><ul>
+        <li>Of the runs that tried, how many made the output, how many were downloaded or published.</li>
+        <li>Why runs made nothing: the credit wall, a plan never approved, a failure, the user stopping.</li>
+        <li>What changed after each deploy, with the codex version that took over that day.</li></ul></div>
+    </div></div>
+    <div class="pane" id="r-platform"><div class="grid2">
+      <div class="card"><h3><span class="ico">⚙️</span>Where the platform hurts</h3><ul>
+        <li>Issues ranked by measured time lost, grouped by owner (platform, model catalog, tool owner, skill author).</li>
+        <li>Spikes (an incident, likely upstream) vs chronic every-day failures, and trends against last period.</li>
+        <li>Hidden timeouts: tools that report success after 15 minutes while the job is still running.</li></ul></div>
+      <div class="card"><h3><span class="ico">⏱️</span>Real wait times</h3><ul>
+        <li>p50 / p90 / p99 per tool, method, model and input size, across all skills.</li>
+        <li>A recommended wait per operation (a labelled model estimate) and how often a retry works.</li>
+        <li>Tokens per iteration, context size, preloaded skill size, per agent model.</li></ul></div>
+    </div></div>
+    <div class="pane" id="r-design"><div class="grid2">
+      <div class="card"><h3><span class="ico">🎨</span>Look at the work</h3><ul>
+        <li>Videos play exactly as the product's own player plays them: text overlays, music, timing.</li>
+        <li>Stories, logos, images, decks and docs as galleries, page by page.</li>
+        <li>Brand check: the scraped site's colours and fonts next to what the ad used ("2 of 4 site colours… 0 of 5 fonts").</li></ul></div>
+      <div class="card"><h3><span class="ico">🎬</span>How each shot was made</h3><ul>
+        <li>Scenes: each shot next to the chain that made it (image → edit → video → voice merge), with every prompt and model.</li>
+        <li>Generations per kept output: logo-create takes 6.0 generations for each logo kept, vs a fleet median of 3.2.</li></ul></div>
+    </div></div>
+    <div class="pane" id="r-qa"><div class="grid2">
+      <div class="card"><h3><span class="ico">🔎</span>Find the exact run</h3><ul>
+        <li>User mode: every session one person ran, across all skills, from a user id, session id or admin link.</li>
+        <li>Filter to "tool errors" or "failed turn" and see every affected run with its first error on the card.</li></ul></div>
+      <div class="card"><h3><span class="ico">📤</span>Hand it over in one click</h3><ul>
+        <li>Share a run as a Wixel admin link, the output's public link, a text summary, an email or a full PDF report.</li>
+        <li>End-user emails are never included in shared links or summaries.</li></ul></div>
+    </div></div>
+    <div class="pane" id="r-lead"><div class="grid2">
+      <div class="card"><h3><span class="ico">🧭</span>The state of the agent in one screen</h3><ul>
+        <li>Fleet Overview: sessions, failure rate, time lost a week, frustration, outputs kept, and the biggest problems by measured cost.</li>
+        <li>A PDF digest of any period, or one skill's full report, to send around.</li></ul></div>
+      <div class="card"><h3><span class="ico">✅</span>Numbers you can trust</h3><ul>
+        <li>Measured is measured; estimates are labelled as estimates, with how they were computed.</li>
+        <li>A fix is suggested only where the cause is proven. Everything else says "No proven fix" and what would prove one.</li></ul></div>
+    </div></div>
+  </div>
+</section>
+
+<!-- OUTPUTS -->
+<section id="outputs">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Visually inspect assets</div>
+      <h2>See what every run made, then open it</h2>
+      <p>Not every skill makes video. Autopsy learns what a skill makes (videos, stories, logos, decks…) and shows each run's own output: never an asset that just happened to sit in a shared project. Hover a card to preview it. Click one to open the run.</p>
+    </div>
+    <div class="frame">
+      <div class="frame-bar">
+        <div class="dots"><i></i><i></i><i></i></div>
+        <span class="fake-input">🔍 wixel-ads <kbd>⌘K</kbd></span>
+        <span class="fake-input">Last 7 days</span>
+        <span class="fake-input">Refresh <kbd>R</kbd></span>
+        <span class="pill v" style="margin-left:auto">Videos · 227</span>
+        <span class="pill">Tried, no video · 41</span>
+        <span class="pill">Never tried · 18</span>
+      </div>
+      <div class="frame-body">
+        <p class="demo-label">Try it: hover and click the cards</p>
+        <div class="runs" id="runCards"></div>
+        <div class="inspect" id="inspect" hidden>
+          <div class="inspect-head">
+            <div><b id="insTitle">Run</b> <span class="mini" id="insSub"></span></div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap"><span class="pill">Download <kbd>D</kbd></span><span class="pill">Share</span><button class="iconbtn" id="insClose" aria-label="Close">✕</button></div>
+          </div>
+          <div class="inspect-body">
+            <div class="tabs" id="insTabs">
+              <button class="tab on" data-p="i-ov"><kbd>1</kbd> Overview</button>
+              <button class="tab" data-p="i-tl"><kbd>2</kbd> Timeline</button>
+              <button class="tab" data-p="i-sc"><kbd>3</kbd> Scenes</button>
+              <button class="tab" data-p="i-br"><kbd>4</kbd> Brand & media</button>
+              <button class="tab" data-p="i-raw"><kbd>5</kbd> Raw</button>
+            </div>
+            <div class="pane on" id="i-ov"></div>
+            <div class="pane" id="i-tl"></div>
+            <div class="pane" id="i-sc"></div>
+            <div class="pane" id="i-br"></div>
+            <div class="pane" id="i-raw"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid3" style="margin-top:22px">
+      <div class="card"><h3><span class="ico">▶️</span>The exact player</h3><p class="muted">A video run opens a quick review copy at once while the product's own player loads hidden behind it, then takes over at the same moment. Text overlays, music and timing are exactly what the user saw. Stories play through the same player, page by page. <kbd>E</kbd> flips between the two, <kbd>C</kbd> captions, <kbd>~</kbd> full screen, <kbd>,</kbd> <kbd>.</kbd> frame steps.</p></div>
+      <div class="card"><h3><span class="ico">🖼️</span>Galleries for everything else</h3><p class="muted">Logos, images, icon sets, decks and docs open as a gallery: a large view, a strip of every output, and pages for decks and docs. Arrow keys step through. Card shapes follow the output: logos 1:1, slides 16:9, docs 3:4, video and stories 9:16.</p></div>
+      <div class="card"><h3><span class="ico">⬇️</span>Downloads that match</h3><p class="muted"><kbd>D</kbd> saves only an exact copy of what the user got: their own render or export when there is one; otherwise the product's player rendered frame by frame (videos and stories), the original image, or a PDF of the pages. Captions only when a person turned them on.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- WRONG -->
+<section id="wrong">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Learn what's wrong</div>
+      <h2>Every failure, down to its root cause</h2>
+      <p>A failed run has a red edge and its first error on the card. Hover the error icon for every failing step. A run that made nothing says why, in plain words, with the agent's own last message.</p>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h3><span class="ico">🧾</span>Why a run made nothing</h3>
+        <p class="muted">Checked in this order, so each run gets the most specific reason:</p>
+        <div class="reason"><span class="rn">1</span><div><b>Still working</b></div></div>
+        <div class="reason"><span class="rn">2</span><div><b>Not enough credits</b>: e.g. "Needs 88 · has 30 · over the 30/day plan limit". The agent checks the price and stops, usually without an out-of-funds event.</div></div>
+        <div class="reason"><span class="rn">3</span><div><b>Stopped by the user</b></div></div>
+        <div class="reason"><span class="rn">4</span><div><b>Failed</b>: with the failing step and message</div></div>
+        <div class="reason"><span class="rn">5</span><div><b>Waiting for the user</b>: a question or widget (a video plan, a brief) never answered</div></div>
+        <div class="reason"><span class="rn">6</span><div><b>Never finished</b></div></div>
+        <div class="reason"><span class="rn">7</span><div><b>Continued in another skill</b>, or <b>handed back to the main chat</b> (sub-agents)</div></div>
+        <div class="reason"><span class="rn">8</span><div><b>Ended without making anything</b>: the agent's last words, in any language</div></div>
+        <div class="callout">On Oct 6–7, 81% of wixel-ads-lite's empty runs stopped at the credit wall, two-thirds of them over the free plan's daily limit. In wixel-ads, most waited on a plan the user never approved.</div>
+      </div>
+      <div class="card">
+        <h3><span class="ico">🕸️</span>Inside the Genix graph</h3>
+        <p class="muted">"Open graph run" on any generation step draws its graph from Temporal: inputs on the left, outputs on the right. The critical path (the chain that set the end time) is highlighted; nodes that didn't run are dashed. Click a node.</p>
+        <p class="demo-label">Try it: click a node</p>
+        <div class="graph" id="graph"></div>
+        <div class="callout warn" id="nodeInfo" style="font-size:.88rem">Select a node to see its timing, cost, provider and failure cause.</div>
+      </div>
+    </div>
+    <div class="grid3" style="margin-top:18px">
+      <div class="card"><h3><span class="ico">🧯</span>The root cause, not the wrapper</h3><p class="muted">The gateway wraps most provider errors as <code>INVALID_ARGUMENT</code>. Autopsy follows the failure chain to the bottom, e.g. <code>MiniMax H3 Max does not accept settings</code>, even for a generation that only left a job id.</p></div>
+      <div class="card"><h3><span class="ico">🙁</span>Mood and feedback</h3><p class="muted">Sentiment per turn (neutral, positive, confused, frustrated), thumbs up/down and their tags, and the worst mood across turns on every card. Insights compare frustration with and without tool errors.</p></div>
+      <div class="card"><h3><span class="ico">🏷️</span>Errors in context</h3><p class="muted">Every failing step shows its arguments, its output and what the agent did next. In Insights, the failure that costs the most output is shown next to the runs it didn't hit.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- TIME -->
+<section id="time">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Learn when time is wasted</div>
+      <h2>Where a run's time goes</h2>
+      <p>One bar, from the first message to the end of the last counted turn. Every moment counts once: two videos generating at the same time are one stretch of video time. Waiting on the user and failed calls get their own colour, so it's obvious when a run is slow because of us and when because of them.</p>
+    </div>
+    <div class="card">
+      <p class="demo-label">Try it: pick a skill, hover the bar (illustrative split)</p>
+      <div class="tabs" id="splitTabs">
+        <button class="tab on" data-k="ads">An ad (wixel-ads)</button>
+        <button class="tab" data-k="story">A story</button>
+        <button class="tab" data-k="logo">A logo</button>
+        <button class="tab" data-k="deck">A deck</button>
+      </div>
+      <div class="split" id="split"></div>
+      <div class="legend" id="splitLegend"></div>
+      <div class="split-read" id="splitRead">&nbsp;</div>
+    </div>
+    <div class="grid3" style="margin-top:18px">
+      <div class="card"><h3><span class="ico">👻</span>Hidden timeouts</h3><p class="muted">Several tools (<code>generateMusic</code>, <code>BuildPresentation</code>, <code>Generate*Async</code>…) report success after ~15 minutes while the job is still running. Autopsy counts them as errors: 12 of 65 <code>generateMusic</code> calls on Oct 6–7 waited the full 15 minutes and came back with no file.</p></div>
+      <div class="card"><h3><span class="ico">⏳</span>Time lost, one stated rule</h3><p class="muted">Each failed call's own time, plus one recovery per run of consecutive failures: from the first failure until the next successful attempt of that operation started (else the turn's end). Measured, not guessed.</p></div>
+      <div class="card"><h3><span class="ico">🔁</span>Polling and repeats</h3><p class="muted">Fleet's Efficiency tab measures the time spent between status polls (stories-creation: 16 h a week) and identical calls repeated after they already succeeded (video-logo-animation repeats the same <code>read</code> ~7k times a week).</p></div>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <h3><span class="ico">📐</span>How long should the agent wait? <span class="pill a">model estimate</span></h3>
+      <p class="muted">For every operation Fleet looks at the measured durations and finds the cap τ that minimizes the expected time to a success: <code>E(τ) = E[min(T, τ)] ÷ P(T ≤ τ)</code>. Cap too short and good jobs get killed; too long and stuck jobs waste minutes. It never goes below 1.5× the p95 of successes, and it's labelled as an estimate because it assumes a restart is free (it costs credits).</p>
+      <p class="demo-label">Try it: drag the cap (synthetic durations shaped like generateMusic)</p>
+      <div class="chart" id="waitChart"></div>
+      <input class="range" type="range" id="tau" min="10" max="900" value="600" step="5" aria-label="Wait cap in seconds">
+      <div class="readout"><div>Cap τ<b id="tauV">–</b></div><div>Expected time to a success<b id="eV">–</b></div><div>Best cap on this data<b id="bestV">–</b></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- AGENT -->
+<section id="agent">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">What the agent is doing</div>
+      <h2>Every step, every model, every token</h2>
+      <p>The Timeline is a waterfall of every step in the run, with the agent's own thinking time on its own row. Fleet's Efficiency tab adds up the same thing across all runs: which models run each skill, how much context they drag along, what they read, and what they do around a failure.</p>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h3><span class="ico">🧠</span>A run's timeline</h3>
+        <p class="demo-label">Hover a bar</p>
+        <div class="wf" id="wf"></div>
+        <p class="mini" style="margin-top:10px">Idle gaps between turns are compressed; agent plumbing (read / write / list) can be hidden. Clicking a row shows the prompt, input and output media, arguments, output and error. Writing the result into the project gets its own colour, with a summary of how long the build took after the last generation.</p>
+      </div>
+      <div class="card">
+        <h3><span class="ico">🤖</span>Agent models this week</h3>
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Model</th><th class="num">Share</th><th class="num">Tokens in</th><th class="num">Out</th><th class="num">Time / iter.</th></tr></thead>
+          <tbody>
+            <tr><td>gpt-6-luna</td><td class="num">70%</td><td class="num">116k</td><td class="num">620</td><td class="num">5.7 s</td></tr>
+            <tr><td>gemini-3.8-flash</td><td class="num">24%</td><td class="num">138k</td><td class="num">420</td><td class="num">18.3 s</td></tr>
+            <tr><td>gpt-6.1-sol</td><td class="num">7%</td><td class="num">147k</td><td class="num">283</td><td class="num">8.7 s</td></tr>
+          </tbody></table></div>
+        <p class="mini" style="margin-top:8px">Per iteration, Oct 1–7, real users. Sub-agents run on claude-sonnet-5-5. Every iteration re-reads the whole context (typically 80–320k tokens, 85–97% cached) to write a few hundred tokens.</p>
+      </div>
+    </div>
+    <div class="grid4" style="margin-top:18px">
+      <div class="card"><h3 style="font-size:1rem">📦 Context</h3><p class="muted" style="font-size:.9rem">Tokens carried into every iteration, how much is cached, iterations per turn. video-regen carries 265k per iteration vs a median of 119k.</p></div>
+      <div class="card"><h3 style="font-size:1rem">📜 Preloaded skill</h3><p class="muted" style="font-size:.9rem">Since Sep 30 the platform puts the skill body into the first message: 4k–132k tokens. video-creation's alone is 131k, 61% of an iteration.</p></div>
+      <div class="card"><h3 style="font-size:1rem">📖 What it reads</h3><p class="muted" style="font-size:.9rem">Every read, grep and list per file, with tokens per read, failed reads and re-reads of the same section within a session.</p></div>
+      <div class="card"><h3 style="font-size:1rem">🧩 Around a failure</h3><p class="muted" style="font-size:.9rem">What came just before a failed call and right after: the same call again, changed arguments (most common), a lookup, asking the user, or giving up.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- USERS -->
+<section id="users">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">What users want</div>
+      <h2>The request, in the user's own words</h2>
+      <p>Every run starts from what the person typed, with injected context folded away, plus their follow-ups. Insights collects what people asked for across the skill, the quotes of unhappy users, and the funnel from asking to keeping.</p>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h3><span class="ico">💬</span>What a run's Overview shows</h3>
+        <div class="quote">"Make a 15-second ad for my bakery's autumn menu, warm colours, upbeat music"</div>
+        <div class="quote" style="border-color:var(--amber);background:color-mix(in srgb,var(--amber) 8%,transparent)">"the text is too small, and can the voice be female?"</div>
+        <p class="mini">(Illustrative.) Then outcome, models used (calls, time, cost), errors, mood by turn and scenes. Users' emails open <b>user mode</b>: everything that person ran, across all skills.</p>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px">
+          <span class="pill">Real</span><span class="pill a">Pro</span><span class="pill g">Downloaded</span><span class="pill r">Frustrated, turn 3</span><span class="pill">👍 "great music"</span>
+        </div>
+      </div>
+      <div class="card">
+        <h3><span class="ico">📉</span>Asks that end badly <span class="pill">Fleet, a week</span></h3>
+        <div id="asks"></div>
+        <p class="mini" style="margin-top:6px">Bar = share of results kept (downloaded). Asks are grouped across every skill that served them.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FILTERS -->
+<section id="filters">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Filtration</div>
+      <h2>Slice the runs any way you need</h2>
+      <p>Filters (<kbd>F</kbd>) are closed by default and every option shows its count. Groups with nothing to choose are hidden, and filters that would leave nothing are cleared with one note. Everything you set is saved and mirrored in the URL, so a link reopens the exact view.</p>
+    </div>
+    <div class="card">
+      <p class="demo-label">Try it: click chips to filter 24 sample runs</p>
+      <div class="facets">
+        <div id="facetBox"></div>
+        <div>
+          <div class="active-chips" id="activeChips"></div>
+          <div class="mini" id="resultCount" style="margin-bottom:8px"></div>
+          <div class="result-list" id="resultList"></div>
+        </div>
+      </div>
+    </div>
+    <div class="grid3" style="margin-top:18px">
+      <div class="card"><h3 style="font-size:1rem">Everything you can filter on</h3><p class="muted" style="font-size:.9rem">What the user did (downloaded, published, neither) · user type (Real, Employee, Team) · <b>plan</b> (Basic, Pro, Max, Top-Up, formerly paying, free) · how it went (frustrated, confused, thumbs) · problems (tool errors, failed turn, not enough credits) · why it made nothing · failed step · model · started from (chat, sub-agent, API) · skills in the session.</p></div>
+      <div class="card"><h3 style="font-size:1rem">Result switch</h3><p class="muted" style="font-size:.9rem">Above the grid: All / Made a video (or story, logo…) / Tried, no video / Never tried. "Tried" means a media job, an image tool or an asset write.</p></div>
+      <div class="card"><h3 style="font-size:1rem">Search, windows, users</h3><p class="muted" style="font-size:.9rem">Free-text search over requests and errors; rolling time windows (1h, 24h, 3d…); ⌘K switches skill or jumps to a user by id, session id or admin link.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- INSIGHTS -->
+<section id="insights">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Insights</div>
+      <h2>The skill as a whole, in plain words</h2>
+      <p>The Insights tab (<kbd>I</kbd>) is computed in your browser from the runs in view, so it follows the skill, window, filters and search, and costs nothing extra upstream. It leads with findings, each with its evidence and a click to the runs behind it.</p>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h3><span class="ico">💡</span>What the numbers say</h3>
+        <ul class="muted" style="font-size:.93rem">
+          <li>How often a run that tried made the output.</li>
+          <li>Who the runs that never tried are: sub-agents, the credit limit, one-message sessions.</li>
+          <li>The model that takes the most time, and the one that costs the most.</li>
+          <li>The failure that costs the most output: runs it hit vs the rest.</li>
+          <li>Frustration with vs without tool errors.</li>
+          <li>Runs that went 3+ messages with nothing made and no error (in a review of 18 such chats, about 7 in 10 were the request itself: beyond the skill, missing material, content policy).</li>
+          <li>Time to result, and whether a newer skill version does better or worse.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3><span class="ico">💸</span>Models: time and cost <span class="pill">illustrative</span></h3>
+        <p class="muted" style="font-size:.9rem">Every generation model by its price-list name, with time per call and cost per call. Costs come from the product's own list price per Genix graph; failed calls count as free.</p>
+        <div id="modelBars"></div>
+        <p class="mini" style="margin-top:8px">Then the funnel, top errors, mood and quotes, what users asked for, and "All the numbers": every tool, repeated requests, runs per day, skill versions (printed in full in the PDF).</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FLEET -->
+<section id="fleet">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Fleet</div>
+      <h2>Every major skill at once</h2>
+      <p>Fleet answers "what should we fix first?" across the whole agent. It reads every skill's day in one pass, turn by turn, and keeps small daily rollups: usage, timing, failure signatures, work chains, outcomes, models, reads and what happens around failures. Pick a period (Today, 1, 7, 14, 30 or 90 days) and whose sessions count (real users by default, everyone, or internal). Changes are compared to the previous period of the same length.</p>
+    </div>
+    <div class="frame">
+      <div class="frame-bar">
+        <div class="dots"><i></i><i></i><i></i></div>
+        <span class="fake-input">Last 7 days</span><span class="fake-input">Real users</span>
+        <span class="pill" style="margin-left:auto">Share</span>
+      </div>
+      <div class="frame-body">
+        <p class="demo-label">Try it: click the tabs (real numbers, Oct 1–7, 2026)</p>
+        <div class="tabs" id="fleetTabs">
+          <button class="tab on" data-p="f-ov"><kbd>O</kbd> Overview</button>
+          <button class="tab" data-p="f-is"><kbd>1</kbd> Issues</button>
+          <button class="tab" data-p="f-wt"><kbd>2</kbd> Wait times</button>
+          <button class="tab" data-p="f-pa"><kbd>3</kbd> Patterns</button>
+          <button class="tab" data-p="f-sk"><kbd>4</kbd> Skills</button>
+          <button class="tab" data-p="f-ef"><kbd>5</kbd> Efficiency</button>
+          <button class="tab" data-p="f-da"><kbd>6</kbd> Data</button>
+        </div>
+        <div class="pane on" id="f-ov">
+          <div class="tiles">
+            <div class="tile"><b>71,081</b><span>sessions</span></div>
+            <div class="tile"><b>4.3%</b><span>tool calls failing</span></div>
+            <div class="tile"><b>523 h</b><span>lost to failures / week</span></div>
+            <div class="tile"><b>198</b><span>hidden timeouts</span></div>
+            <div class="tile"><b>9.1%</b><span>frustrated turns</span></div>
+            <div class="tile"><b>4.6</b><span>model iterations / turn</span></div>
+            <div class="tile"><b>124k</b><span>input tokens / iteration</span></div>
+            <div class="tile"><b>33%</b><span>outputs kept</span></div>
+          </div>
+          <h4 style="margin-top:18px">Biggest problems, by measured time lost</h4>
+          <div id="bigProblems"></div>
+        </div>
+        <div class="pane" id="f-is">
+          <p class="muted" style="font-size:.9rem">One row per error signature × operation, across every skill it happens in. <b>Priority</b> = impact (time lost: failed calls + one recovery per run of failures + 10 min per session it ended + 5 min per user upset afterwards) × how fixable the class is × how concentrated, boosted when new or rising. Click a row.</p>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Issue</th><th>Kind</th><th>Owner</th><th>Pattern</th><th class="num">Lost / wk</th></tr></thead>
+            <tbody id="issueRows"></tbody></table></div>
+          <div class="callout" id="issueDetail" style="font-size:.9rem">Select an issue to see its detail.</div>
+        </div>
+        <div class="pane" id="f-wt">
+          <p class="muted" style="font-size:.9rem">Per tool · method · model · input size, across all skills: calls, failures, percentiles of successes, hidden timeouts and the cap they hit, how often a retry works. The recommendation is a labelled model estimate.</p>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Operation</th><th class="num">p50</th><th class="num">p99</th><th class="num">Hidden timeouts</th><th class="num">Wait at most</th></tr></thead>
+            <tbody>
+              <tr><td><code>generateMusic</code> (&gt;12 s)</td><td class="num">24.5 s</td><td class="num">2.9 min</td><td class="num">27 at 15 min</td><td class="num">1.0 min</td></tr>
+              <tr><td><code>BuildPresentation</code></td><td class="num">1.3 min</td><td class="num">2.9 min</td><td class="num">8 at 15 min</td><td class="num">3.0 min</td></tr>
+              <tr><td><code>GenerateIconsAsset</code></td><td class="num">37.5 s</td><td class="num">3.6 min</td><td class="num">11 at 15 min</td><td class="num">3.0 min</td></tr>
+              <tr><td><code>generateAvatarTake</code></td><td class="num">3.7 min</td><td class="num">6.9 min</td><td class="num">4</td><td class="num">7.5 min</td></tr>
+              <tr><td><code>generateLogoShot</code></td><td class="num">6.1 min</td><td class="num">11.0 min</td><td class="num">3</td><td class="num">15.0 min</td></tr>
+              <tr><td><code>generateVideoFromReferences</code> (&gt;12 s · 720p)</td><td class="num">6.9 min</td><td class="num">14.6 min</td><td class="num">1</td><td class="num">20.0 min</td></tr>
+            </tbody></table></div>
+          <div class="callout ok" style="font-size:.9rem"><b>Re-attach, don't restart.</b> A hidden timeout means the job was still running: poll the same job id instead of starting a new one, which pays again.</div>
+        </div>
+        <div class="pane" id="f-pa">
+          <p class="muted" style="font-size:.9rem">Observations worth a look, each with what was measured and what would prove a change helps. No hours are claimed.</p>
+          <div class="grid2">
+            <div class="card"><b>logo-create</b> takes 6.0 generations per kept output (fleet median 3.2).<p class="mini" style="margin:.4em 0 0">To prove: why users regenerate isn't in the numbers; open the runs with many generations first.</p></div>
+            <div class="card"><b>stories-creation</b> takes 8.1 generations per kept output.<p class="mini" style="margin:.4em 0 0">Same check: start from the runs with the most generations.</p></div>
+            <div class="card">Make <b>EligibleForGeneration → CreateIconsAsset → GenerateIconsAsset</b> one deterministic step.<p class="mini" style="margin:.4em 0 0">Turns that already use <code>sequence</code> save about 1.6 iterations.</p></div>
+            <div class="card"><b>wixel-ads</b> carries 219k tokens into every iteration (median 119k).<p class="mini" style="margin:.4em 0 0">Which part could go isn't known; read the skill and its resources first.</p></div>
+          </div>
+          <p class="mini" style="margin-top:10px">An audit on Oct 7 removed pattern kinds whose premise was wrong, e.g. "same call every time" for ListCosts: 313 calls, 50 different answers, because it returns each user's credits.</p>
+        </div>
+        <div class="pane" id="f-sk">
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>Skill</th><th class="num">Sessions</th><th class="num">Failing</th><th class="num">Lost / wk</th><th class="num">Frustrated</th><th class="num">Kept</th><th class="num">Iter./turn</th></tr></thead>
+            <tbody id="skillRows"></tbody></table></div>
+          <p class="mini" style="margin-top:8px">Pin a skill to treat it as major. Select one and <b>Share skill</b> sends everything Fleet knows about it (see Sharing).</p>
+        </div>
+        <div class="pane" id="f-ef">
+          <p class="muted" style="font-size:.9rem">Where the agent spends tokens and time beyond the work itself. "Worth a look" picks the biggest items across skills:</p>
+          <ul style="font-size:.9rem">
+            <li><b>video-creation</b> carries 214k tokens into every iteration; the preloaded skill alone is 131k (61%).</li>
+            <li><b>video-regen</b> carries 265k tokens per iteration; its preloaded skill is 117k (44%).</li>
+            <li><b>stories-creation</b> spends 16 h a week between status polls of running jobs.</li>
+            <li><b>brand-kit</b> repeats <code>process_svg</code> with identical arguments ~4k times a week, after it already succeeded.</li>
+            <li><b>wixel-ads-lite</b> runs on gpt-6.1-sol; after a failure it most often looks something up (38%). Most skills change the arguments.</li>
+          </ul>
+        </div>
+        <div class="pane" id="f-da">
+          <p class="muted" style="font-size:.9rem">Each day's state (final, filling in, missing), build time, internal accounts and problems; every shift in the period; the definitions; and what Fleet can't see: rendering, export and player failures, output quality, the inside of generation graphs, client-side errors.</p>
+          <div class="tbl-wrap"><table>
+            <thead><tr><th>What changed</th><th>Shift</th><th>Codex version that day</th></tr></thead>
+            <tbody>
+              <tr><td>Oct 6</td><td>Hidden timeouts / 1k turns 0.9 → 3.6</td><td>4a2f4c4d (24% of turns)</td></tr>
+              <tr><td>Oct 5</td><td>Frustrated turns 10.0% → 6.1%</td><td>5df7c362 (25% of turns)</td></tr>
+              <tr><td>Oct 2</td><td>Failing tool calls 2.9% → 6.5%</td><td>–</td></tr>
+              <tr><td>Sep 30</td><td>Sessions with no skill 15% → 58% (found: skills became preloaded)</td><td>fc0bcb69 (59% of turns)</td></tr>
+            </tbody></table></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid3" style="margin-top:18px">
+      <div class="card"><h3><span class="ico">🔬</span>Fixes only when proven</h3><p class="muted">A change is suggested only when the cause is proven: a missing file traced in the codex; an image host that fails ≥5× the Wix-hosted rate across every call; a made-up tool name the codex itself writes. Everything else says <b>"No proven fix"</b> and what would prove one.</p></div>
+      <div class="card"><h3><span class="ico">🧰</span>Fix per skill</h3><p class="muted">For each skill an issue happens in: what its failing calls show, the change to its instructions, the exact lines and files (GitHub links), examples, and a <b>Copy prompt for Claude Code</b> limited to that skill's files, with a redacted failing call and an eval case.</p></div>
+      <div class="card"><h3><span class="ico">📝</span>Fix briefs</h3><p class="muted">On demand for a whole issue: up to 3 example sessions, the Genix root cause, the codex files to look at, a suggested fix, how to verify it (rate per codex version, eval sets) and a redacted repro. Copy as Markdown, email it, or draft the fix with Claude (read-only, as a diff).</p></div>
+      <div class="card"><h3><span class="ico">🚨</span>What changed</h3><p class="muted">Flags a day whose failure rate, tokens, frustration, kept outputs and more moved beyond the 7 days before it, and names the codex version that took over that day: the alert after a deploy.</p></div>
+      <div class="card"><h3><span class="ico">🤝</span>Shared decisions</h3><p class="muted">Issue statuses (accepted, fixed in version…, won't fix, duplicate, with a note) and pinned skills are shared with everyone using the same Fleet folder.</p></div>
+      <div class="card"><h3><span class="ico">📚</span>Knowledge in the repo</h3><p class="muted">The day rollups and a readable digest (<code>knowledge/README.md</code>: numbers, what we learned, top issues and proven fixes, wait times, patterns, efficiency) are committed, so the findings outlive anyone's laptop.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- SHARING -->
+<section id="sharing">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Sharing</div>
+      <h2>Every view is shareable, in the form people need</h2>
+      <p>Each share offers links that work for anyone, not just people running Autopsy: the Wixel admin link (anyone with back-office access), the output's public link, a plain-text summary, an email draft, or a PDF. End-user emails are never included.</p>
+    </div>
+    <div class="tabs" id="shareTabs">
+      <button class="tab on" data-k="run">A run</button>
+      <button class="tab" data-k="ins">Insights</button>
+      <button class="tab" data-k="fleet">Fleet view</button>
+      <button class="tab" data-k="skill">One skill (Share skill)</button>
+    </div>
+    <div class="grid2">
+      <div>
+        <p class="demo-label">Try it: click an option</p>
+        <div class="share-menu" id="shareMenu"></div>
+      </div>
+      <div class="card">
+        <h3><span class="ico">📄</span>PDF reports</h3>
+        <ul class="muted">
+          <li><b>A run:</b> facts, outputs, request, errors, the timeline, every step (with links to its output and graph run), scenes, brand and assets.</li>
+          <li><b>Insights:</b> the whole tab, with "All the numbers" printed in full.</li>
+          <li><b>Fleet:</b> a digest of the period, or one skill's full report.</li>
+        </ul>
+        <p class="muted">A4 landscape in the app's dark colours, with margins on every page and one column. A card that doesn't fit breaks across pages with its frame repeated. Paper gets the full text (whole error messages, every list item, full requests), and the main references are clickable. With Chrome installed it downloads straight to Downloads.</p>
+        <div class="callout" style="font-size:.9rem">The app's own link reopens the exact view (skill, window, filters, selected run) because the whole state lives in the URL.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- LOGIC -->
+<section id="logic">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">The logic</div>
+      <h2>How Autopsy decides what counts</h2>
+      <p>Most sessions mix skills: 30–40% of a skill's session turns are usually other skills' work, like a logo made after an ad. Counting whole sessions would blame (or credit) the wrong skill. So a session counts for a skill <b>turn by turn</b>.</p>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <p class="demo-label">Try it: one session, seven turns</p>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+          <b>Viewing skill: wixel-ads</b>
+          <div class="toggle" id="countToggle"><button class="on" data-m="skill">Skill's turns</button><button data-m="all">Whole session</button></div>
+        </div>
+        <div class="turns" id="turns"></div>
+        <p class="mini" id="turnNote" style="margin-top:10px"></p>
+      </div>
+      <div>
+        <div class="card" style="margin-bottom:14px"><h3 style="font-size:1rem">1 · The turn that loads the skill claims the session</h3><p class="muted" style="font-size:.92rem">Turns before it never count. A skill loads when the agent calls the skill tool, or (since Sep 30) when the platform preloads it into the first message. Both count.</p></div>
+        <div class="card" style="margin-bottom:14px"><h3 style="font-size:1rem">2 · Later turns stay until another family takes over</h3><p class="muted" style="font-size:.92rem">A skill's <b>family</b> is its helpers, learned from how often skills load together (partners in ≥3% of its turns, their sub-steps, and shared utilities). The <b>Counting</b> button shows each helper and why; you can edit it or switch to whole sessions.</p></div>
+        <div class="card" style="margin-bottom:14px"><h3 style="font-size:1rem">3 · Outputs are what the session itself made</h3><p class="muted" style="font-size:.92rem">Its own writes, write steps, metering events and hand-overs during the counted turns, plus assets server-side jobs built. Not whatever else is in a shared project: campaign siblings' posts used to be credited by mistake.</p></div>
+        <div class="card"><h3 style="font-size:1rem">4 · What the skill makes is learned</h3><p class="muted" style="font-size:.92rem">Its main output type plus any type a quarter of its producing runs make. A wixel-ads run that only made an image counts as "tried, no video" and says "made image instead".</p></div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:34px">Where the data comes from, and why it's safe to use</h3>
+    <div class="flow" style="margin-top:12px">
+      <div class="card"><b>Trino</b><p class="muted" style="font-size:.88rem;margin:.3em 0 0">Through the admin SQL endpoint. Runs one UTC day at a time; days older than 3 days cached forever.</p></div>
+      <div class="arrow">→</div>
+      <div class="card"><b>Wixel admin API</b><p class="muted" style="font-size:.88rem;margin:.3em 0 0">A run's full detail when you open it; cached forever once the session is idle.</p></div>
+      <div class="arrow">→</div>
+      <div class="card"><b>Temporal</b><p class="muted" style="font-size:.88rem;margin:.3em 0 0">Genix graph runs, only when you click "Open graph run".</p></div>
+      <div class="arrow">→</div>
+      <div class="card"><b>Wix CDN</b><p class="muted" style="font-size:.88rem;margin:.3em 0 0">Clips and renders for review copies, built with ffmpeg.</p></div>
+    </div>
+    <div class="grid3" style="margin-top:16px">
+      <div class="card"><h3 style="font-size:1rem">🛡️ Gentle on production</h3><p class="muted" style="font-size:.9rem">Every upstream call has a concurrency cap and spacing, shown live in the status bar. On-screen work goes first; background work waits. Timeouts and full queues make it back off. Switching view cancels queued queries.</p></div>
+      <div class="card"><h3 style="font-size:1rem">🎲 Busy days are sampled</h3><p class="muted" style="font-size:.9rem">Above ~400 sessions a day a deterministic sample is taken (sessions whose id starts with certain characters). The status bar shows the share.</p></div>
+      <div class="card"><h3 style="font-size:1rem">⚡ Fast, then fresh</h3><p class="muted" style="font-size:.9rem">Cached days show instantly and refresh in the background. Refresh (<kbd>R</kbd>) only fetches sessions newer than what's on screen: 20–40 s whatever the window.</p></div>
+    </div>
+    <div class="card" style="margin-top:16px">
+      <h3><span class="ico">🏢</span>The shared copy: built once a day, read by everyone</h3>
+      <p class="muted">Run on a laptop, every copy queries Trino itself; ten people means ten times the load. The shared copy works from a <b>daily build</b>: one producer queries Trino once each morning (every skill with ≥10 sessions in 30 days, up to yesterday), and the server only reads the result, so any number of people can use it at once without touching Trino. It's on its way to the back office as a Wix Serverless app behind staff sign-in.</p>
+    </div>
+  </div>
+</section>
+
+<!-- START -->
+<section id="start">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Simplicity of use</div>
+      <h2>Three clicks to an answer</h2>
+      <p>No query language, no dashboards to configure. Pick a skill, pick a window, look.</p>
+    </div>
+    <div class="grid2">
+      <div class="steps">
+        <div class="step"><div><h4>Open Autopsy</h4><p>The Autopsy app on the Desktop, or <code>npm start</code>. It opens at localhost:5178. On the Wix network or VPN; nothing else to sign in to.</p></div></div>
+        <div class="step"><div><h4>Pick a skill (<kbd>⌘K</kbd>) and a window</h4><p>Recently viewed skills sit on top. Or switch to Users and paste a user id or session link.</p></div></div>
+        <div class="step"><div><h4>Hover, click, filter</h4><p>Hover cards to preview, click to open a run, <kbd>F</kbd> to filter, <kbd>I</kbd> for Insights. Fleet is one button away.</p></div></div>
+        <div class="step"><div><h4>Share what you found</h4><p>Share in the run's header, in Insights, or in Fleet: a link, a summary, an email or a PDF.</p></div></div>
+      </div>
+      <div>
+        <div class="card" style="margin-bottom:14px">
+          <h3 style="font-size:1rem">First time on a new machine</h3>
+<pre><code>git clone https://github.com/odedwix/wixel-autopsy.git
+cd wixel-autopsy
+npm run setup    # checks everything, installs, builds the Desktop launcher
+npm start        # opens http://localhost:5178</code></pre>
+          <p class="mini" style="margin:0">Needs Node 22+ and the Wix network. Optional extras switch on when present: ffmpeg (review videos), Chrome (PDFs and exact downloads), a Temporal key (graph runs; a production secret, never share it), the codex checkout (fix briefs), the Claude Code CLI (drafted fixes).</p>
+        </div>
+        <div class="card"><h3 style="font-size:1rem">Press <kbd>?</kbd> anywhere in the app</h3><p class="muted" style="margin:0">…for every shortcut. Or press it here to see the main ones.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PRIVACY + FAQ -->
+<section id="faq">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Good to know</div>
+      <h2>Privacy, limits and common questions</h2>
+    </div>
+    <div class="grid2">
+      <div>
+        <details open><summary>Who can see this data?</summary><div class="body"><p>Autopsy shows what the Wixel admin page shows, including end users' emails and prompts, so it's for Wix staff only. A local copy listens on your machine only; a hosted copy must sit behind back-office sign-in. Shared links, summaries and Fleet's committed knowledge never include end-user emails, and example errors have emails, phone numbers and URL query strings stripped.</p></div></details>
+        <details><summary>Does it slow down production?</summary><div class="body"><p>It reads the analytics cluster (Trino), not production serving, with strict caps per system. The admin API and Temporal are called only for what you open, and cached. Fleet costs about a minute of Trino per day, once. The shared daily build means readers never query Trino at all.</p></div></details>
+        <details><summary>How fresh is the data?</summary><div class="body"><p>Locally: live, with Refresh adding new sessions in 20–40 s. The shared copy: up to yesterday (UTC), rebuilt every morning. Fleet: a day is final 6 hours after it ends; today refreshes at most every 30 minutes.</p></div></details>
+        <details><summary>What can't it see?</summary><div class="body"><p>Rendering, export and player failures on the client, output quality itself, and anything that never reaches the agent's entries or events. Fleet's Data tab lists these so nobody over-reads the numbers.</p></div></details>
+      </div>
+      <div>
+        <details open><summary>Are the "time lost" numbers real?</summary><div class="body"><p>Yes: counts, durations, recoveries, tokens, versions and outcomes are measured from the agent's own entries. Time lost uses one stated rule. Savings and recommended waits are estimates and are labelled as such, with how they were computed.</p></div></details>
+        <details><summary>Why does a skill's number differ from the admin page?</summary><div class="body"><p>Because Autopsy counts only the turns that belong to the skill and its helpers, and only the outputs the session itself made. Switch Counting to "whole sessions" to compare.</p></div></details>
+        <details><summary>Can it change anything?</summary><div class="body"><p>No. It's read-only everywhere. Even "Draft the fix with Claude" runs with read-only tools and returns a diff for a person to apply.</p></div></details>
+        <details><summary>Who do I ask?</summary><div class="body"><p>The repo is <a href="https://github.com/odedwix/wixel-autopsy">odedwix/wixel-autopsy</a>; its README covers every feature and data source in detail.</p></div></details>
+      </div>
+    </div>
+
+    <h3 style="margin-top:30px">Glossary</h3>
+    <div class="gloss">
+      <div><b>Session</b><span>One conversation with the agent, possibly using many skills.</span></div>
+      <div><b>Turn</b><span>One user message and everything the agent did to answer it.</span></div>
+      <div><b>Run</b><span>A session as seen by one skill: only its counted turns.</span></div>
+      <div><b>Iteration</b><span>One model call inside a turn; the agent loops call → tool → call.</span></div>
+      <div><b>Family</b><span>A skill's helpers that count with it (e.g. wixel-ads → video-creation → video-plan-approval).</span></div>
+      <div><b>Preloaded skill</b><span>A skill body the platform puts into the first message (since Sep 30), instead of the agent loading it.</span></div>
+      <div><b>Hidden timeout</b><span>A tool returning "success" after ~15 min while its job is still running.</span></div>
+      <div><b>Kept output</b><span>An output the user (or agent) downloaded.</span></div>
+      <div><b>Genix graph run</b><span>The generation pipeline behind one media job: nodes, models, cost, timing.</span></div>
+      <div><b>Codex version</b><span>The version of the agent's skills and configs a turn ran with.</span></div>
+      <div><b>Exact composition</b><span>The product's own player rendering the output, frame by frame.</span></div>
+      <div><b>Fleet</b><span>The all-skill view built from daily rollups.</span></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap" style="display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap">
+    <div><b style="color:var(--text)">Autopsy</b> · take a Wixel skill's runs apart. Numbers from Fleet, real users, Oct 1–7, 2026.</div>
+    <div><a href="#top">Back to top ↑</a></div>
+  </div>
+</footer>
+
+<div class="overlay" id="keys" role="dialog" aria-label="Keyboard shortcuts">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:0">Autopsy's main shortcuts</h3><button class="iconbtn" id="keysClose" aria-label="Close">✕</button></div>
+    <p class="mini">In the app, <kbd>?</kbd> lists all of them.</p>
+    <div class="sc">
+      <div><span>Pick a skill or user</span><kbd>⌘K</kbd></div>
+      <div><span>Refresh (new sessions)</span><kbd>R</kbd></div>
+      <div><span>Filters</span><kbd>F</kbd></div>
+      <div><span>Insights</span><kbd>I</kbd></div>
+      <div><span>Open run</span><kbd>Enter</kbd></div>
+      <div><span>Run tabs</span><span><kbd>1</kbd>–<kbd>5</kbd></span></div>
+      <div><span>Wide panel</span><kbd>W</kbd></div>
+      <div><span>Download</span><kbd>D</kbd></div>
+      <div><span>Exact / review copy</span><kbd>E</kbd></div>
+      <div><span>Captions</span><kbd>C</kbd></div>
+      <div><span>Full screen video</span><kbd>~</kbd></div>
+      <div><span>Frame step</span><span><kbd>,</kbd> <kbd>.</kbd></span></div>
+      <div><span>Sound on hover</span><kbd>S</kbd></div>
+      <div><span>Text size</span><span><kbd>⌥+</kbd> <kbd>⌥−</kbd></span></div>
+      <div><span>Fleet tabs</span><span><kbd>O</kbd> <kbd>1</kbd>–<kbd>6</kbd></span></div>
+      <div><span>Fleet next / previous row</span><span><kbd>J</kbd> <kbd>K</kbd></span></div>
+      <div><span>Graph: waterfall / fit</span><span><kbd>V</kbd> <kbd>F</kbd></span></div>
+      <div><span>Close</span><kbd>Esc</kbd></div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+/* theme */
+const root=document.documentElement;
+try{const t=localStorage.getItem('autopsy-explainer-theme'); if(t) root.dataset.theme=t;}catch(e){}
+$('#themeBtn').onclick=()=>{
+  const dark=root.dataset.theme?root.dataset.theme==='dark':matchMedia('(prefers-color-scheme: dark)').matches;
+  root.dataset.theme=dark?'light':'dark';
+  try{localStorage.setItem('autopsy-explainer-theme',root.dataset.theme)}catch(e){}
+  drawWait(); drawGraph();
+};
+/* nav */
+$('#menuBtn').onclick=()=>$('#topnav').classList.toggle('open');
+$$('#topnav a').forEach(a=>a.addEventListener('click',()=>$('#topnav').classList.remove('open')));
+const links=$$('#topnav a'); const secs=links.map(a=>$(a.getAttribute('href')));
+const spy=()=>{let cur=null; for(const s of secs){ if(s && s.getBoundingClientRect().top<120) cur=s.id; } links.forEach(a=>a.classList.toggle('on',a.getAttribute('href')==='#'+cur));};
+addEventListener('scroll',spy,{passive:true}); spy();
+/* toast */
+let tt; const toast=m=>{const t=$('#toast'); t.textContent=m; t.classList.add('on'); clearTimeout(tt); tt=setTimeout(()=>t.classList.remove('on'),2600);};
+/* generic tabs */
+function tabs(box){ $$('.tab',box).forEach(b=>b.addEventListener('click',()=>{ $$('.tab',box).forEach(x=>x.classList.toggle('on',x===b)); if(b.dataset.p){ const ids=$$('.tab',box).map(x=>x.dataset.p); ids.forEach(id=>{const p=document.getElementById(id); if(p) p.classList.toggle('on',id===b.dataset.p);}); } })); }
+['#roleTabs','#insTabs','#fleetTabs'].forEach(s=>tabs($(s)));
+
+/* levels */
+const L=[
+ {h:'Level 1 · The grid',b:`<p>Pick a skill and a time window and every run appears as a card showing <b>what it made</b>: the video playing on hover (scrub it with the mouse), a story's pages, a logo, a deck. A red top edge means it tried and failed; the card shows the first error. A run that made nothing says why ("Not enough credits · needs 88, has 30"). Signals sit on every card: downloaded, published, worst mood, thumbs, user type and plan.</p><p class="muted">The first tab is named after what the skill makes (Videos, Stories, Logos…), and the result switch splits runs into made it / tried, didn't / never tried.</p><a class="btn" href="#outputs">See the grid demo →</a>`},
+ {h:'Level 2 · The run',b:`<p>Click a card for the full story: the <b>request</b> in the user's words, the outcome, the models used with their time and cost, errors, mood by turn. Then a <b>timeline</b> of every step, <b>scenes</b> next to the chain that made each shot, the <b>brand</b> scraped from the user's site next to what the output used, every piece of media, and the raw record.</p><p class="muted">Video plays in the product's own player, exactly as the user saw it.</p><a class="btn" href="#agent">See the timeline →</a>`},
+ {h:'Level 3 · The Genix graph run',b:`<p>From any generation step, <b>Open graph run</b> draws the Genix graph that produced it: every node with its status, when it queued and ran, its time, cost, provider and output thumbnail. The <b>critical path</b> is highlighted, and a failed node shows the bottom of its failure chain, e.g. "MiniMax H3 Max does not accept settings".</p><a class="btn" href="#wrong">See the graph demo →</a>`},
+ {h:'Across skills · Fleet',b:`<p>Fleet reads every skill's day at once and answers the questions no single run can: which errors cost the most time across the agent, who owns them, how long each operation really takes, which skills drag the most context, and what changed after a deploy. A fix is suggested only where the cause is proven.</p><a class="btn" href="#fleet">Explore Fleet →</a>`}
+];
+function showLevel(i){ $$('#levels .level').forEach((c,j)=>c.classList.toggle('on',i===j)); $('#levelDetail').innerHTML=`<h3>${L[i].h}</h3>${L[i].b}`; }
+$$('#levels .level').forEach((c,i)=>c.addEventListener('click',()=>showLevel(i))); showLevel(0);
+
+/* run cards */
+const G=[['#ff8a5c','#ff3d77'],['#5c7cff','#00d4ff'],['#20c997','#0b7285'],['#a855f7','#ec4899'],['#f59e0b','#ef4444'],['#334155','#64748b'],['#06b6d4','#6366f1'],['#84cc16','#16a34a']];
+const RUNS=[
+ {type:'VIDEO',src:'Exact',g:0,title:'Bakery autumn menu ad',req:'Make a 15-second ad for my bakery\'s autumn menu, warm colours, upbeat music',out:'1 video · 15 s',when:'Oct 7 · 14:02',u:'Real',plan:'Pro',sig:['⬇','😊'],ok:true,models:[['Seedance 2 Mini',62],['gpt-image-2.5-flare',21],['TTS',9],['Music',8]]},
+ {type:'VIDEO',src:'Assembled',g:1,title:'Yoga studio promo',req:'A short promo for my yoga studio\'s new morning class',out:'1 video · 12 s',when:'Oct 7 · 11:40',u:'Real',plan:null,sig:['😐'],ok:true,models:[['Kling Standard',70],['gpt-image-2.5-flare',18],['TTS',12]]},
+ {type:'—',g:5,title:'Car wash ad',req:'make me a video ad for my car wash',why:'Not enough credits · needs 88, has 30',when:'Oct 7 · 09:15',u:'Real',plan:null,sig:['💳'],ok:false,fail:false},
+ {type:'VIDEO',src:'Clip',g:4,title:'Coffee shop reel',req:'Instagram reel for a coffee shop opening',why:'Failed · video generation: provider returned an empty error',when:'Oct 6 · 22:31',u:'Real',plan:'Basic',sig:['😠'],ok:false,fail:true},
+ {type:'STORY',src:'Exact',g:3,title:'Jewelry launch story',req:'A story announcing my new silver collection',out:'1 story · 5 pages',when:'Oct 6 · 18:05',u:'Employee',plan:null,sig:['⬇','👍'],ok:true,models:[['Seedance 2 Mini',48],['gpt-image-2.5-flare',40],['TTS',12]]},
+ {type:'—',g:5,title:'Dentist clinic ad',req:'video for my dental clinic',why:'Waiting for the user · video plan never approved',when:'Oct 6 · 16:44',u:'Real',plan:null,sig:[],ok:false,fail:false},
+ {type:'VIDEO',src:'Exact',g:6,title:'Gym membership ad',req:'An energetic ad for January gym memberships',out:'2 videos',when:'Oct 6 · 13:20',u:'Real',plan:'Max',sig:['⬇','🌐'],ok:true,models:[['Kling Standard',55],['Seedance 2 Mini',25],['Music',20]]},
+ {type:'IMAGE',src:'',g:7,title:'Plant shop',req:'ad for my plant shop',why:'Made image instead',when:'Oct 6 · 10:02',u:'Team',plan:null,sig:['😐'],ok:false,fail:false}
+];
+function art(r){ const [a,b]=G[r.g]; return `<div class="art" style="background:linear-gradient(160deg,${a},${b})"></div>`; }
+$('#runCards').innerHTML=RUNS.map((r,i)=>`
+  <div class="run ${r.fail?'fail':''}" data-i="${i}" tabindex="0" role="button" aria-label="Open ${esc(r.title)}">
+    <div class="thumb">${art(r)}${r.type!=='—'?`<span class="badge">${r.type}${r.src?' · '+r.src:''}</span>`:''}${r.out&&/^2 /.test(r.out)?'<span class="count">2 outputs</span>':''}
+      ${r.ok?'<div class="play"><i></i></div>':`<div class="why">${esc(r.why)}</div>`}</div>
+    <div class="meta"><b>${esc(r.when)}</b><span class="utype">${r.u}</span>${r.plan?`<span class="utype plan">${r.plan}</span>`:''}<span class="sig">${r.sig.join(' ')}</span></div>
+  </div>`).join('');
+function openRun(i){
+  const r=RUNS[i], ins=$('#inspect'); ins.hidden=false;
+  $('#insTitle').textContent=r.title; $('#insSub').textContent=`${r.when} · ${r.u}${r.plan?' · '+r.plan:''}`;
+  const outcome=r.ok?`<span class="pill g">Made ${esc(r.out)}</span>`:(r.fail?`<span class="pill r">${esc(r.why)}</span>`:`<span class="pill a">${esc(r.why)}</span>`);
+  $('#i-ov').innerHTML=`<dl class="kv"><dt>Outcome</dt><dd>${outcome}</dd><dt>Request</dt><dd><div class="quote" style="margin:0">"${esc(r.req)}"</div></dd><dt>Models</dt><dd>${(r.models||[['gpt-6-luna (agent)',100]]).map(m=>`<div class="hbar"><span>${m[0]}</span><span class="t"><i style="width:${m[1]}%"></i></span><span class="v">${m[1]}% of time</span></div>`).join('')}</dd><dt>Mood by turn</dt><dd>${r.fail?'😐 → 😠 frustrated (turn 2)':'😐 → 😊'}</dd><dt>Counting</dt><dd class="muted">Counting 2 of 3 turns · <a href="#logic">Show them</a></dd></dl>`;
+  $('#i-tl').innerHTML=`<div class="wf">${wfRows(r.fail)}</div>`;
+  $('#i-sc').innerHTML=`<div class="grid3">${[1,2,3].map(n=>`<div class="card" style="padding:12px"><div style="height:70px;border-radius:8px;background:linear-gradient(160deg,${G[(r.g+n)%8][0]},${G[(r.g+n)%8][1]});margin-bottom:8px"></div><b style="font-size:.85rem">Scene ${n}</b><p class="mini" style="margin:.3em 0 0">Picture: image → edit → video · ${n===2&&r.fail?'<span style="color:var(--red)">video failed</span>':'4.1 s'}<br>Voice: TTS script → trim</p></div>`).join('')}</div>`;
+  $('#i-br').innerHTML=`<p style="font-size:.9rem"><b>Site colours used:</b> <span style="display:inline-flex;gap:4px;vertical-align:middle">${['#c2410c','#fde68a','#1f2937','#f5f5f4'].map((c,k)=>`<span title="${c}" style="width:18px;height:18px;border-radius:5px;background:${c};border:1px solid var(--line2);position:relative">${k<2?'<span style="position:absolute;right:-4px;top:-8px;font-size:10px;color:var(--green)">✓</span>':''}</span>`).join('')}</span> &nbsp;<span class="pill a">2 of 4 site colours · 0 of 3 fonts</span></p><p class="muted" style="font-size:.88rem;margin:0">Below: every piece of media in the run, grouped as uploads / website / generated images / clips / voice & music.</p>`;
+  $('#i-raw').innerHTML=`<pre style="margin:0"><code>{ "session": "…", "skill": "wixel-ads", "turns": { "counted": [1, 2], "other": [3] },
+  "outputs": [ { "type": "${r.type==='—'?'none':r.type.toLowerCase()}", "own": true } ],
+  "signals": { "downloaded": ${r.sig.includes('⬇')}, "mood": "${r.fail?'frustrated':'positive'}" } }</code></pre>`;
+  $$('#insTabs .tab').forEach((b,j)=>b.classList.toggle('on',j===0)); $$('#inspect .pane').forEach((p,j)=>p.classList.toggle('on',j===0));
+  ins.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+$$('#runCards .run').forEach(c=>{c.addEventListener('click',()=>openRun(+c.dataset.i)); c.addEventListener('keydown',e=>{if(e.key==='Enter') openRun(+c.dataset.i);});});
+$('#insClose').onclick=()=>{$('#inspect').hidden=true};
+
+/* waterfall */
+function wfRows(fail){
+  const C={agent:'var(--slate)',think:'var(--violet)',scrape:'var(--blue)',image:'var(--pink)',video:'var(--accent)',voice:'var(--amber)',music:'var(--green)',write:'var(--cyan)',ask:'var(--faint)'};
+  const rows=[['🧠 Agent thinking','think',[[0,4],[22,3],[48,2],[86,5]],'model calls between tools'],['scrape_url','scrape',[[4,6]],'reads the user\'s site'],['ask_user · video plan','ask',[[10,12]],'waiting for the user to approve'],['generateImage ×3','image',[[25,9],[26,11],[27,8]],'3 in parallel'],['generateVideoFromImage ×3','video',fail?[[37,24],[38,30,'fail'],[39,22]]:[[37,24],[38,26],[39,22]],fail?'one failed: provider returned an empty error':'3 in parallel'],['TTS voice-over','voice',[[50,6]],'script → speech'],['generateMusic','music',[[52,18]],'p50 24 s; can hang 15 min'],['write project/assets','write',[[72,12]],'building the result']];
+  return rows.map(([l,k,bars,tip])=>`<div class="wf-row"><span class="lbl" title="${esc(l)}">${esc(l)}</span><div class="wf-track">${bars.map(b=>`<span class="wf-bar ${b[2]||''}" title="${esc(l)}: ${esc(tip)}" style="left:${b[0]}%;width:${b[1]}%;background:${b[2]?'':C[k]}"></span>`).join('')}</div></div>`).join('');
+}
+$('#wf').innerHTML=wfRows(true);
+
+/* time split */
+const KINDS=[['video','Video','--accent'],['image','Image','--pink'],['music','Music','--green'],['voice','Voice & sound','--amber'],['text','Text & vision','--blue'],['sub','Sub-agents','--violet'],['err','Errors','--red'],['wait','Waiting on the user','--faint'],['agent','Agent\'s own time','--slate']];
+const SPLITS={ads:{t:'7.4 min',v:[34,9,6,5,4,0,8,22,12]},story:{t:'9.8 min',v:[18,22,4,6,3,20,5,10,12]},logo:{t:'2.1 min',v:[0,52,0,0,6,0,3,14,25]},deck:{t:'4.6 min',v:[0,24,0,0,8,0,12,6,50]}};
+function drawSplit(k){
+  const s=SPLITS[k];
+  $('#split').innerHTML=KINDS.map((d,i)=>`<div data-i="${i}" title="${d[1]}: ${s.v[i]}%" style="flex:${s.v[i]} 1 0;background:var(${d[2]})"></div>`).join('');
+  $('#splitLegend').innerHTML=KINDS.map((d,i)=>`<span><i style="background:var(${d[2]})"></i>${d[1]} ${s.v[i]}%</span>`).join('');
+  $('#splitRead').innerHTML=`Average run: <b>${s.t}</b> from first message to result. Hover a segment.`;
+  $$('#split div').forEach(el=>el.addEventListener('mouseenter',()=>{const i=+el.dataset.i; const mins=(parseFloat(s.t)*s.v[i]/100).toFixed(1); $('#splitRead').innerHTML=`<b style="color:var(${KINDS[i][2]})">${KINDS[i][1]}</b>: ${s.v[i]}% of the run, about ${mins} min.${i===6?' Failed calls and calls that gave up while their job was still running.':i===7?' A question or plan waiting for an answer, plus gaps between turns.':i===8?' Model calls deciding what to do next, and plumbing.':''}`;}));
+}
+$$('#splitTabs .tab').forEach(b=>b.addEventListener('click',()=>{$$('#splitTabs .tab').forEach(x=>x.classList.toggle('on',x===b)); drawSplit(b.dataset.k);}));
+drawSplit('ads');
+
+/* wait-time chart */
+let seed=7; const rnd=()=>{seed=(seed*16807)%2147483647; return (seed-1)/2147483646;};
+const T=[]; for(let i=0;i<600;i++){ const u1=rnd(),u2=rnd(); const z=Math.sqrt(-2*Math.log(u1))*Math.cos(2*Math.PI*u2); T.push(Math.exp(Math.log(26)+0.75*z)); }
+for(let i=0;i<22;i++) T.push(Infinity); // jobs that would never finish (hidden timeouts)
+function E(tau){ let s=0,ok=0; for(const t of T){ s+=Math.min(t,tau); if(t<=tau) ok++; } return ok?(s/T.length)/(ok/T.length):Infinity; }
+const taus=[]; for(let x=10;x<=900;x+=5) taus.push([x,E(x)]);
+const best=taus.reduce((a,b)=>b[1]<a[1]?b:a);
+const fmt=s=>s>=60?(s/60).toFixed(1)+' min':Math.round(s)+' s';
+function drawWait(){
+  const W=760,H=220,P={l:44,r:12,t:12,b:30}, maxY=Math.min(240,Math.max(...taus.map(t=>t[1]).filter(isFinite)));
+  const x=v=>P.l+(v-10)/(890)*(W-P.l-P.r), y=v=>H-P.b-Math.min(v,maxY)/maxY*(H-P.t-P.b);
+  const tau=+$('#tau').value, e=E(tau);
+  const path=taus.map((t,i)=>(i?'L':'M')+x(t[0]).toFixed(1)+','+y(t[1]).toFixed(1)).join(' ');
+  const ticks=[60,180,300,450,600,900].map(v=>`<line x1="${x(v)}" x2="${x(v)}" y1="${P.t}" y2="${H-P.b}" stroke="var(--line)"/><text x="${x(v)}" y="${H-10}" text-anchor="middle" font-size="11" fill="var(--faint)">${fmt(v)}</text>`).join('');
+  const yt=[0,60,120,180,240].filter(v=>v<=maxY).map(v=>`<text x="${P.l-6}" y="${y(v)+4}" text-anchor="end" font-size="11" fill="var(--faint)">${fmt(v)}</text>`).join('');
+  $('#waitChart').innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Expected time to success by wait cap">${ticks}${yt}
+    <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>
+    <line x1="${x(best[0])}" x2="${x(best[0])}" y1="${P.t}" y2="${H-P.b}" stroke="var(--green)" stroke-dasharray="4 4"/>
+    <text x="${x(best[0])+6}" y="${P.t+12}" font-size="11" fill="var(--green)">best ${fmt(best[0])}</text>
+    <circle cx="${x(tau)}" cy="${y(e)}" r="6" fill="var(--amber)" stroke="var(--surface)" stroke-width="2"/>
+    <text x="${P.l}" y="${P.t+2}" font-size="10" fill="var(--faint)" dy="-2">expected time to a success</text></svg>`;
+  $('#tauV').textContent=fmt(tau); $('#eV').textContent=fmt(e); $('#bestV').textContent=fmt(best[0])+' → '+fmt(best[1]);
+}
+$('#tau').addEventListener('input',drawWait); drawWait();
+
+/* graph */
+const NODES=[
+ {id:'in',x:20,y:95,t:'Graph inputs',s:'prompt · brand image',crit:1,info:'Graph inputs: the prompt, the brand image and settings from the agent\'s call.'},
+ {id:'img',x:170,y:40,t:'Image gen',s:'gpt-image · 18 s · $0.04',crit:1,info:'Image generation: queued 0.4 s, ran 18 s, cost $0.04. Output: the first frame.'},
+ {id:'ref',x:170,y:150,t:'Reference prep',s:'resize · 1 s',info:'Reference prep: resized the brand image. 1 s, free.'},
+ {id:'vid',x:330,y:40,t:'Video gen',s:'Seedance · 74 s · $0.42',crit:1,info:'Video generation: 74 s, $0.42. On the critical path: it set the end time.'},
+ {id:'alt',x:330,y:150,t:'Video gen (alt)',s:'MiniMax H3 Max · failed',fail:1,info:'Failed. Root cause: "MiniMax H3 Max does not accept settings". The full cause chain and a Temporal link are in the node inspector.'},
+ {id:'up',x:490,y:95,t:'Upscale',s:'skipped (when: hd)',skip:1,info:'Didn\'t run: its "when" condition (hd) was false. Dashed nodes didn\'t run.'},
+ {id:'out',x:620,y:40,t:'Graph output',s:'mp4 · 5 s',crit:1,info:'Graph output: the clip handed back to the agent, after 93 s in total.'}
+];
+const EDGES=[['in','img',1],['in','ref'],['img','vid',1],['ref','alt'],['img','alt'],['vid','up'],['vid','out',1]];
+function drawGraph(){
+  const by=Object.fromEntries(NODES.map(n=>[n.id,n])), w=120,h=46;
+  const e=EDGES.map(([a,b,c])=>{const A=by[a],B=by[b]; const x1=A.x+w,y1=A.y+h/2,x2=B.x,y2=B.y+h/2,m=(x1+x2)/2; return `<path class="edge ${c?'crit':''}" d="M${x1},${y1} C${m},${y1} ${m},${y2} ${x2},${y2}"/>`;}).join('');
+  const n=NODES.map(d=>`<g class="node ${d.crit?'crit':''} ${d.fail?'fail':''} ${d.skip?'skip':''}" data-id="${d.id}" tabindex="0"><rect x="${d.x}" y="${d.y}" width="${w}" height="${h}" rx="9"/><text x="${d.x+10}" y="${d.y+19}">${d.fail?'✕ ':d.skip?'○ ':'✓ '}${d.t}</text><text class="sub" x="${d.x+10}" y="${d.y+35}">${d.s}</text></g>`).join('');
+  $('#graph').innerHTML=`<svg viewBox="0 0 750 215" role="img" aria-label="Example Genix graph">${e}${n}</svg>`;
+  $$('#graph .node').forEach(g=>{const f=()=>{const d=by[g.dataset.id]; $('#nodeInfo').innerHTML=`<b>${esc(d.t)}</b> · ${esc(d.info)}`; $('#nodeInfo').className='callout'+(d.fail?' warn':d.crit?'':' ok');}; g.addEventListener('click',f); g.addEventListener('keydown',ev=>{if(ev.key==='Enter')f();});});
+}
+drawGraph();
+
+/* asks */
+const ASKS=[['generate logo','11,721',25,17],['generate image','2,999',29,22],['edit image','1,812',41,36],['generate presentation','1,548',48,19],['improve image quality','606',67,48],['edit logo','526',36,45],['edit website','302',19,13]];
+$('#asks').innerHTML=ASKS.map(a=>`<div class="hbar"><span>"${a[0]}"<br><span class="mini">${a[1]}/wk · upset ${a[3]}%</span></span><span class="t"><i style="width:${a[2]}%;background:linear-gradient(90deg,var(--green),var(--cyan))"></i></span><span class="v">${a[2]}% kept</span></div>`).join('');
+
+/* model bars */
+const MB=[['Seedance 2 Mini',74,'$0.42'],['Kling Standard',96,'$0.55'],['gpt-image-2.5-flare',18,'$0.04'],['TTS',6,'$0.01'],['Music',31,'$0.05']];
+$('#modelBars').innerHTML=MB.map(m=>`<div class="hbar"><span>${m[0]}</span><span class="t"><i style="width:${m[1]}%"></i></span><span class="v">${m[1]} s · ${m[2]}</span></div>`).join('');
+
+/* filters demo */
+const FAC={what:['Downloaded','Published','Neither'],utype:['Real','Employee','Team'],plan:['Pro','Basic','Max','Free'],how:['Frustrated','Thumbs up','Thumbs down'],prob:['Tool errors','Not enough credits','Waiting on user']};
+const FNAME={what:'What the user did',utype:'User type',plan:'Plan',how:'How it went',prob:'Problems'};
+const names=['Bakery ad','Yoga promo','Car wash','Coffee reel','Jewelry story','Dental clinic','Gym ad','Plant shop','Barber ad','Pizza menu','Florist reel','Hotel promo','Bike shop','Pet groomer','Wedding planner','Book store','Spa promo','Tea house','Tattoo studio','Toy store','Ski rental','Law firm','Real estate','Food truck'];
+seed=42; const pick=a=>a[Math.floor(rnd()*a.length)];
+const DATA=names.map((n,i)=>{const prob=rnd()<.35?pick(FAC.prob):null; const what=prob?'Neither':pick(['Downloaded','Downloaded','Published','Neither']); return {n,what,utype:rnd()<.75?'Real':pick(['Employee','Team']),plan:rnd()<.3?pick(['Pro','Basic','Max']):'Free',how:prob&&rnd()<.6?'Frustrated':pick(['Thumbs up','Thumbs down',null,null]),prob};});
+const sel={};
+function match(r,ex){ return Object.entries(sel).every(([k,v])=>k===ex||!v.size||v.has(r[k])); }
+function drawFilters(){
+  $('#facetBox').innerHTML=Object.keys(FAC).map(k=>`<div class="facet"><h4>${FNAME[k]}</h4>${FAC[k].map(v=>{const c=DATA.filter(r=>r[k]===v&&match(r,k)).length; const on=sel[k]&&sel[k].has(v); return `<span class="chip ${on?'on':''} ${!c&&!on?'zero':''}" data-k="${k}" data-v="${v}">${v} <span class="c">${c}</span></span>`;}).join('')}</div>`).join('');
+  const list=DATA.filter(r=>match(r));
+  const act=Object.entries(sel).flatMap(([k,v])=>[...v].map(x=>[k,x]));
+  $('#activeChips').innerHTML=act.length?act.map(([k,v])=>`<span class="achip" data-k="${k}" data-v="${v}">${FNAME[k]}: ${v} ✕</span>`).join('')+'<span class="achip" data-clear="1" style="background:transparent">Clear all</span>':'<span class="mini">No filters: showing every run. The URL would update as you click.</span>';
+  $('#resultCount').textContent=`${list.length} of ${DATA.length} runs`;
+  $('#resultList').innerHTML=list.slice(0,8).map(r=>`<div class="rrow"><span class="dot" style="background:${r.prob?'var(--red)':r.what==='Neither'?'var(--amber)':'var(--green)'}"></span><span><b>${r.n}</b> <span class="mini">· ${r.utype} · ${r.plan}${r.how?' · '+r.how:''}</span></span><span class="mini">${r.prob||r.what}</span></div>`).join('')+(list.length>8?`<div class="mini">…and ${list.length-8} more</div>`:'')+(list.length?'':'<div class="callout warn">Nothing matches. In the app, a filter that leaves nothing is cleared with one note.</div>');
+  $$('#facetBox .chip').forEach(c=>c.onclick=()=>{const k=c.dataset.k,v=c.dataset.v; sel[k]=sel[k]||new Set(); sel[k].has(v)?sel[k].delete(v):sel[k].add(v); drawFilters();});
+  $$('#activeChips .achip').forEach(c=>c.onclick=()=>{ if(c.dataset.clear){for(const k in sel) delete sel[k];} else sel[c.dataset.k].delete(c.dataset.v); drawFilters();});
+}
+drawFilters();
+
+/* fleet */
+const BIG=[['Missing codex resource: resources/video/video-creative-routing.md',23,'Skill author (codex)'],['Image analysis: provider cannot fetch the image URL',21,'Model catalog / tool owner'],['Sub-agent timed out after 15 minutes',17,'Platform / provider'],['edit_image: provider returned an empty error',14,'Model catalog / tool owner'],['Ideogram provider error',10,'Platform / provider']];
+$('#bigProblems').innerHTML=BIG.map(b=>`<div class="hbar"><span style="font-size:.82rem">${b[0]}<br><span class="mini">${b[2]}</span></span><span class="t"><i style="width:${b[1]/23*100}%;background:linear-gradient(90deg,var(--red),var(--amber))"></i></span><span class="v">${b[1]} h/wk</span></div>`).join('');
+const ISS=[
+ {t:'Error loading Codex resource "resources/video/video-creative-routing.md": not found',k:'Missing file',o:'Skill author',p:'Every day',h:'23 h',d:'<b>Proven fix.</b> The file is absent at the runtime path and exists only under <code>references/</code>, which is inlined at build time, while the skill names it bare. Fix per skill shows the exact lines and a Claude Code prompt limited to that skill\'s files.'},
+ {t:'Failed to analyze image: cannot fetch content from the provided URL',k:'Rejected parameters',o:'Model catalog / tool owner',p:'Every day',h:'21 h',d:'<b>Being proven:</b> one query compares every call of this operation over a day by the input image\'s host. A host class must fail ≥5× the Wix-hosted rate and hold ≥70% of ≥20 failures before a change is suggested (e.g. "re-host scraped screenshots on Wix media first").'},
+ {t:'Sub-agent timed out: ran for 15 minutes without finishing',k:'Hidden timeout',o:'Platform / provider',p:'Every day',h:'17 h',d:'<b>Parked as platform work.</b> Timeouts, restarts and upstream failures aren\'t skill instructions. The detail shows the rate per codex version, models and example runs.'},
+ {t:'edit_image: INVALID_ARGUMENT (provider returned an empty error)',k:'Rejected parameters',o:'Model catalog / tool owner',p:'Every day',h:'14 h',d:'<b>No proven fix.</b> INVALID_ARGUMENT is the gateway\'s wrapper on every provider error, so the numbers alone can\'t say what to change. It shows what the failing calls have in common and what would prove a fix.'},
+ {t:'Error writing file: Invalid JSON (expected \',\' or \'}\')',k:'Output failed validation',o:'Skill author',p:'Every day',h:'7 h',d:'<b>No proven fix.</b> The agent usually fixes it itself on the next try; the recovery time is what\'s counted as lost.'}
+];
+$('#issueRows').innerHTML=ISS.map((r,i)=>`<tr class="clickable" data-i="${i}"><td style="max-width:380px">${esc(r.t)}</td><td><span class="pill">${r.k}</span></td><td class="mini">${r.o}</td><td><span class="pill ${r.p==='Spike'?'a':'c'}">${r.p}</span></td><td class="num"><b>${r.h}</b></td></tr>`).join('');
+$$('#issueRows tr').forEach(tr=>tr.onclick=()=>{const r=ISS[+tr.dataset.i]; $('#issueDetail').innerHTML=r.d; $$('#issueRows tr').forEach(x=>x.style.background=x===tr?'var(--accent-soft)':'');});
+const SK=[['logo-create','12,622','1.1%','33 h','4.8%','26%','2.4'],['single-page-design','12,341','7.4%','62 h','6.9%','25%','4.6'],['image-generation-and-image-edit','8,500','3.9%','20 h','13.9%','35%','3.4'],['logo-edit','3,815','0.9%','15 h','16.6%','33%','5.0'],['wixel-ads','3,069','9.0%','98 h','10.9%','25%','9.7'],['video-logo-animation','2,190','1.7%','41 h','9.5%','76%','11.8'],['stories-creation','2,060','4.2%','50 h','8.1%','29%','10.7'],['slides-creation','1,963','2.6%','35 h','5.0%','51%','6.0'],['video-creation','1,499','6.2%','23 h','10.5%','41%','8.3']];
+$('#skillRows').innerHTML=SK.map(s=>`<tr><td><b>${s[0]}</b></td>${s.slice(1).map(v=>`<td class="num">${v}</td>`).join('')}</tr>`).join('');
+
+/* sharing */
+const SH={
+ run:[['🔗','Copy app link','Reopens this run, in this view, for anyone running Autopsy'],['🛡️','Copy Wixel admin link','Opens the session for anyone with back-office access'],['🎞️','Copy output link','The public link to the exact render, published page or image'],['📝','Copy summary','Request, outcome, errors, models and time, as text'],['✉️','Email','A ready email draft with the summary and links'],['📄','Export PDF report','Facts, outputs, timeline, every step, scenes, brand and assets']],
+ ins:[['🔗','Copy link','The same skill, window, filters and search'],['📝','Copy summary','Numbers, failing tools, top errors, asks and unhappy-user quotes'],['✉️','Email','The summary as an email draft'],['📄','Export PDF','The whole Insights tab, with "All the numbers" in full']],
+ fleet:[['🔗','Copy link','The exact period, audience, tab and selection'],['📝','Copy summary','The period in numbers, biggest problems, what changed'],['✉️','Email','The summary as an email draft'],['📄','PDF digest','The whole Fleet view, rendered by headless Chrome']],
+ skill:[['🔗','Copy link','Opens Fleet on that skill\'s panel'],['📝','Copy summary','The skill\'s numbers, issues, fixes, wait times, models, context, reads and what it does around failures'],['✉️','Email','The summary as an email draft'],['📄','PDF report','Everything Fleet knows about that one skill, in full']]
+};
+function drawShare(k){ $('#shareMenu').innerHTML=SH[k].map(s=>`<div class="share-item" tabindex="0"><span style="font-size:18px">${s[0]}</span><div><b>${s[1]}</b><span>${s[2]}</span></div></div>`).join(''); $$('#shareMenu .share-item').forEach((el,i)=>el.onclick=()=>toast(`${SH[k][i][1]}: in the app, this ${/PDF/.test(SH[k][i][1])?'downloads straight to Downloads':/Email/.test(SH[k][i][1])?'opens your mail app':'goes to your clipboard'}. End-user emails are never included.`)); }
+$$('#shareTabs .tab').forEach(b=>b.addEventListener('click',()=>{$$('#shareTabs .tab').forEach(x=>x.classList.toggle('on',x===b)); drawShare(b.dataset.k);}));
+drawShare('run');
+
+/* turns demo */
+const TURNS=[
+ {n:1,t:'"Hi! what can you do?"',s:'no skill loaded',own:false,why:'Before the skill loaded: never counts.'},
+ {n:2,t:'"Make an ad for my bakery"',s:'loads wixel-ads (preloaded)',own:true,why:'Loads the skill: claims the session.'},
+ {n:3,t:'"Approve the plan"',s:'video-plan-approval · family helper',own:true,why:'A helper in wixel-ads\'s family: still counts.'},
+ {n:4,t:'"Make the music calmer"',s:'no new skill',own:true,why:'No new skill loaded: stays with wixel-ads.'},
+ {n:5,t:'"Now make me a logo"',s:'loads logo-create',own:false,why:'A skill outside the family: from here it\'s logo-create\'s work.'},
+ {n:6,t:'"Make it blue"',s:'no new skill',own:false,why:'Still logo-create\'s turns.'},
+ {n:7,t:'"Export the ad"',s:'export-handler · shared utility',own:false,why:'Utilities never take a turn; it stays with logo-create.'}
+];
+function drawTurns(mode){
+  $('#turns').innerHTML=TURNS.map(t=>{const c=mode==='all'||t.own; return `<div class="turn ${c?'counted':'out'}" title="${esc(t.why)}"><span class="tn">${t.n}</span><div>${esc(t.t)}<small>${esc(t.s)}</small></div><span class="pill ${c?'g':''}">${c?'counted':'other skill'}</span></div>`;}).join('');
+  $('#turnNote').textContent=mode==='all'?'Whole session: all 7 turns count, including the logo work. This is what the admin page would show.':'Counting 3 of 7 turns. Hover a turn for why. The run view shows this banner, with "Show them" to see the rest.';
+}
+$$('#countToggle button').forEach(b=>b.onclick=()=>{$$('#countToggle button').forEach(x=>x.classList.toggle('on',x===b)); drawTurns(b.dataset.m);});
+drawTurns('skill');
+
+/* shortcuts overlay */
+const ov=$('#keys');
+$('#keysBtn').onclick=()=>ov.classList.add('on'); $('#keysClose').onclick=()=>ov.classList.remove('on');
+ov.addEventListener('click',e=>{if(e.target===ov) ov.classList.remove('on');});
+addEventListener('keydown',e=>{ if(e.target.closest&&e.target.closest('input,textarea')) return; if(e.key==='?'){ov.classList.toggle('on');} if(e.key==='Escape'){ov.classList.remove('on'); $('#inspect').hidden=true;} });
+})();
+</script>
+</body>
+</html>

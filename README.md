@@ -11,6 +11,8 @@ The Insights tab summarizes the skill as a whole: failure rates, timings, top er
 
 Built in three levels: a grid of runs → a run's deep dive → the Genix graph run behind a generation. Start with `npm start` or the **Autopsy** app on the Desktop.
 
+**New to Autopsy?** [`docs/autopsy-explainer.html`](docs/autopsy-explainer.html) is a self-contained, interactive tour of what it does, for anyone on Wixel (open it in a browser, or send the file around inside Wix).
+
 **Fleet** (the button next to the logo, or `/fleet.html`) looks at every major skill at once: what fails most and how much time each failure costs, how long each operation really takes, patterns worth a look, and a fix per skill only where the cause is proven. See [Fleet](#fleet-every-major-skill-at-once).
 
 ## Install (new machine)
