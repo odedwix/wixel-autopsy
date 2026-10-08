@@ -37,6 +37,10 @@ export async function sql(query, { maxRows = 5000, signal = currentSignal() } = 
     const res = await limited('trino', () => getJson(`${config.adminBase}/analytics/session-entries`, { timeoutMs: 90000, body: { mode: 'sql', sql: query, limit: 500, offset } }), { signal, priority: currentPriority() });
     if (res.error) throw new Error(`SQL: ${res.error}`);
     rows.push(...res.rows);
+    // The endpoint can answer the whole result at once, ignoring limit and offset (seen 2026-10-08:
+    // 1,768 rows for every offset). Then asking for the next page re-runs the same query and
+    // repeats every row, so stop at the first page that holds more than was asked for, or all rows.
+    if (res.rows.length > 500 || (res.rowCount != null && offset + res.rows.length >= res.rowCount && res.rowCount > 500)) break;
     if (res.rows.length < 500) break;
   }
   return rows;
