@@ -205,3 +205,9 @@ body.fl-report .fl-body { overflow: visible; padding: 18px 22px; }
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .fl-card, .fl-tablewrap, tr { break-inside: avoid; }
 }
+
+/* Efficiency: what the agent does after a failed call, as one stacked bar. */
+.fl-stack { display: inline-flex; height: 9px; border-radius: 3px; overflow: hidden; background: var(--surface-3); vertical-align: middle; }
+.fl-stack i { display: block; height: 100%; }
+.fl-find .t { display: block; -webkit-line-clamp: unset; overflow: visible; }
+table.fl td.fl-wrap { white-space: normal; overflow-wrap: anywhere; max-width: 340px; }

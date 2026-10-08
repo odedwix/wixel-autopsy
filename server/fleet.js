@@ -16,7 +16,7 @@ import { inBackground } from './context.js';
 import { backoffRemaining } from './limits.js';
 import { redact } from './redact.js';
 import { skillPairs, familyFor, resolveUserTypes } from './runs.js';
-import { FLEET_QUERY_VERSION, usageQuery, timingQuery, failuresQuery, chainsQuery, outcomesQuery, dayAccountsQuery } from './fleet-queries.js';
+import { FLEET_QUERY_VERSION, usageQuery, timingQuery, failuresQuery, chainsQuery, outcomesQuery, dayAccountsQuery, modelsQuery, readsQuery, followupsQuery } from './fleet-queries.js';
 
 const DAY = 86400000;
 const utcDay = (t) => new Date(t).toISOString().slice(0, 10);
@@ -93,6 +93,10 @@ const PARTS = {
   failures: { make: failuresQuery, v: 2, keys: ['owner', 'aud', 'tool', 'method', 'sig'] },
   chains: { make: chainsQuery, v: 1, keys: ['owner', 'aud', 'kind', 'k'] },
   outcomes: { make: outcomesQuery, v: 3, keys: ['owner', 'intent', 'aud'], wholeDay: true },
+  // Efficiency: which model runs each skill, what the agent reads, and what it does around a failure.
+  models: { make: modelsQuery, v: 1, keys: ['owner', 'aud', 'model', 'purpose'] },
+  reads: { make: readsQuery, v: 1, keys: ['owner', 'aud', 'tool', 'file'] },
+  followups: { make: followupsQuery, v: 1, keys: ['owner', 'aud', 'kind', 'tool', 'method', 'prev', 'next'] },
 };
 const partsOf = (d) => d.parts || { usage: 1, timing: 1, failures: 1, chains: 1 };
 const staleParts = (d) => Object.keys(PARTS).filter((k) => partsOf(d)[k] !== PARTS[k].v);
@@ -105,7 +109,7 @@ export const dayNeedsWork = (d) => staleParts(d).length > 0;
 // example lists concatenate (capped), anything else keeps the first value.
 // Extremes keep the extreme; distinct counts from separate windows can only be bounded, so keep the
 // larger (an undercount, never a double count).
-const MERGE_MAX = new Set(['max_ms', 'hidden_max_ms', 'shapes', 'vals', 'accounts', 'users']);
+const MERGE_MAX = new Set(['max_ms', 'hidden_max_ms', 'shapes', 'vals', 'accounts', 'users', 'max_in']);
 const MERGE_MIN = new Set(['hidden_min_ms']);
 export function mergeInto(target, row, keyFields) {
   for (const [k, v] of Object.entries(row)) {
@@ -223,7 +227,7 @@ export function buildDay(day, { force = false } = {}) {
       out[`${name}Ms`] = Date.now() - q0;
     }
     // Day files are committed: example error texts lose emails, phone numbers and URL query strings.
-    for (const r of out.failures || []) if (r.example) r.example = redact(r.example);
+    for (const r of [...(out.failures || []), ...(out.reads || [])]) if (r.example) r.example = redact(r.example);
     out.busy = busy;
     out.builtAt = Date.now();
     out.patchedAt = patch ? Date.now() : undefined;

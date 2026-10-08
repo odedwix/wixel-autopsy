@@ -265,7 +265,7 @@ function th(label, table, key, fs, act, { cls = '', title } = {}) {
 
 // ---------- tabs ----------
 export function renderTab(view, fs, act) {
-  const fn = { overview, issues: issuesTab, waits: waitsTab, opps: oppsTab, skills: skillsTab, data: dataTab }[fs.tab] || overview;
+  const fn = { overview, issues: issuesTab, waits: waitsTab, opps: oppsTab, skills: skillsTab, efficiency: effTab, data: dataTab }[fs.tab] || overview;
   return fn(view, fs, act);
 }
 
@@ -545,6 +545,125 @@ function skillsTab(view, fs, act) {
         h('td', {}, x.skill !== NO_SKILL ? h('a', { href: autopsyLink(x.skill, { days: view.period.days.length }), target: '_blank', onclick: (e) => e.stopPropagation(), title: 'Open this skill\'s runs in Autopsy' }, icon('external')) : null)))))));
 }
 
+// ---------- efficiency ----------
+// Where the agent spends tokens and time beyond the work itself: how heavy every iteration's
+// context is (and how much of it is the skill), which model runs it, what it reads, what it repeats,
+// and what it does when a call fails. From the models / reads / follow-ups parts of the day files.
+const kTok = (n) => (n == null || !Number.isFinite(n) ? '–' : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : `${Math.round(n)}`);
+const NEXT_ORDER = ['changed the arguments', 'another tool', 'looked something up', 'same call again', 'asked the user', 'turn ended'];
+const NEXT_COLOR = { 'changed the arguments': 'var(--viz-seq)', 'another tool': 'var(--viz-none)', 'looked something up': 'var(--info)', 'same call again': 'var(--warn)', 'asked the user': 'var(--ok)', 'turn ended': 'var(--err)' };
+function nextBar(next, { w = 120 } = {}) {
+  const total = Object.values(next || {}).reduce((a, n) => a + n, 0);
+  if (!total) return h('span', { class: 'dim' }, '–');
+  const parts = NEXT_ORDER.filter((k) => next[k]);
+  return richTip(h('span', { class: 'fl-stack', style: { width: `${w}px` } }, parts.map((k) => h('i', { style: { flex: next[k], background: NEXT_COLOR[k] } }))),
+    `After a failed call the agent…\n${parts.map((k) => `${k}: ${pct(next[k] / total)}`).join('\n')}`);
+}
+
+// The few things most worth a look, across skills, each with its evidence.
+function effFindings(eff) {
+  const out = [];
+  const med = (xs) => { const s = xs.filter((x) => x != null).sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : null; };
+  const tpiMed = med(eff.skills.filter((s) => s.major).map((s) => s.tokPerIter));
+  for (const s of eff.skills.filter((x) => x.major)) {
+    if (tpiMed && s.tokPerIter > tpiMed * 1.5) out.push({ w: (s.tokPerIter - tpiMed) * s.iterationsPerWeek, skill: s.skill, t: `${s.skill} carries ${kTok(s.tokPerIter)} tokens into every iteration (fleet median ${kTok(tpiMed)})`, d: `${s.iterPerTurn?.toFixed(1)} iterations a turn${s.preloadTokens ? ` · the preloaded skill alone is ${kTok(s.preloadTokens)} (${pct(s.preloadShare)} of an iteration)` : ''} · ${pct(s.cachedShare)} cached` });
+    for (const f of s.files.slice(0, 3)) {
+      if (f.perRead >= 8000 && f.reads >= 20) out.push({ w: f.tokens, skill: s.skill, t: `${s.skill} reads ${f.file} — ${kTok(f.perRead)} tokens a read, ${fmtN(f.reads)} reads a week`, d: `${kTok(f.tokens)} tokens a week into the context, then carried by every later iteration${f.fails ? ` · ${fmtN(f.fails)} reads failed` : ''}` });
+    }
+    const badReads = s.files.filter((f) => f.fails >= 5).sort((a, b) => b.fails - a.fails)[0];
+    if (badReads) out.push({ w: badReads.fails * 20000, skill: s.skill, t: `${s.skill}: ${fmtN(badReads.fails)} failed reads a week of ${badReads.file}`, d: badReads.example ? `“${badReads.example.slice(0, 140)}”` : '' });
+    const rep = s.repeats[0];
+    if (rep && rep.n >= 30) out.push({ w: rep.n * 30000, skill: s.skill, t: `${s.skill} repeats ${opName(rep.tool, rep.method)} with identical arguments ${fmtN(rep.n)} times a week`, d: `after the same call already succeeded in the turn${rep.ms >= 60000 ? ` · ${sec(rep.ms)} a week` : ''}` });
+    const ended = s.failNext['turn ended'] || 0;
+    if (ended >= 20) out.push({ w: ended * 50000, skill: s.skill, t: `${s.skill}: ${fmtN(ended)} failed calls a week end the turn`, d: 'the agent stops after the failure instead of recovering or telling the user what happened' });
+  }
+  return out.sort((a, b) => b.w - a.w).slice(0, 12);
+}
+
+function effTab(view, fs, act) {
+  const eff = view.efficiency;
+  if (!eff?.days) {
+    return h('div', { class: 'fl-card' }, h('h3', {}, 'Efficiency'), h('p', { class: 'desc' }, 'No day in this period has the efficiency parts yet (models, reads, failures). They are built with the day files; the Data tab shows which days are done.'));
+  }
+  const rows = eff.skills.filter((s) => (!fs.major || s.major) && matchQ(fs.q, s.skill));
+  const st = sorter(fs, 'eff', { name: (x) => x.skill, tpi: (x) => x.tokPerIter, ipt: (x) => x.iterPerTurn, think: (x) => x.thinkPerIter, pre: (x) => x.preloadTokens, rpt: (x) => x.readTokensPerTurn, rf: (x) => x.readFailsPerWeek, rep: (x) => x.repeatCallsPerWeek, poll: (x) => x.pollWaitHPerWeek, fails: (x) => x.failuresPerWeek }, 'tpi');
+  rows.sort(st.fn);
+  const findings = effFindings(eff);
+  return h('div', {},
+    h('div', { class: 'fl-cols', style: { marginBottom: '12px' } },
+      h('div', { class: 'fl-card' }, h('h3', {}, 'Agent models', h('span', { class: 'r' }, `${eff.days} day(s) measured`)),
+        h('p', { class: 'desc' }, 'Which model runs the agent\'s iterations (main turns and sub-agents), how much context each call carries, how long the model takes, and how often a call fails.'),
+        h('table', { class: 'fl' }, h('thead', {}, h('tr', {}, h('th', { class: 'l' }, 'Model'), h('th', {}, 'Share'), h('th', {}, 'Iterations / wk'), h('th', {}, 'Tokens in / iter.'), h('th', {}, 'Out / iter.'), h('th', {}, 'Model time / iter.'), h('th', {}, 'Failed'))),
+          h('tbody', {}, eff.models.slice(0, 10).map((m) => h('tr', { style: { cursor: 'default' } }, h('td', { class: 'l mono' }, m.model), h('td', {}, pct(m.share)), h('td', {}, fmtN(m.iterations)), h('td', {}, kTok(m.tokPerIter)), h('td', {}, fmtN(m.outPerIter)), h('td', {}, sec(m.thinkPerIter)), h('td', {}, pct(m.failRate, 1))))))),
+      h('div', { class: 'fl-card' }, h('h3', {}, 'Worth a look'),
+        h('p', { class: 'desc' }, 'Where the agent spends tokens or time beyond the work: heavy context, big files read again and again, failed reads, identical repeated calls, failures that end the turn. Observations to check, not proven fixes.'),
+        findings.length ? h('div', {}, findings.map((f) => h('div', { class: 'rep fl-find', onclick: () => act.select('eff', f.skill) }, h('span', { class: 't' }, h('b', {}, f.t), f.d ? h('div', { class: 'dim', style: { color: 'var(--text-3)', fontSize: '11.5px' } }, f.d) : null)))) : h('p', { class: 'desc' }, 'Nothing stands out.'))),
+    h('p', { class: 'fl-note' }, `${rows.length} skills. Model tokens are measured; tokens read from files are estimated from characters (≈4 a token). Per-week numbers are scaled from the days measured. Click a skill for its models, files and failures.`),
+    h('div', { class: 'fl-tablewrap' }, h('table', { class: 'fl' },
+      h('thead', {}, h('tr', {},
+        th('Skill', 'eff', 'name', fs, act, { cls: 'l' }),
+        h('th', {}, 'Main model'),
+        th('Tokens / iter.', 'eff', 'tpi', fs, act, { title: 'Input tokens per model call: the whole context the agent re-reads every iteration (most of it cached).' }),
+        th('Iter. / turn', 'eff', 'ipt', fs, act),
+        th('Model time / iter.', 'eff', 'think', fs, act),
+        th('Preloaded skill', 'eff', 'pre', fs, act, { title: 'The skill body the platform puts into the session\'s first message, in tokens (≈ characters / 4), and its share of an iteration\'s context.' }),
+        th('Read / turn', 'eff', 'rpt', fs, act, { title: 'Tokens the agent reads from files (resources, its own project assets) per turn, estimated.' }),
+        th('Failed reads / wk', 'eff', 'rf', fs, act),
+        th('Repeated calls / wk', 'eff', 'rep', fs, act, { title: 'Calls that exactly repeat an earlier successful call in the same turn.' }),
+        th('Polling wait / wk', 'eff', 'poll', fs, act, { title: 'Time between repeated status polls of a running job.' }),
+        th('Failed calls / wk', 'eff', 'fails', fs, act),
+        h('th', { title: 'What the agent does right after a failed call' }, 'After a failure'))),
+      h('tbody', {}, rows.map((x) => h('tr', { 'data-sel-kind': 'eff', 'data-sel-key': x.skill, class: fs.sel?.kind === 'eff' && fs.sel.key === x.skill ? 'sel' : '', onclick: () => act.select('eff', x.skill) },
+        h('td', { class: 'l' }, nameOf(x.skill)),
+        h('td', { class: 'mono' }, x.mainModel || '–', x.models.length > 1 ? h('span', { class: 'dim' }, ` +${x.models.length - 1}`) : null),
+        h('td', {}, kTok(x.tokPerIter), h('span', { class: 'dim' }, ` ${pct(x.cachedShare)} cached`)),
+        h('td', {}, x.iterPerTurn != null ? x.iterPerTurn.toFixed(1) : '–'),
+        h('td', {}, sec(x.thinkPerIter)),
+        h('td', {}, x.preloadTokens ? [kTok(x.preloadTokens), h('span', { class: 'dim' }, ` ${pct(x.preloadShare)}`)] : h('span', { class: 'dim' }, '–')),
+        h('td', {}, kTok(x.readTokensPerTurn)),
+        h('td', {}, x.readFailsPerWeek >= 1 ? fmtN(x.readFailsPerWeek) : h('span', { class: 'dim' }, '–')),
+        h('td', {}, x.repeatCallsPerWeek >= 1 ? fmtN(x.repeatCallsPerWeek) : h('span', { class: 'dim' }, '–')),
+        h('td', {}, x.pollWaitHPerWeek > 0.01 ? hrs(x.pollWaitHPerWeek) : h('span', { class: 'dim' }, '–')),
+        h('td', {}, fmtN(x.failuresPerWeek)),
+        h('td', {}, nextBar(x.failNext))))))));
+}
+
+function effDetail(e, view, fs, act) {
+  const kv = (v, k) => h('div', {}, h('b', {}, v), h('span', {}, k));
+  const mix = (o) => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${fmtN(n)}`).join(' · ');
+  return panel(nameOf(e.skill), h('span', {}, `Efficiency · ${view.efficiency.days} day(s) measured`), act,
+    sect('At a glance', h('div', { class: 'fl-kv' },
+      kv(kTok(e.tokPerIter), 'tokens into every iteration'),
+      kv(pct(e.cachedShare), 'of them cached'),
+      kv(e.iterPerTurn != null ? e.iterPerTurn.toFixed(1) : '–', 'iterations a turn'),
+      kv(sec(e.thinkPerIter), 'model time an iteration'),
+      kv(fmtN(e.outPerIter), 'tokens written an iteration'),
+      kv(e.preloadTokens ? kTok(e.preloadTokens) : '–', `preloaded skill${e.preloadShare ? ` (${pct(e.preloadShare)} of an iteration)` : ''}`),
+      e.skillFileTokens ? kv(kTok(e.skillFileTokens), 'skill files in the codex') : null,
+      kv(kTok(e.readTokensPerTurn), 'read from files a turn'),
+      kv(kTok(e.inTokensPerWeek), 'input tokens a week'))),
+    h('div', { class: 'section links' },
+      h('a', { class: 'btn primary', href: autopsyLink(e.skill, { days: view.period.days.length }), target: '_blank' }, icon('external'), 'Open runs in Autopsy'),
+      h('button', { class: 'btn', onclick: () => act.open('skill', e.skill, 'skills') }, 'Skill overview')),
+    e.models.length ? sect('Models', h('table', { class: 'fl' },
+      h('thead', {}, h('tr', {}, h('th', { class: 'l' }, 'Model'), h('th', {}, 'Share'), h('th', {}, 'Tokens in / iter.'), h('th', {}, 'Largest call'), h('th', {}, 'Out / iter.'), h('th', {}, 'Model time / iter.'), h('th', {}, 'Failed'))),
+      h('tbody', {}, e.models.map((m) => h('tr', { style: { cursor: 'default' } }, h('td', { class: 'l mono' }, m.model), h('td', {}, pct(m.share)), h('td', {}, kTok(m.tokPerIter)), h('td', {}, kTok(m.maxIn)), h('td', {}, fmtN(m.outPerIter)), h('td', {}, sec(m.thinkPerIter)), h('td', {}, pct(m.failRate, 1))))))) : null,
+    e.files.length ? sect('What it reads (a week)', h('p', { class: 'fl-note' }, 'Every file read stays in the context and is carried by every later iteration of the session. Re-reads: the same file and section read again in the same session.'),
+      h('table', { class: 'fl' },
+        h('thead', {}, h('tr', {}, h('th', { class: 'l' }, 'File'), h('th', {}, 'Reads'), h('th', {}, 'Tokens / read'), h('th', {}, 'Tokens'), h('th', {}, 'Re-reads'), h('th', {}, 'Failed'))),
+        h('tbody', {}, e.files.slice(0, 30).map((f) => h('tr', { style: { cursor: 'default' } },
+          h('td', { class: 'l mono fl-wrap', title: f.example || f.file }, f.tool === 'read' ? f.file : `${f.tool} ${f.file}`, f.example ? h('div', { class: 'dim', style: { color: 'var(--err)', fontFamily: 'inherit', fontSize: '11px' } }, f.example.slice(0, 160)) : null),
+          h('td', {}, fmtN(f.reads)), h('td', {}, kTok(f.perRead)), h('td', {}, kTok(f.tokens)), h('td', {}, f.rereads >= 1 ? fmtN(f.rereads) : '–'), h('td', {}, f.fails >= 1 ? fmtN(f.fails) : '–'))))) ) : null,
+    e.failOps.length ? sect('Around a failed call', h('p', { class: 'fl-note' }, `Before: ${mix(e.failPrev)}. After: ${mix(e.failNext)}.`),
+      h('table', { class: 'fl' },
+        h('thead', {}, h('tr', {}, h('th', { class: 'l' }, 'Failing call'), h('th', {}, 'A week'), h('th', {}, 'Time'), h('th', { class: 'l' }, 'Just before'), h('th', {}, 'Right after'))),
+        h('tbody', {}, e.failOps.map((o) => h('tr', { style: { cursor: 'default' } },
+          h('td', { class: 'l' }, opName(o.tool, o.method)), h('td', {}, fmtN(o.n)), h('td', {}, sec(o.ms)),
+          h('td', { class: 'l dim' }, mix(o.prev)), h('td', {}, nextBar(o.next, { w: 90 }))))))) : null,
+    e.repeats.length ? sect('Identical calls repeated in a turn (a week)', h('div', {}, e.repeats.map((r) => h('div', { class: 'rep', style: { cursor: 'default' } }, h('span', { class: 't' }, opName(r.tool, r.method)), h('span', { class: 'n' }, `${fmtN(r.n)}×${r.ms >= 1000 ? ` · ${sec(r.ms)}` : ''}`))))) : null,
+    e.polls.length ? sect('Status polls (a week)', h('div', {}, e.polls.map((r) => h('div', { class: 'rep', style: { cursor: 'default' } }, h('span', { class: 't' }, opName(r.tool, r.method)), h('span', { class: 'n' }, `${fmtN(r.n)} polls · ${sec(r.gapMs)} waiting`))))) : null);
+}
+
 // ---------- data ----------
 function dataTab(view, fs, act) {
   const b = view.backfill;
@@ -604,6 +723,10 @@ export function renderDetail(view, fs, act) {
   if (kind === 'skill') {
     const s = view.skills.find((x) => x.skill === key);
     return s ? skillDetail(s, view, fs, act) : null;
+  }
+  if (kind === 'eff') {
+    const e = view.efficiency?.skills.find((x) => x.skill === key);
+    return e ? effDetail(e, view, fs, act) : null;
   }
   return null;
 }
