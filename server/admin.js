@@ -19,8 +19,8 @@ export async function getJson(url, { timeoutMs = 60000, retries = 2, body } = {}
       lastErr = err;
       // No HTTP answer at all (DNS, refused, reset): maybe off the VPN — re-check connectivity now.
       if (!err.status && err.name !== 'AbortError') noteNetworkFailure();
-      // 4xx won't get better on retry, and neither will a Trino timeout or SQL error.
-      if (err.status && (err.status < 500 || /timed out|USER_ERROR/.test(err.message))) break;
+      // 4xx won't get better on retry, and neither will a Trino timeout, a full queue or an SQL error.
+      if (err.status && (err.status < 500 || /timed out|USER_ERROR|QUERY_QUEUE_FULL|INSUFFICIENT_RESOURCES/.test(err.message))) break;
       await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
     }
   }

@@ -17,7 +17,10 @@ const LIMITS = {
 // Backoff: when Trino keeps timing out (it's busy, or we're too much for it), slow down for a
 // while — fewer at once, further apart — instead of piling on. Hour-window splitting of heavy
 // days makes that worse, so it's the moment to ease off.
-const BACKOFF = { timeouts: 3, windowMs: 2 * 60000, holdMs: 3 * 60000, concurrency: 2, minIntervalMs: 1200 };
+const BACKOFF = { timeouts: 3, windowMs: 2 * 60000, holdMs: 3 * 60000, queueFullHoldMs: 5 * 60000, concurrency: 2, minIntervalMs: 1200 };
+const QUEUE_FULL = /QUERY_QUEUE_FULL|INSUFFICIENT_RESOURCES/;
+// Trino (or the account we share on it) is overloaded rather than the query being wrong.
+export const isBusyError = (err) => /timed out|QUERY_QUEUE_FULL|INSUFFICIENT_RESOURCES/.test(String(err?.message || err));
 
 const WINDOW_MS = 5 * 60000;
 const lanes = {};
@@ -87,7 +90,11 @@ export async function limited(name, fn, { signal, priority = 'interactive' } = {
     return await fn();
   } catch (err) {
     lane.errors++;
-    if (/timed out/i.test(err.message)) {
+    // The shared account's queue is full: everyone's queries are waiting, so stop adding ours at once.
+    if (QUEUE_FULL.test(err.message) && !backingOff(lane)) {
+      lane.backoffUntil = Date.now() + BACKOFF.queueFullHoldMs;
+      console.log(`${name}: the shared Trino account's queue is full — backing off for ${BACKOFF.queueFullHoldMs / 60000} min`);
+    } else if (/timed out/i.test(err.message)) {
       lane.timeouts.push(Date.now());
       prune(lane);
       if (lane.timeouts.length >= BACKOFF.timeouts && !backingOff(lane)) {

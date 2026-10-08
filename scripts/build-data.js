@@ -17,7 +17,7 @@
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { config } from '../server/config.js';
-import { setConcurrency } from '../server/limits.js';
+import { setConcurrency, isBusyError } from '../server/limits.js';
 import { storeKind, readJson, files } from '../server/snapshot.js';
 import { produce, buildWindow, skillsToBuild, buildSkill, publish } from '../server/build.js';
 
@@ -39,22 +39,51 @@ async function main() {
   const minSessions = Number(opt('min-sessions', 10));
   const skills = await skillsToBuild({ minSessions, only });
   console.log(`  ${skills.length} skill(s)${only.length ? '' : ` with ≥${minSessions} sessions in 30 days`}`);
-  const done = [];
-  let failed = 0;
-  for (const s of skills) {
+  const done = new Map(); // skill → { skill, sessions, last_at } for every skill readers can see
+  const failedSkills = new Set();
+  const listed = () => [...done.values()];
+  // Trino overloaded (timeouts, the shared account's queue full): skills fail in seconds, one after
+  // another. Rather than march through the rest adding load, pause and retry them; give up after a
+  // few pauses (the next run picks up where this one stopped).
+  const BUSY_STREAK = 3;
+  const BUSY_PAUSES = 3;
+  const BUSY_PAUSE_MS = 10 * 60000;
+  let streak = 0;
+  let pauses = 0;
+  let stopped = false;
+  for (let i = 0; i < skills.length; i++) {
+    const s = skills[i];
+    let busy = false;
     try {
-      if (!(await buildSkill(s.skill, win, options)).ok) failed++;
-      done.push(s);
+      const r = await buildSkill(s.skill, win, options);
+      busy = r.busy;
+      if (r.ok) failedSkills.delete(s.skill);
+      else failedSkills.add(s.skill);
+      done.set(s.skill, s);
     } catch (err) {
-      failed++;
+      busy = isBusyError(err);
+      failedSkills.add(s.skill);
       console.log(`  ${s.skill}: failed — ${err.message}`);
       // Keep serving the previous build of it, if there is one.
-      if (await readJson(files.skillIndex(s.skill))) done.push(s);
+      if (await readJson(files.skillIndex(s.skill))) done.set(s.skill, s);
     }
-    await publish(win, { done, finished: false, only, startedAt: t0 });
+    await publish(win, { done: listed(), finished: false, only, startedAt: t0 });
+    streak = busy ? streak + 1 : 0;
+    if (streak < BUSY_STREAK) continue;
+    if (pauses >= BUSY_PAUSES) {
+      console.log(`build:data: Trino stayed overloaded after ${pauses} pauses — stopping here; run it again later (finished skills are kept)`);
+      stopped = true;
+      break;
+    }
+    pauses++;
+    console.log(`  ${streak} skills in a row failed because Trino is overloaded — pausing ${BUSY_PAUSE_MS / 60000} min, then retrying them`);
+    await new Promise((r) => setTimeout(r, BUSY_PAUSE_MS));
+    i -= streak;
+    streak = 0;
   }
-  await publish(win, { done, finished: true, only, startedAt: t0 });
-  console.log(`build:data: ${done.length} skill(s) in ${Math.round((Date.now() - t0) / 1000)}s${failed ? `, ${failed} with failed days (kept the previous copy where there was one)` : ''}`);
+  // A stopped run leaves the previous build's other skills listed; only a clean full run is complete.
+  await publish(win, { done: listed(), finished: !stopped, only, startedAt: t0, complete: !stopped && !failedSkills.size });
+  console.log(`build:data: ${done.size} skill(s) in ${Math.round((Date.now() - t0) / 1000)}s${failedSkills.size ? `, ${failedSkills.size} with failed days (kept the previous copy where there was one): ${[...failedSkills].join(', ')}` : ''}`);
 }
 
 await produce(main);

@@ -8,7 +8,7 @@
 // stop or a failure only queries what's missing.
 
 import { requestContext } from './context.js';
-import { backoffRemaining } from './limits.js';
+import { backoffRemaining, isBusyError } from './limits.js';
 import { listSkills, familyFor, runsIndex, runsForDay, sampleFor, skillPairs } from './runs.js';
 import { prices } from './prices.js';
 import { DATA_VERSION, famId, files, readJson, writeJsonAtomic, listKeys, deleteKey, utcDay } from './snapshot.js';
@@ -42,8 +42,8 @@ async function mapLimit(items, limit, fn) {
   }));
 }
 
-// The shared cluster is timing out: wait it out rather than add load.
-async function calm(log) {
+// The shared cluster is timing out (or its queue is full): wait it out rather than add load.
+export async function calm(log = console.log) {
   const wait = backoffRemaining('trino');
   if (wait <= 0) return;
   log(`  Trino is busy — waiting ${Math.round(wait / 1000) + 30}s`);
@@ -69,6 +69,7 @@ async function indexSessions(skill, day, runs) {
 // task can hand the rest to its next run. The skill's index is written once every day is handled.
 export async function buildSkill(skill, win, { force = false, freshMs = FRESH_MS, parallelDays = 2, deadline = Infinity, log = console.log } = {}) {
   const ts = Date.now();
+  await calm(log);
   // The family the skill's days were built with, while it's pinned (30 days): a new instance or
   // machine recomputing it must not invalidate every built day.
   const prevFam = (await readJson(files.skillIndex(skill)))?.family;
@@ -107,9 +108,11 @@ export async function buildSkill(skill, win, { force = false, freshMs = FRESH_MS
       if (have?.runs) dayList.push({ day, sessions: have.sessions, runs: have.runs.length, stale: true });
     }
   });
+  // Every failed day failed because Trino was overloaded (not the query): worth retrying later.
+  const busy = missingDays.length > 0 && missingDays.every((d) => isBusyError(d.error));
   if (left) {
     log(`  ${skill}: ${built} day(s) built in ${Math.round((Date.now() - ts) / 1000)}s, ${left} left for the next run`);
-    return { ok: !missingDays.length, done: false, built };
+    return { ok: !missingDays.length, done: false, built, busy };
   }
   dayList.sort((a, b) => (a.day < b.day ? 1 : -1));
   // When it hasn't run in the window: when it last ran (the index only says so for an empty window).
@@ -122,14 +125,15 @@ export async function buildSkill(skill, win, { force = false, freshMs = FRESH_MS
   }
   const runs = dayList.reduce((a, d) => a + d.runs, 0);
   log(`  ${skill}: ${dayList.length} day(s), ${runs} runs — ${built} built in ${Math.round((Date.now() - ts) / 1000)}s${missingDays.length ? `; FAILED ${missingDays.map((d) => d.day).join(', ')} (${missingDays[0].error})` : ''}`);
-  return { ok: !missingDays.length, done: true, built };
+  return { ok: !missingDays.length, done: true, built, busy };
 }
 
 // The skills readers see. `done`: skills handled by this run ({ skill, sessions, last_at }); skills
 // from the previous build not reached yet stay listed until the run finishes (a partial run, with
 // `only`, keeps them for good). Finishing also stores the co-loads Fleet reads and drops old days
 // from the session index.
-export async function publish(win, { done, finished, only = [], startedAt = Date.now() }) {
+// `complete`: every skill was built (default: finished).
+export async function publish(win, { done, finished, only = [], startedAt = Date.now(), complete = finished }) {
   const prev = (await readJson(files.manifest()))?.skills || [];
   const keep = prev.filter((p) => !done.some((d) => d.skill === p.skill) && (only.length || !finished));
   const listed = [...done, ...keep].sort((a, b) => Number(b.sessions) - Number(a.sessions));
@@ -143,6 +147,6 @@ export async function publish(win, { done, finished, only = [], startedAt = Date
       if (m && m[1] < win.from) await deleteKey(key);
     }
   }
-  await writeJsonAtomic(files.manifest(), { version: DATA_VERSION, through: win.through, from: win.from, days: win.days, builtAt: Date.now(), buildMs: Date.now() - startedAt, complete: finished, skills: listed.map(({ skill, sessions, last_at }) => ({ skill, sessions, last_at })) });
+  await writeJsonAtomic(files.manifest(), { version: DATA_VERSION, through: win.through, from: win.from, days: win.days, builtAt: Date.now(), buildMs: Date.now() - startedAt, complete, skills: listed.map(({ skill, sessions, last_at }) => ({ skill, sessions, last_at })) });
   return listed.length;
 }
