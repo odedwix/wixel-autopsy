@@ -7,7 +7,7 @@ import { printReport, downloadReport, section as rpSection } from './report.js';
 import { CAT_COLOR, CAT_LABEL } from './insights.js';
 import { caps, capsReady, HINT } from './caps.js';
 import { toast, popover, closePopover } from './ui.js';
-import { MOOD, worstMood, failedRun, hasAd, primaryOutput, typeLabel, getExpected, STOPS, stopFact } from './filters.js';
+import { MOOD, worstMood, failedRun, hasAd, primaryOutput, typeLabel, getExpected, STOPS, stopFact, paying, PLAN_LABEL } from './filters.js';
 import { runTimeBar } from './timebar.js';
 import { isVideoRun } from './grid.js';
 import { mediaOf, isReady, prioritize, onMedia, videoUrl, spriteUrl, posterUrl, placeSprite, downloadRun, downloadOutput } from './media.js';
@@ -478,6 +478,7 @@ function header(r, d) {
       h('h2', { title: r.prompt }, r.adName?.replace(/\s*[-—]\s*Root$/i, '') || r.title || 'Untitled run'),
       h('div', { class: 'sub' },
         ut && ut !== 'unknown' ? h('span', { class: `utype ${ut}` }, ut === 'employee' ? 'Employee' : ut === 'wixel-team' ? 'Team' : 'Real') : null,
+        paying(r) ? h('span', { class: 'utype plan', title: `Pays for Wixel ${PLAN_LABEL[r.plan] || r.plan} (today's plan)` }, PLAN_LABEL[r.plan] || r.plan) : null,
         email || r.userId ? h('button', { class: 'link-btn', title: 'Every run by this user, any skill', onclick: () => showUser({ id: d?.user?.id || r.userId, email: email || null }) }, icon('user', 'sm'), email || 'this user') : null,
         h('span', { class: 'sep' }, '·'),
         h('time', { title: new Date(r.createdAt).toLocaleString() }, `${dateTime(r.createdAt)} (${ago(r.createdAt)})`),

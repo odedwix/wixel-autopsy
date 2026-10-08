@@ -1,6 +1,6 @@
 import { h, icon, ago, dur } from './util.js';
 import { state } from './state.js';
-import { hasAd, failedRun, attempted, worstMood, MOOD, primaryOutput, typeLabel, getProfile, STOPS, stopFact } from './filters.js';
+import { hasAd, failedRun, attempted, worstMood, MOOD, primaryOutput, typeLabel, getProfile, STOPS, stopFact, paying, PLAN_LABEL } from './filters.js';
 import { mediaOf, isReady, want, onMedia, prioritize, videoUrl, spriteUrl, placeSprite } from './media.js';
 import { richTip } from './ui.js';
 import { stepKey } from './filters.js';
@@ -159,10 +159,15 @@ function title(r) {
   return primary(r)?.name?.replace(/\s*[-—]\s*Root$/i, '') || r.title || r.prompt?.slice(0, 80) || 'Untitled run';
 }
 
+// A paying user's Wixel plan, next to the user type.
+function planBadge(r) {
+  return paying(r) ? h('span', { class: 'utype plan', title: `Pays for Wixel ${PLAN_LABEL[r.plan] || r.plan} (today's plan)` }, PLAN_LABEL[r.plan] || r.plan) : null;
+}
+
 function userType(r) {
   if (r.userType === 'employee') return h('span', { class: 'utype employee', title: 'Wix employee (account not in wt_accounts.base)' }, 'Employee');
   if (r.userType === 'wixel-team') return h('span', { class: 'utype wixel-team', title: 'Wixel team account' }, 'Team');
-  if (r.userType === 'real') return h('span', { class: 'utype real', title: 'Real user' }, 'Real');
+  if (r.userType === 'real') return [h('span', { class: 'utype real', title: 'Real user' }, 'Real'), planBadge(r)];
   return null;
 }
 

@@ -158,6 +158,45 @@ const knownUserType = (id) => (!id ? 'unknown' : teamSet?.has(id) ? 'wixel-team'
 // The grid never waits long for user types, and never fails over them: past `ms`, or when the
 // lookup fails, accounts not resolved yet show as unknown until the day is next loaded.
 // Behind a lookup that's already running (a slow one takes a minute to fail), it doesn't wait at all.
+// ---- account → Wixel plan ----
+// Paying users: Wixel's own plans (Basic, Pro, Max, Top-Up) per account, from prod.wixel.accounts_dim —
+// today's state, not the plan at the time of a run. Only accounts that pay or once paid are listed
+// (~1.8k of ~550k), so the whole list is one small query, refreshed every 6 hours.
+const PLANS_TTL = 6 * 3600000;
+let plans = null; // Map account → { plan, active }
+let plansLoading = null;
+function loadPlans() {
+  plansLoading ??= cached('meta', 'wixel-plans-v1', PLANS_TTL, async () => ({
+    value: await sql(`SELECT account_id, premium_product_name AS plan, is_active_premium_account AS active
+      FROM prod.wixel.accounts_dim WHERE is_active_premium_account OR was_premium_account ORDER BY account_id`, { maxRows: 20000 }),
+    ttlMs: PLANS_TTL,
+  }), { staleWhileRevalidate: true })
+    .then((rows) => {
+      plans = new Map(rows.map((r) => [r.account_id, { plan: r.plan, active: Boolean(r.active) }]));
+      plans.at = Date.now();
+      console.log(`wixel plans: ${[...plans.values()].filter((p) => p.active).length} paying accounts, ${plans.size} that pay or paid`);
+    })
+    .catch((err) => console.error(`wixel plans: ${err.message}`))
+    .finally(() => { plansLoading = null; });
+  return plansLoading;
+}
+// 'basic' | 'pro' | 'max' | 'top-up' (paying now), 'former' (paid before), 'free', or null (not loaded).
+const planKey = (p) => String(p || '').toLowerCase().replace(/\s+/g, '-');
+function planOf(accountId) {
+  if (!plans || !accountId) return null;
+  const p = plans.get(accountId);
+  if (!p) return 'free';
+  return p.active ? planKey(p.plan) || 'paying' : 'former';
+}
+// Like the user types: never let the lookup hold a day back for long.
+async function plansWithin(ms) {
+  if (!plans || Date.now() - (plans.at || 0) > PLANS_TTL) {
+    const work = loadPlans();
+    if (!plans) await Promise.race([work, new Promise((r) => setTimeout(r, ms))]);
+  }
+  return planOf;
+}
+
 async function userTypesWithin(accountIds, ms) {
   const busy = typesBusy > 0;
   const work = resolveUserTypes(accountIds).catch(() => null);
@@ -733,10 +772,10 @@ async function scopedDay(scope, day, sampleRate = 1, { fresh = false, fromHour =
   const rows = rawRows.filter((r) => !seen.has(r.session_id) && seen.add(r.session_id));
   // A cached day's accounts are known already (a whole-day build warmed them above), so this is
   // instant unless a lookup failed earlier.
-  const userType = await userTypesWithin(rows.map((r) => r.account_id), 3000);
+  const [userType, plan] = await Promise.all([userTypesWithin(rows.map((r) => r.account_id), 3000), plansWithin(3000)]);
   const bySession = new Map(stepRows.map((r) => [r.session_id, r]));
   const runs = rows.map((r) => {
-    const run = { ...toRun(r, userType), ...stepFields(bySession.get(r.session_id)), sampleRate };
+    const run = { ...toRun(r, userType), ...stepFields(bySession.get(r.session_id)), sampleRate, plan: plan(r.account_id) };
     if (!run.outputs?.length) run.stop = stopReason(r, run);
     return run;
   });

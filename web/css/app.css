@@ -331,6 +331,7 @@ input[type='range'] { width: 90px; accent-color: var(--accent); }
 .utype.employee { background: rgba(90, 169, 255, 0.16); color: var(--info); }
 .utype.wixel-team { background: var(--accent-soft); color: var(--accent); }
 .utype.real { background: var(--surface-3); color: var(--text-2); }
+.utype.plan { background: rgba(240, 183, 60, 0.16); color: var(--warn); }
 .skeleton { position: absolute; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--border); overflow: hidden; }
 .skeleton::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.04), transparent); animation: shimmer 1.2s infinite; }
 @keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
