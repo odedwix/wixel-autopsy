@@ -41,6 +41,9 @@ function trim(v) {
     opportunities: v.opportunities,
     intents: v.intents,
     health: v.health,
+    // Efficiency (models / reads / follow-ups parts): the model mix and each skill's numbers, with its
+    // 15 biggest files and 8 most frequent failing calls.
+    efficiency: v.efficiency ? { days: v.efficiency.days, models: v.efficiency.models, skills: v.efficiency.skills.map((s) => ({ ...s, files: s.files.slice(0, 15), failOps: s.failOps.slice(0, 8) })) } : null,
   };
 }
 
@@ -68,7 +71,10 @@ function digest(v7, v30, fixes, codex, state) {
   L.push('- **Fix suggestions are shown only when proven** (an audit on 2026-10-07 found most generated ones were guesses): a missing file traced in the codex, or an image host failing ≥5× the Wix rate across every call. "Same call every time" was wrong for ListCosts (it returns each user\'s credits: 313 calls, 50 different answers).');
   L.push('- **Hidden timeouts:** several tools (`generateMusic`, `poll_process_job`, `Generate*Async`, `BuildPresentation`) report success after ~15 minutes while the job is still `IN_PROGRESS`.');
   L.push('- **`ask_user` "User cancelled the question"** is how questions normally resolve — not a failure.');
-  L.push('- **The admin SQL endpoint** re-runs a query for every 500-row page and can repeat rows across pages: every Fleet query stays under 500 rows.');
+  L.push('- **The admin SQL endpoint** now answers the whole result at once and ignores `limit` / `offset` (seen 2026-10-08). Autopsy stops at the first page that holds more than it asked for; before that, every query over 500 rows ran again for each 500-row page and repeated its rows.');
+  L.push('- **Agent models:** iterations run on gpt-6-luna, gpt-6.1-sol, gemini-3.8-flash and gemini-3.0-flash (main turns) and claude-sonnet-5-5 (sub-agents); the mix changes by skill and by day. Every iteration re-reads the whole context — typically 80–320k input tokens, 85–97% cached — to write a few hundred tokens.');
+  L.push('- **Preloaded skills** put the skill body into the first message (4k–132k tokens), and every file the agent reads stays in the context for the rest of the session.');
+  L.push('- **Paying users:** Wixel\'s own plans per account are in `prod.wixel.accounts_dim` (Basic / Pro / Max / Top-Up; ~1,058 paying of ~554k accounts on 2026-10-08).');
   if (v30.shifts?.length) {
     L.push('');
     L.push('## What changed (last 30 days)');
@@ -118,6 +124,39 @@ function digest(v7, v30, fixes, codex, state) {
     L.push('');
     L.push('## Asks that end badly');
     for (const x of asks.slice(0, 10)) L.push(`- "${x.intent}" — ${N(x.perWeek)}/week, kept ${P(x.keptRate)}, upset ${P(x.upsetRate)} (${x.flags.join(', ')}); served by ${x.owners.map(([o, n]) => `${skillName(o)} (${N(n)})`).join(', ')}`);
+  }
+  const eff = v7.efficiency;
+  if (eff?.days) {
+    const K = (n) => (n == null ? '–' : n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}k` : `${Math.round(n)}`);
+    L.push('');
+    L.push(`## Efficiency (${eff.days} of the last 7 days measured)`);
+    L.push('Where the agent spends tokens and time beyond the work itself. Model tokens are measured; tokens read from files are estimated (characters / 4). Fleet → Efficiency has the details per skill.');
+    L.push('');
+    L.push('| Model | Share of iterations | Tokens in / iteration | Out / iteration | Model time / iteration | Failed |');
+    L.push('|---|---:|---:|---:|---:|---:|');
+    for (const m of eff.models.slice(0, 8)) L.push(`| ${m.model} | ${P(m.share)} | ${K(m.tokPerIter)} | ${N(m.outPerIter)} | ${S(m.thinkPerIter)} | ${P(m.failRate, 1)} |`);
+    const major = eff.skills.filter((s) => s.major);
+    const tpi = major.map((s) => s.tokPerIter).filter(Boolean).sort((a, b) => a - b);
+    const med = tpi[Math.floor(tpi.length / 2)] || 0;
+    const looks = [];
+    for (const s of major) {
+      if (med && s.tokPerIter > med * 1.5) looks.push([(s.tokPerIter - med) * s.iterationsPerWeek, `**${s.skill}** carries ${K(s.tokPerIter)} tokens into every iteration (median ${K(med)})${s.preloadTokens ? `; the preloaded skill alone is ${K(s.preloadTokens)} (${P(s.preloadShare)})` : ''}`]);
+      for (const f of s.files.slice(0, 3)) if (f.perRead >= 8000 && f.reads >= 20) looks.push([f.tokens, `**${s.skill}** reads \`${f.file}\` at ${K(f.perRead)} tokens a read, ${N(f.reads)} times a week${f.fails >= 1 ? ` (${N(f.fails)} failed)` : ''}`]);
+      if (s.repeats[0]?.n >= 30) looks.push([s.repeats[0].n * 30000, `**${s.skill}** repeats \`${s.repeats[0].method ? `${s.repeats[0].tool} · ${s.repeats[0].method}` : s.repeats[0].tool}\` with identical arguments ${N(s.repeats[0].n)} times a week, after it already succeeded`]);
+      if (s.pollWaitHPerWeek >= 2) looks.push([s.pollWaitHPerWeek * 3600000 * 10, `**${s.skill}** spends ${H(s.pollWaitHPerWeek)} a week between status polls of running jobs`]);
+    }
+    if (looks.length) {
+      L.push('');
+      L.push('Worth a look (observations, not proven fixes):');
+      for (const [, t] of looks.sort((a, b) => b[0] - a[0]).slice(0, 12)) L.push(`- ${t}`);
+    }
+    L.push('');
+    L.push('| Skill | Main model | Tokens / iteration | Cached | Iterations / turn | Preloaded skill | Read / turn | Repeated calls / wk | Polling wait / wk | After a failure, most often |');
+    L.push('|---|---|---:|---:|---:|---:|---:|---:|---:|---|');
+    for (const s of major.sort((a, b) => (b.tokPerIter || 0) - (a.tokPerIter || 0)).slice(0, 30)) {
+      const nx = Object.entries(s.failNext || {}).sort((a, b) => b[1] - a[1])[0];
+      L.push(`| ${skillName(s.skill)} | ${s.mainModel || '–'} | ${K(s.tokPerIter)} | ${P(s.cachedShare)} | ${s.iterPerTurn != null ? s.iterPerTurn.toFixed(1) : '–'} | ${s.preloadTokens ? K(s.preloadTokens) : '–'} | ${K(s.readTokensPerTurn)} | ${N(s.repeatCallsPerWeek)} | ${s.pollWaitHPerWeek > 0.01 ? H(s.pollWaitHPerWeek) : '–'} | ${nx ? `${nx[0]} (${P(nx[1] / Math.max(1, s.failuresPerWeek))})` : '–'} |`);
+    }
   }
   L.push('');
   L.push('## Major skills (last 7 days)');
